@@ -4,12 +4,21 @@ from .codec import Intent, decode_intent, encode_intent, parse_wire
 from .corpus import corpus_stats, load_prompt_records, redact_corpus, validate_corpus
 from .metrics import benchmark_prompts, benchmark_replies, compare_benchmarks, count_tokens, load_reply_records
 from .reply import AgentReply, decode_reply, encode_reply, parse_reply_wire
+from .turns import (
+    benchmark_turns,
+    load_turn_records,
+    redact_turn_corpus,
+    split_turn_corpus,
+    turn_stats,
+    validate_turn_corpus,
+)
 
 __all__ = [
     "AgentReply",
     "Intent",
     "benchmark_prompts",
     "benchmark_replies",
+    "benchmark_turns",
     "compare_benchmarks",
     "count_tokens",
     "corpus_stats",
@@ -19,8 +28,13 @@ __all__ = [
     "encode_reply",
     "load_prompt_records",
     "load_reply_records",
+    "load_turn_records",
     "parse_wire",
     "parse_reply_wire",
     "redact_corpus",
+    "redact_turn_corpus",
+    "split_turn_corpus",
+    "turn_stats",
     "validate_corpus",
+    "validate_turn_corpus",
 ]

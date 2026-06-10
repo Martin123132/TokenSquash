@@ -125,6 +125,31 @@ JSONL rows can use either `text` or `prompt`:
 {"id":"example-001","text":"fix the login bug, keep the diff small, run tests"}
 ```
 
+## Real Turn Workflow
+
+For paired prompt/reply exports, use a local JSONL turn corpus:
+
+```json
+{"id":"turn-001","prompt":"fix the login bug, keep the diff small, run tests","reply":"Done. I fixed the login bug in src/auth.py and verified it with `python -m unittest discover -s tests`. Risks: none."}
+```
+
+Keep real files under `turns/` or `private-turns/`; both are ignored by Git.
+
+```powershell
+python -m tokensquash turns validate private-turns\real.jsonl
+python -m tokensquash turns stats private-turns\real.jsonl
+python -m tokensquash turns redact private-turns\real.jsonl --out private-turns\real.redacted-turns.jsonl
+python -m tokensquash turns split private-turns\real.redacted-turns.jsonl --prompts-out prompts\real.prompts.jsonl --replies-out prompts\real.replies.jsonl
+python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out benchmarks\real-turns-cl100k.json
+```
+
+`turns bench` reports combined savings plus prompt-side and reply-side savings.
+For a first measurement run, add `--target 0` if you want the command to exit
+successfully even when the corpus does not beat the default `0.5%` target.
+When a raw reply has no structured fields, TokenSquash guesses a starter `tr1`
+record from obvious files, commands, verification phrases, risks, and next-step
+phrases. That heuristic is for measurement, not a claim of perfect translation.
+
 ## Install For Local Development
 
 ```powershell
@@ -139,6 +164,7 @@ python -m unittest discover -s tests
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
+- Local paired-turn workflow for validating, redacting, splitting, and benchmarking private prompt/reply exports.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No network calls, no API keys, no model dependency.
 
@@ -147,6 +173,7 @@ python -m unittest discover -s tests
 - Collect larger real-world prompt corpora with privacy filtering.
 - Compare multiple model tokenizers, not just one encoding.
 - Collect larger real-world reply corpora with privacy filtering.
+- Improve raw-reply field extraction for paired turn benchmarks.
 - Integrate RepoMori pack and snapshot references into compact intents.
 - Measure task success as well as token savings.
 

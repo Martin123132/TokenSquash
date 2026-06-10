@@ -24,6 +24,18 @@ from .metrics import (
     load_prompts,
 )
 from .reply import decode_reply, encode_reply, parse_reply_wire
+from .turns import (
+    benchmark_turns,
+    format_turn_benchmark_markdown,
+    format_turn_split_markdown,
+    format_turn_stats_markdown,
+    format_turn_validation_markdown,
+    load_turn_records,
+    redact_turn_corpus,
+    split_turn_corpus,
+    turn_stats,
+    validate_turn_corpus,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -69,6 +81,38 @@ def main(argv: list[str] | None = None) -> int:
     corpus_redact.add_argument("corpus", type=Path)
     corpus_redact.add_argument("--out", type=Path, required=True)
     corpus_redact.add_argument("--json", action="store_true")
+
+    turns = sub.add_parser("turns", help="Inspect, redact, split, and benchmark prompt/reply turn corpora.")
+    turns_sub = turns.add_subparsers(dest="turns_command", required=True)
+
+    turns_stats_cmd = turns_sub.add_parser("stats", help="Show prompt/reply turn corpus stats.")
+    turns_stats_cmd.add_argument("corpus", type=Path)
+    turns_stats_cmd.add_argument("--json", action="store_true")
+
+    turns_validate = turns_sub.add_parser("validate", help="Validate turn corpus shape and privacy findings.")
+    turns_validate.add_argument("corpus", type=Path)
+    turns_validate.add_argument("--json", action="store_true")
+
+    turns_redact = turns_sub.add_parser("redact", help="Write a redacted copy of a turn corpus.")
+    turns_redact.add_argument("corpus", type=Path)
+    turns_redact.add_argument("--out", type=Path, required=True)
+    turns_redact.add_argument("--json", action="store_true")
+
+    turns_split = turns_sub.add_parser("split", help="Split turns into prompt and reply corpora.")
+    turns_split.add_argument("corpus", type=Path)
+    turns_split.add_argument("--prompts-out", type=Path, required=True)
+    turns_split.add_argument("--replies-out", type=Path, required=True)
+    turns_split.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_split.add_argument("--json", action="store_true")
+
+    turns_bench = turns_sub.add_parser("bench", help="Benchmark prompt and reply savings from one turn corpus.")
+    turns_bench.add_argument("corpus", type=Path)
+    turns_bench.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
+    turns_bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_bench.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
+    turns_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
     reply = sub.add_parser("reply", help="Encode and decode compact agent replies.")
     reply_sub = reply.add_subparsers(dest="reply_command", required=True)
@@ -167,6 +211,61 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(f"wrote {report['output']} with {report['redaction_count']} redactions\n", end="")
                 return 0
+
+        if args.command == "turns":
+            if args.turns_command == "stats":
+                report = turn_stats(args.corpus)
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(format_turn_stats_markdown(report), end="")
+                return 0
+            if args.turns_command == "validate":
+                report = validate_turn_corpus(args.corpus)
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(format_turn_validation_markdown(report), end="")
+                return 0 if report["status"] in {"pass", "warn"} else 1
+            if args.turns_command == "redact":
+                report = redact_turn_corpus(args.corpus, args.out)
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(f"wrote {report['output']} with {report['redaction_count']} redactions\n", end="")
+                return 0
+            if args.turns_command == "split":
+                report = split_turn_corpus(
+                    args.corpus,
+                    args.prompts_out,
+                    args.replies_out,
+                    guess_reply_fields=not args.no_guess,
+                )
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(format_turn_split_markdown(report), end="")
+                return 0
+            if args.turns_command == "bench":
+                records = load_turn_records(args.corpus)
+                report = benchmark_turns(
+                    records,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    adaptive=not args.no_adaptive,
+                    source=str(args.corpus),
+                    guess_reply_fields=not args.no_guess,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_benchmark_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "empty"} else 1
 
         if args.command == "reply":
             if args.reply_command == "encode":

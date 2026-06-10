@@ -25,6 +25,11 @@ jobs:
           python -m tokensquash reply decode "tr1 d compact reply added f=tokensquash/reply.py v=unit tests pass r=none"
       - name: Run reply benchmark
         run: python -m tokensquash reply bench examples/agent-replies.jsonl
+      - name: Run turn corpus workflow
+        run: |
+          python -m tokensquash turns validate examples/real-turns.template.jsonl
+          python -m tokensquash turns bench examples/real-turns.template.jsonl
+          python -m tokensquash turns split examples/real-turns.template.jsonl --prompts-out /tmp/tokensquash-prompts.jsonl --replies-out /tmp/tokensquash-replies.jsonl
       - name: Validate messy corpus
         run: python -m tokensquash corpus validate examples/messy-coding-prompts.jsonl
       - name: Show messy corpus stats
@@ -49,3 +54,5 @@ jobs:
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer reply benchmark
         run: python -m tokensquash reply bench examples/agent-replies.jsonl --counter tiktoken:cl100k_base
+      - name: Run exact tokenizer turn benchmark
+        run: python -m tokensquash turns bench examples/real-turns.template.jsonl --counter tiktoken:cl100k_base --target 0

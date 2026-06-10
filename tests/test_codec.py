@@ -16,6 +16,13 @@ from tokensquash.metrics import (
     load_reply_records,
 )
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
+from tokensquash.turns import (
+    benchmark_turns,
+    load_turn_records,
+    redact_turn_corpus,
+    split_turn_corpus,
+    validate_turn_corpus,
+)
 
 
 class TokenSquashCodecTests(unittest.TestCase):
@@ -309,6 +316,64 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(wire.status, "blocked")
         self.assertEqual(wire.summary, "need a private prompt export")
         self.assertEqual(wire.next_steps, ("add local corpus",))
+
+    def test_load_and_validate_turn_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"t1","prompt":"fix login","reply":"Done. Contact dev@example.com for details."}\n',
+                encoding="utf-8",
+            )
+
+            records = load_turn_records(path)
+            report = validate_turn_corpus(path)
+
+            self.assertEqual(records[0]["prompt"], "fix login")
+            self.assertEqual(records[0]["reply_text"], "Done. Contact dev@example.com for details.")
+            self.assertEqual(report["status"], "warn")
+            self.assertEqual(report["privacy"]["findings"][0]["code"], "email")
+
+    def test_redact_and_split_turn_corpus(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "turns.jsonl"
+            redacted = Path(tmp) / "turns.redacted.jsonl"
+            prompts = Path(tmp) / "prompts.jsonl"
+            replies = Path(tmp) / "replies.jsonl"
+            src.write_text(
+                '{"id":"t1","prompt":"fix login for dev@example.com","reply":"Done. `python -m unittest discover -s tests` passed. api_key=secret123"}\n',
+                encoding="utf-8",
+            )
+
+            redact_report = redact_turn_corpus(src, redacted)
+            split_report = split_turn_corpus(redacted, prompts, replies)
+            reply_payload = json.loads(replies.read_text(encoding="utf-8").splitlines()[0])
+
+            self.assertEqual(redact_report["status"], "written")
+            self.assertGreaterEqual(redact_report["redaction_count"], 2)
+            self.assertEqual(split_report["turns"], 1)
+            self.assertIn("[REDACTED_EMAIL]", prompts.read_text(encoding="utf-8"))
+            self.assertIn("python -m unittest discover -s tests", reply_payload["commands"])
+
+    def test_turn_benchmark_combines_prompt_and_reply(self) -> None:
+        records = [
+            {
+                "id": "t1",
+                "prompt": "please fix the login bug, keep the diff small, run tests, and summarize files changed",
+                "reply_text": (
+                    "Done. I fixed the login bug in src/auth.py and verified it with "
+                    "`python -m unittest discover -s tests`. Risks: none."
+                ),
+                "reply_fields": {},
+            }
+        ]
+
+        report = benchmark_turns(records, target_savings_pct=0.0)
+
+        self.assertEqual(report["schema_version"], "tokensquash.turns.bench.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["summary"]["turn_count"], 1)
+        self.assertIn("prompt_report", report)
+        self.assertIn("reply_report", report)
 
 
 if __name__ == "__main__":

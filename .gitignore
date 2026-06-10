@@ -11,4 +11,7 @@ build/
 *.log
 prompts/
 private-prompts/
+turns/
+private-turns/
 *.redacted.jsonl
+*.redacted-turns.jsonl
