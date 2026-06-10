@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     bench.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
     args = parser.parse_args(argv)
@@ -57,11 +58,20 @@ def main(argv: list[str] | None = None) -> int:
                 counter=args.counter,
                 target_savings_pct=args.target,
                 adaptive=not args.no_adaptive,
+                source=str(args.corpus),
             )
+            output = (
+                json.dumps(report, indent=2) + "\n"
+                if args.json
+                else format_benchmark_markdown(report)
+            )
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
             if args.json:
-                print(json.dumps(report, indent=2))
+                print(output, end="")
             else:
-                print(format_benchmark_markdown(report), end="")
+                print(output, end="")
             return 0 if report["status"] in {"pass", "empty"} else 1
     except Exception as exc:
         print(f"tokensquash: error: {exc}", file=sys.stderr)

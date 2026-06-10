@@ -35,7 +35,9 @@ python -m tokensquash decode 'ts1 f "login bug" c=sd v=t r=m,f'
 
 ```powershell
 python -m tokensquash bench examples\coding-prompts.jsonl
+python -m tokensquash bench examples\messy-coding-prompts.jsonl
 python -m tokensquash bench examples\coding-prompts.jsonl --json
+python -m tokensquash bench examples\messy-coding-prompts.jsonl --json --out benchmarks\messy-heuristic.json
 ```
 
 The default counter is dependency-free and approximate. It is meant for quick
@@ -46,12 +48,21 @@ For an exact tokenizer backend when `tiktoken` is installed:
 
 ```powershell
 python -m pip install -e ".[tokenizer]"
-python -m tokensquash bench examples\coding-prompts.jsonl --counter tiktoken:cl100k_base
+python -m tokensquash bench examples\messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
 ```
 
 Benchmarks use adaptive mode by default. If the compact wire format is longer
 than the original prompt, TokenSquash counts that row as pass-through rather
 than pretending every prompt should be encoded.
+
+Reports include both raw wire savings and adaptive savings:
+
+- Raw wire savings show whether `ts1` is shorter before any safety policy.
+- Adaptive savings show what happens when the sidecar refuses encodings that
+  would cost more tokens than the original text.
+
+The current corpora are synthetic starter corpora. They are useful for regression
+testing, but they are not proof of production-wide savings.
 
 ## Install For Local Development
 
@@ -66,7 +77,16 @@ python -m unittest discover -s tests
 - Deterministic human-request encoder for common coding workflows.
 - Decoder back into readable task text.
 - Local benchmark reports for original versus compact/adaptive prompts.
+- Optional exact-tokenizer benchmarks through `tiktoken`.
 - No network calls, no API keys, no model dependency.
+
+## Future Work
+
+- Collect larger real-world prompt corpora with privacy filtering.
+- Compare multiple model tokenizers, not just one encoding.
+- Add compact reply schemas for agent summaries and verification results.
+- Integrate RepoMori pack and snapshot references into compact intents.
+- Measure task success as well as token savings.
 
 ## Design Rule
 

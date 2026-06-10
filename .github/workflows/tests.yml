@@ -19,3 +19,17 @@ jobs:
         run: python -m unittest discover -s tests
       - name: Run sample benchmark
         run: python -m tokensquash bench examples/coding-prompts.jsonl
+      - name: Run messy benchmark
+        run: python -m tokensquash bench examples/messy-coding-prompts.jsonl
+
+  exact-tokenizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install tokenizer extra
+        run: python -m pip install -e ".[tokenizer]"
+      - name: Run exact tokenizer benchmark
+        run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base

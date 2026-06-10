@@ -1,0 +1,72 @@
+{"id":"m001","text":"fix login"}
+{"id":"m002","text":"run tests"}
+{"id":"m003","text":"review this"}
+{"id":"m004","text":"Please fix the login button staying disabled after failed auth, keep the diff small, run tests, and summarize files changed."}
+{"id":"m005","text":"Can you inspect the repo and find where storage is handled? I do not need code changes, just explain the relevant files."}
+{"id":"m006","text":"Add a CSV export button to src/components/ReportTable.tsx, match existing style, run the tests, and tell me what changed."}
+{"id":"m007","text":"The checkout page flashes a blank screen after applying a coupon. Fix it with the smallest safe patch and do not refactor unrelated code."}
+{"id":"m008","text":"Update README.md for the new --json flag. Keep wording concise and include one powershell example."}
+{"id":"m009","text":"Refactor duplicated validation logic in tokensquash/codec.py without adding dependencies, run lint, and give me a short summary."}
+{"id":"m010","text":"Find the API retry code and explain how it behaves when the server returns 429."}
+{"id":"m011","text":"Please build a tiny repro test for the cache expiry bug, keep the public API backwards compatible, and run the unit tests."}
+{"id":"m012","text":"Audit the billing webhook handler for obvious edge cases. Do not change code yet; return risks and the files you inspected."}
+{"id":"m013","text":"Add type hints to the public helper functions in src/utils/date.ts, run typecheck, and avoid changing runtime behavior."}
+{"id":"m014","text":"The navbar overlaps content on mobile. Fix it, match existing CSS patterns, and tell me which files changed."}
+{"id":"m015","text":"plz check why npm test is failing and make the smallest fix you can"}
+{"id":"m016","text":"Make the settings modal close on Escape, add coverage if there is an obvious test place, run tests, summarize."}
+{"id":"m017","text":"Where is the sqlite connection created? I want the answer with paths, not a patch."}
+{"id":"m018","text":"Fix failing lint in src/api/client.ts. No new dependencies. Return the commands you ran."}
+{"id":"m019","text":"Please implement dark mode persistence using localStorage, keep the UI style consistent, run tests and typecheck."}
+{"id":"m020","text":"The docs mention repomori but this repo is TokenSquash now. Update the docs and keep the wording short."}
+{"id":"m021","text":"Can you compare the current benchmark output with the old one and tell me if savings improved?"}
+{"id":"m022","text":"Investigate why the CLI exits 0 when the benchmark misses the target. Fix if confirmed, add a test, run tests."}
+{"id":"m023","text":"Add a --out option to bench so it can write the JSON report to disk, and document it in the README."}
+{"id":"m024","text":"Review the parser for injection or malformed input problems. Return risks only; do not patch unless it is clearly broken."}
+{"id":"m025","text":"The wire format is a bit too verbose. Try to reduce it, but preserve decode round-trip tests."}
+{"id":"m026","text":"Fix Windows path handling for C:\\Users\\me\\repo\\src\\app.py in the path extractor and run tests."}
+{"id":"m027","text":"Add JSONL corpus validation with useful line numbers. Keep it dependency free and summarize files changed."}
+{"id":"m028","text":"Please look at examples/coding-prompts.jsonl and add more realistic prompts, including short ones that should pass through."}
+{"id":"m029","text":"Can the benchmark report raw wire savings as well as adaptive savings? Add that and update tests."}
+{"id":"m030","text":"I need a GitHub Actions job that installs the tokenizer extra and runs tiktoken:cl100k_base on the messy corpus."}
+{"id":"m031","text":"Explain the difference between heuristic, char4, and tiktoken counters in plain language."}
+{"id":"m032","text":"Fix the failing test_benchmark_reports_savings without relaxing the assertion too much."}
+{"id":"m033","text":"Add support for return=risks in the compact protocol and make sure decode says risks or caveats."}
+{"id":"m034","text":"Review README.md for claims that sound too strong. Tone it down and keep the project honest."}
+{"id":"m035","text":"Find every place where target_savings_pct is used and explain the pass/fail behavior."}
+{"id":"m036","text":"Make parse_wire accept unquoted query words after the op, then add a regression test."}
+{"id":"m037","text":"Please build a benchmark artifact under artifacts/benchmarks and include both markdown and json output."}
+{"id":"m038","text":"Run the sample benchmark using the exact tokenizer if tiktoken is installed; otherwise tell me what is missing."}
+{"id":"m039","text":"Fix docs typo in the install section, no code changes needed."}
+{"id":"m040","text":"Review the whole repo and suggest the next three experiments, with risks and expected token impact."}
+{"id":"m041","text":"Add a compact reply schema for agent results: changed files, tests run, summary, risks."}
+{"id":"m042","text":"Implement decode-reply for the compact reply schema, add tests, and document examples."}
+{"id":"m043","text":"The CLI should print errors to stderr and return 2 on invalid input. Check that behavior and add coverage."}
+{"id":"m044","text":"Can you make the benchmark rows include the selected operation, constraints, verification, and returns?"}
+{"id":"m045","text":"Fix the operation detector so 'do not refactor' does not classify the task as refactor."}
+{"id":"m046","text":"Add support for 'no deps' and 'avoid dependencies' phrases in the constraint extractor."}
+{"id":"m047","text":"Please inspect the compact query builder. It leaves filler words in some rows; trim them without losing meaning."}
+{"id":"m048","text":"Run compileall over the package and tests, then summarize whether anything failed."}
+{"id":"m049","text":"Where should RepoMori integrate with TokenSquash? Give me a small architecture proposal, no code."}
+{"id":"m050","text":"Make the README first paragraph clearer for someone who has never heard of token compression."}
+{"id":"m051","text":"Add a license placeholder or explain that licensing is undecided. Do not invent legal text."}
+{"id":"m052","text":"Review pyproject.toml metadata and add missing project urls if appropriate."}
+{"id":"m053","text":"The exact tokenizer benchmark is slower in CI. Cache pip if easy, but keep the workflow simple."}
+{"id":"m054","text":"Add tests for JSONL rows using 'prompt' instead of 'text' and for bad rows missing both keys."}
+{"id":"m055","text":"Fix path extraction for src/App.test.tsx and package-lock.json, then run tests."}
+{"id":"m056","text":"Can you add a corpus stats command that counts prompts, average length, and shortest/longest rows?"}
+{"id":"m057","text":"The adaptive benchmark should count pass-through rows separately. Add that metric and docs."}
+{"id":"m058","text":"Please verify the GitHub Actions run on the latest push and tell me if it is green."}
+{"id":"m059","text":"Update docs to say the current corpus is synthetic and not proof of production savings."}
+{"id":"m060","text":"Try a benchmark with --no-adaptive and compare against adaptive mode. Return the difference."}
+{"id":"m061","text":"Fix any formatting issues you see in metrics.py, keep the change small, run tests."}
+{"id":"m062","text":"Add a future work section for real-world prompt collection, privacy filtering, and model tokenizer comparisons."}
+{"id":"m063","text":"Please create a minimal MCP tool design for encode and bench. No implementation yet."}
+{"id":"m064","text":"Add a failing test first for 'smallest possible patch' mapping to small_diff, then make it pass."}
+{"id":"m065","text":"The query phrase 'what changed?' should probably return op=query, not task. Check and fix if needed."}
+{"id":"m066","text":"Can you make the benchmark markdown table include wire tokens as a separate column?"}
+{"id":"m067","text":"Inspect tokensquash/__init__.py and ensure the public API exports the useful functions only."}
+{"id":"m068","text":"Add support for reading plain text prompt files separated by blank lines; test it."}
+{"id":"m069","text":"Run all local checks and push the branch if everything passes."}
+{"id":"m070","text":"Please do a code review of this repo and lead with bugs, not a summary."}
+{"id":"m071","text":"Find where the CLI joins positional arguments and explain any quoting caveats on PowerShell."}
+{"id":"m072","text":"Add docs for why base64 and binary-looking encodings can cost more tokens than plain compact text."}

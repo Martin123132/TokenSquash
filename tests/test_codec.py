@@ -62,6 +62,14 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["status"], "pass")
         self.assertGreater(report["summary"]["saved_tokens"], 0)
         self.assertGreater(report["summary"]["saved_pct"], 0.5)
+        self.assertIn("wire_saved_pct", report["summary"])
+
+    def test_benchmark_adaptive_passthrough(self) -> None:
+        report = benchmark_prompts(["ok"], target_savings_pct=0.0)
+
+        self.assertEqual(report["rows"][0]["mode"], "passthrough")
+        self.assertEqual(report["summary"]["passthroughs"], 1)
+        self.assertEqual(report["summary"]["saved_tokens"], 0)
 
     def test_load_jsonl_prompts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

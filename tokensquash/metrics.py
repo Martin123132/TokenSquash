@@ -43,6 +43,7 @@ def benchmark_prompts(
     counter: str = "heuristic",
     target_savings_pct: float = 0.5,
     adaptive: bool = True,
+    source: str | None = None,
 ) -> dict[str, Any]:
     """Benchmark original prompts against TokenSquash wire prompts."""
 
@@ -50,11 +51,17 @@ def benchmark_prompts(
     rows = []
     totals = {
         "original_tokens": 0,
+        "wire_tokens": 0,
         "squashed_tokens": 0,
+        "wire_saved_tokens": 0,
         "saved_tokens": 0,
         "wins": 0,
         "losses": 0,
         "ties": 0,
+        "wire_wins": 0,
+        "wire_losses": 0,
+        "wire_ties": 0,
+        "passthroughs": 0,
     }
 
     for index, prompt in enumerate(prompts, start=1):
@@ -68,11 +75,19 @@ def benchmark_prompts(
         mode = "compact"
         squashed_tokens = wire_tokens
         payload = wire
+        wire_saved_tokens = original_tokens - wire_tokens
         if adaptive and wire_tokens >= original_tokens:
             mode = "passthrough"
             squashed_tokens = original_tokens
             payload = text
+            totals["passthroughs"] += 1
         saved_tokens = original_tokens - squashed_tokens
+        if wire_saved_tokens > 0:
+            totals["wire_wins"] += 1
+        elif wire_saved_tokens < 0:
+            totals["wire_losses"] += 1
+        else:
+            totals["wire_ties"] += 1
         if saved_tokens > 0:
             totals["wins"] += 1
         elif saved_tokens < 0:
@@ -80,7 +95,9 @@ def benchmark_prompts(
         else:
             totals["ties"] += 1
         totals["original_tokens"] += original_tokens
+        totals["wire_tokens"] += wire_tokens
         totals["squashed_tokens"] += squashed_tokens
+        totals["wire_saved_tokens"] += wire_saved_tokens
         totals["saved_tokens"] += saved_tokens
         rows.append(
             {
@@ -93,6 +110,8 @@ def benchmark_prompts(
                 "original_tokens": original_tokens,
                 "wire_tokens": wire_tokens,
                 "squashed_tokens": squashed_tokens,
+                "wire_saved_tokens": wire_saved_tokens,
+                "wire_saved_pct": _pct(wire_saved_tokens, original_tokens),
                 "saved_tokens": saved_tokens,
                 "saved_pct": _pct(saved_tokens, original_tokens),
             }
@@ -100,6 +119,7 @@ def benchmark_prompts(
 
     total_original = totals["original_tokens"]
     saved_pct = _pct(totals["saved_tokens"], total_original)
+    wire_saved_pct = _pct(totals["wire_saved_tokens"], total_original)
     status = "pass" if saved_pct >= target_savings_pct else "miss"
     if total_original <= 0:
         status = "empty"
@@ -109,16 +129,24 @@ def benchmark_prompts(
         "status": status,
         "counter": counter,
         "adaptive": adaptive,
+        "source": source,
         "target_savings_pct": target_savings_pct,
         "summary": {
             "prompt_count": len(rows),
             "original_tokens": totals["original_tokens"],
+            "wire_tokens": totals["wire_tokens"],
             "squashed_tokens": totals["squashed_tokens"],
+            "wire_saved_tokens": totals["wire_saved_tokens"],
+            "wire_saved_pct": wire_saved_pct,
             "saved_tokens": totals["saved_tokens"],
             "saved_pct": saved_pct,
+            "wire_wins": totals["wire_wins"],
+            "wire_losses": totals["wire_losses"],
+            "wire_ties": totals["wire_ties"],
             "wins": totals["wins"],
             "losses": totals["losses"],
             "ties": totals["ties"],
+            "passthroughs": totals["passthroughs"],
             "elapsed_seconds": round(time.time() - started, 4),
         },
         "rows": rows,
@@ -156,23 +184,29 @@ def format_benchmark_markdown(report: dict[str, Any]) -> str:
         f"- Status: `{report.get('status')}`",
         f"- Counter: `{report.get('counter')}`",
         f"- Adaptive: `{report.get('adaptive')}`",
+        f"- Source: `{report.get('source') or 'inline'}`",
         f"- Target savings: `{report.get('target_savings_pct')}%`",
         f"- Prompts: `{summary.get('prompt_count', 0)}`",
         f"- Original tokens: `{summary.get('original_tokens', 0)}`",
+        f"- Raw wire tokens: `{summary.get('wire_tokens', 0)}`",
         f"- Squashed tokens: `{summary.get('squashed_tokens', 0)}`",
+        f"- Raw wire saved: `{summary.get('wire_saved_tokens', 0)} ({summary.get('wire_saved_pct', 0.0)}%)`",
         f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
         f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
-        f"- Wins/losses/ties: `{summary.get('wins', 0)}/{summary.get('losses', 0)}/{summary.get('ties', 0)}`",
+        f"- Raw wire wins/losses/ties: `{summary.get('wire_wins', 0)}/{summary.get('wire_losses', 0)}/{summary.get('wire_ties', 0)}`",
+        f"- Adaptive wins/losses/ties: `{summary.get('wins', 0)}/{summary.get('losses', 0)}/{summary.get('ties', 0)}`",
+        f"- Pass-through rows: `{summary.get('passthroughs', 0)}`",
         "",
         "## Rows",
         "",
-        "| # | Mode | Original | Squashed | Saved |",
-        "|---:|---|---:|---:|---:|",
+        "| # | Mode | Original | Wire | Squashed | Saved |",
+        "|---:|---|---:|---:|---:|---:|",
     ]
     for row in report.get("rows", []):
         lines.append(
             f"| {row.get('index')} | {row.get('mode')} | {row.get('original_tokens')} | "
-            f"{row.get('squashed_tokens')} | {row.get('saved_tokens')} ({row.get('saved_pct')}%) |"
+            f"{row.get('wire_tokens')} | {row.get('squashed_tokens')} | "
+            f"{row.get('saved_tokens')} ({row.get('saved_pct')}%) |"
         )
     return "\n".join(lines).rstrip() + "\n"
 
