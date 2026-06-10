@@ -23,6 +23,8 @@ jobs:
         run: |
           python -m tokensquash reply encode --summary "added compact reply codec" --file tokensquash/reply.py --verify "unit tests pass" --risk none
           python -m tokensquash reply decode "tr1 d compact reply added f=tokensquash/reply.py v=unit tests pass r=none"
+      - name: Run reply benchmark
+        run: python -m tokensquash reply bench examples/agent-replies.jsonl
       - name: Validate messy corpus
         run: python -m tokensquash corpus validate examples/messy-coding-prompts.jsonl
       - name: Show messy corpus stats
@@ -31,6 +33,8 @@ jobs:
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl
       - name: Compare committed exact-tokenizer baselines
         run: python -m tokensquash compare benchmarks/messy-cl100k.json benchmarks/messy-o200k.json
+      - name: Compare committed reply baselines
+        run: python -m tokensquash compare benchmarks/replies-cl100k.json benchmarks/replies-o200k.json
 
   exact-tokenizer:
     runs-on: ubuntu-latest
@@ -43,3 +47,5 @@ jobs:
         run: python -m pip install -e ".[tokenizer]"
       - name: Run exact tokenizer benchmark
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
+      - name: Run exact tokenizer reply benchmark
+        run: python -m tokensquash reply bench examples/agent-replies.jsonl --counter tiktoken:cl100k_base

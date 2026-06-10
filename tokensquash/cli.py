@@ -14,10 +14,13 @@ from .corpus import (
     validate_corpus,
 )
 from .metrics import (
+    benchmark_replies,
     benchmark_prompts,
     compare_benchmarks,
     format_benchmark_compare_markdown,
     format_benchmark_markdown,
+    format_reply_benchmark_markdown,
+    load_reply_records,
     load_prompts,
 )
 from .reply import decode_reply, encode_reply, parse_reply_wire
@@ -83,6 +86,14 @@ def main(argv: list[str] | None = None) -> int:
     reply_decode = reply_sub.add_parser("decode", help="Decode reply wire text into readable result text.")
     reply_decode.add_argument("wire", nargs="+", help="TokenSquash reply wire string or reply JSON.")
     reply_decode.add_argument("--json", action="store_true", help="Print parsed reply JSON.")
+
+    reply_bench = reply_sub.add_parser("bench", help="Benchmark a structured reply corpus against reply wire format.")
+    reply_bench.add_argument("corpus", type=Path, help="JSONL or JSON reply corpus.")
+    reply_bench.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    reply_bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
+    reply_bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    reply_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
+    reply_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
     args = parser.parse_args(argv)
 
@@ -180,6 +191,25 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(decode_reply(result))
                 return 0
+            if args.reply_command == "bench":
+                records = load_reply_records(args.corpus)
+                report = benchmark_replies(
+                    records,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    adaptive=not args.no_adaptive,
+                    source=str(args.corpus),
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_reply_benchmark_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "empty"} else 1
     except Exception as exc:
         print(f"tokensquash: error: {exc}", file=sys.stderr)
         return 2

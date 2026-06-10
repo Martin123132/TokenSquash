@@ -50,12 +50,12 @@ class AgentReply:
         parts = [self.version, _wire_atom(_encode_code(self.status, STATUS_CODES))]
         if self.summary:
             parts.append(_wire_value(self.summary))
-        parts.extend(_repeated_field("files", self.files))
-        parts.extend(_repeated_field("verification", self.verification))
-        parts.extend(_repeated_field("commands", self.commands))
-        parts.extend(_repeated_field("risks", self.risks))
-        parts.extend(_repeated_field("next_steps", self.next_steps))
-        parts.extend(_repeated_field("warnings", self.warnings))
+        parts.extend(_field_parts("files", self.files))
+        parts.extend(_field_parts("verification", self.verification))
+        parts.extend(_field_parts("commands", self.commands))
+        parts.extend(_field_parts("risks", self.risks))
+        parts.extend(_field_parts("next_steps", self.next_steps))
+        parts.extend(_field_parts("warnings", self.warnings))
         return " ".join(parts)
 
     def to_dict(self) -> dict[str, Any]:
@@ -152,12 +152,12 @@ def parse_reply_wire(wire: str) -> AgentReply:
     return AgentReply(
         status=_normalize_status(status),
         summary=_clean_text(" ".join(summary_parts)),
-        files=tuple(_unique(values["files"])),
-        verification=tuple(_unique(values["verification"])),
-        commands=tuple(_unique(values["commands"])),
-        risks=tuple(_unique(values["risks"])),
-        next_steps=tuple(_unique(values["next_steps"])),
-        warnings=tuple(_unique(values["warnings"])),
+        files=_split_field_values(values["files"]),
+        verification=_split_field_values(values["verification"]),
+        commands=_split_field_values(values["commands"]),
+        risks=_split_field_values(values["risks"]),
+        next_steps=_split_field_values(values["next_steps"]),
+        warnings=_split_field_values(values["warnings"]),
     )
 
 
@@ -208,9 +208,19 @@ def decode_reply(value: AgentReply | str | dict[str, Any]) -> str:
     return " ".join(lines)
 
 
-def _repeated_field(name: str, values: tuple[str, ...]) -> list[str]:
+def _field_parts(name: str, values: tuple[str, ...]) -> list[str]:
     key = FIELD_CODES[name]
-    return [f"{key}={_wire_value(value)}" for value in values if value]
+    clean_values = [value for value in values if value]
+    if len(clean_values) > 1 and all("," not in value for value in clean_values):
+        return [f"{key}={','.join(_wire_value(value) for value in clean_values)}"]
+    return [f"{key}={_wire_value(value)}" for value in clean_values]
+
+
+def _split_field_values(values: Iterable[str]) -> tuple[str, ...]:
+    items = []
+    for value in values:
+        items.extend(part.strip() for part in value.split(","))
+    return _unique(items)
 
 
 def _wire_value(value: str) -> str:

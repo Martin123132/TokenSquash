@@ -43,13 +43,27 @@ python -m tokensquash reply encode --summary "added compact reply codec" --file 
 Output:
 
 ```text
-tr1 d "added compact reply codec" f=tokensquash/reply.py f=tokensquash/cli.py v="unit tests pass" c="python -m unittest discover -s tests" r=none
+tr1 d "added compact reply codec" f=tokensquash/reply.py,tokensquash/cli.py v="unit tests pass" c="python -m unittest discover -s tests" r=none
 ```
 
 Decode it back:
 
 ```powershell
 python -m tokensquash reply decode 'tr1 d "added compact reply codec" f=tokensquash/reply.py v="unit tests pass" r=none'
+```
+
+Benchmark structured reply records:
+
+```powershell
+python -m tokensquash reply bench examples\agent-replies.jsonl
+python -m tokensquash reply bench examples\agent-replies.jsonl --counter tiktoken:cl100k_base
+```
+
+Reply JSONL rows can include structured fields plus the original human reply
+text used as the benchmark baseline:
+
+```json
+{"status":"done","summary":"added compact reply codec","files":["tokensquash/reply.py"],"verification":["unit tests pass"],"text":"Done. I added the compact reply codec and verified it with unit tests."}
 ```
 
 ## Benchmark
@@ -124,7 +138,7 @@ python -m unittest discover -s tests
 - Compact coding-agent reply format: `tr1`.
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
-- Local benchmark reports for original versus compact/adaptive prompts.
+- Local benchmark reports for original versus compact/adaptive prompts and replies.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No network calls, no API keys, no model dependency.
 
@@ -132,7 +146,7 @@ python -m unittest discover -s tests
 
 - Collect larger real-world prompt corpora with privacy filtering.
 - Compare multiple model tokenizers, not just one encoding.
-- Add benchmark corpora for compact replies and verification results.
+- Collect larger real-world reply corpora with privacy filtering.
 - Integrate RepoMori pack and snapshot references into compact intents.
 - Measure task success as well as token savings.
 

@@ -7,7 +7,14 @@ from pathlib import Path
 
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
-from tokensquash.metrics import benchmark_prompts, compare_benchmarks, count_tokens, load_prompts
+from tokensquash.metrics import (
+    benchmark_prompts,
+    benchmark_replies,
+    compare_benchmarks,
+    count_tokens,
+    load_prompts,
+    load_reply_records,
+)
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 
 
@@ -74,12 +81,49 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["summary"]["passthroughs"], 1)
         self.assertEqual(report["summary"]["saved_tokens"], 0)
 
+    def test_reply_benchmark_reports_savings(self) -> None:
+        records = [
+            {
+                "status": "done",
+                "summary": "added compact reply codec",
+                "files": ["tokensquash/reply.py", "tokensquash/cli.py"],
+                "verification": ["unit tests pass"],
+                "commands": ["python -m unittest discover -s tests"],
+                "risks": ["none"],
+                "text": (
+                    "Done. I added the compact reply codec in tokensquash/reply.py and wired it into "
+                    "tokensquash/cli.py. Verification passed with python -m unittest discover -s tests. "
+                    "Risks: none."
+                ),
+            }
+        ]
+
+        report = benchmark_replies(records, target_savings_pct=0.5)
+
+        self.assertEqual(report["schema_version"], "tokensquash.reply.bench.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertGreater(report["summary"]["saved_tokens"], 0)
+        self.assertGreater(report["summary"]["saved_pct"], 0.5)
+
     def test_load_jsonl_prompts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "prompts.jsonl"
             path.write_text('{"text":"one"}\n{"prompt":"two"}\n', encoding="utf-8")
 
             self.assertEqual(load_prompts(path), ["one", "two"])
+
+    def test_load_jsonl_reply_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "replies.jsonl"
+            path.write_text(
+                '{"status":"done","summary":"added tests","text":"Done. I added tests and verified them."}\n',
+                encoding="utf-8",
+            )
+
+            records = load_reply_records(path)
+
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["summary"], "added tests")
 
     def test_corpus_stats_and_validation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -170,6 +214,51 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "improved")
             self.assertEqual(report["delta"]["saved_pct"], 1.5)
             self.assertEqual(report["delta"]["saved_tokens"], 5)
+
+    def test_compare_accepts_reply_benchmarks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base-replies.json"
+            target = Path(tmp) / "target-replies.json"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.reply.bench.v1",
+                        "counter": "heuristic",
+                        "adaptive": True,
+                        "summary": {
+                            "reply_count": 2,
+                            "saved_pct": 1.0,
+                            "wire_saved_pct": -2.0,
+                            "saved_tokens": 3,
+                            "passthroughs": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.reply.bench.v1",
+                        "counter": "heuristic",
+                        "adaptive": True,
+                        "summary": {
+                            "reply_count": 2,
+                            "saved_pct": 1.5,
+                            "wire_saved_pct": -1.0,
+                            "saved_tokens": 5,
+                            "passthroughs": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = compare_benchmarks(base, target)
+
+            self.assertEqual(report["status"], "improved")
+            self.assertEqual(report["base"]["item_count"], 2)
+            self.assertEqual(report["delta"]["saved_tokens"], 2)
 
     def test_reply_wire_round_trip(self) -> None:
         reply = encode_reply(
