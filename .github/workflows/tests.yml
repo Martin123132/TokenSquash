@@ -19,8 +19,14 @@ jobs:
         run: python -m unittest discover -s tests
       - name: Run sample benchmark
         run: python -m tokensquash bench examples/coding-prompts.jsonl
+      - name: Validate messy corpus
+        run: python -m tokensquash corpus validate examples/messy-coding-prompts.jsonl
+      - name: Show messy corpus stats
+        run: python -m tokensquash corpus stats examples/messy-coding-prompts.jsonl
       - name: Run messy benchmark
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl
+      - name: Compare committed exact-tokenizer baselines
+        run: python -m tokensquash compare benchmarks/messy-cl100k.json benchmarks/messy-o200k.json
 
   exact-tokenizer:
     runs-on: ubuntu-latest

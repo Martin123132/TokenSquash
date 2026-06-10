@@ -9,3 +9,6 @@ venv/
 dist/
 build/
 *.log
+prompts/
+private-prompts/
+*.redacted.jsonl

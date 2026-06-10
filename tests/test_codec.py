@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
-from tokensquash.metrics import benchmark_prompts, count_tokens, load_prompts
+from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
+from tokensquash.metrics import benchmark_prompts, compare_benchmarks, count_tokens, load_prompts
 
 
 class TokenSquashCodecTests(unittest.TestCase):
@@ -77,6 +79,96 @@ class TokenSquashCodecTests(unittest.TestCase):
             path.write_text('{"text":"one"}\n{"prompt":"two"}\n', encoding="utf-8")
 
             self.assertEqual(load_prompts(path), ["one", "two"])
+
+    def test_corpus_stats_and_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prompts.jsonl"
+            path.write_text(
+                '{"id":"a","text":"fix login"}\n'
+                '{"id":"b","prompt":"email me at dev@example.com"}\n',
+                encoding="utf-8",
+            )
+
+            stats = corpus_stats(path)
+            validation = validate_corpus(path)
+
+            self.assertEqual(stats["summary"]["prompt_count"], 2)
+            self.assertEqual(validation["status"], "warn")
+            self.assertEqual(validation["summary"]["privacy_finding_count"], 1)
+            self.assertEqual(validation["privacy"]["findings"][0]["code"], "email")
+
+    def test_validate_reports_line_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad.jsonl"
+            path.write_text('{"id":"a","text":"ok"}\n{"id":"b"}\n', encoding="utf-8")
+
+            report = validate_corpus(path)
+
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["errors"][0]["line"], 2)
+            self.assertEqual(report["errors"][0]["code"], "missing_prompt")
+
+    def test_redact_corpus_writes_safe_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "prompts.jsonl"
+            out = Path(tmp) / "redacted.jsonl"
+            src.write_text(
+                '{"text":"contact dev@example.com with api_key=secret123"}\n',
+                encoding="utf-8",
+            )
+
+            report = redact_corpus(src, out)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+
+            self.assertEqual(report["status"], "written")
+            self.assertGreaterEqual(report["redaction_count"], 2)
+            self.assertIn("[REDACTED_EMAIL]", payload["text"])
+            self.assertIn("[REDACTED_SECRET]", payload["text"])
+
+    def test_compare_benchmarks_reports_delta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base.json"
+            target = Path(tmp) / "target.json"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.bench.v1",
+                        "counter": "heuristic",
+                        "adaptive": True,
+                        "summary": {
+                            "saved_pct": 1.0,
+                            "wire_saved_pct": 0.5,
+                            "saved_tokens": 10,
+                            "passthroughs": 2,
+                            "prompt_count": 5,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.bench.v1",
+                        "counter": "heuristic",
+                        "adaptive": True,
+                        "summary": {
+                            "saved_pct": 2.5,
+                            "wire_saved_pct": 1.5,
+                            "saved_tokens": 15,
+                            "passthroughs": 3,
+                            "prompt_count": 5,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = compare_benchmarks(base, target)
+
+            self.assertEqual(report["status"], "improved")
+            self.assertEqual(report["delta"]["saved_pct"], 1.5)
+            self.assertEqual(report["delta"]["saved_tokens"], 5)
 
 
 if __name__ == "__main__":

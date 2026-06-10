@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .codec import encode_intent
+from .corpus import load_prompt_records
 
 
 _WORD_OR_PUNCT_RE = re.compile(r"[A-Za-z0-9_/-]+|[^\w\s]", re.UNICODE)
@@ -154,26 +155,32 @@ def benchmark_prompts(
 
 
 def load_prompts(path: Path | str) -> list[str]:
-    source = Path(path)
-    if not source.exists():
-        raise FileNotFoundError(f"prompt corpus not found: {source}")
-    text = source.read_text(encoding="utf-8")
-    if source.suffix.lower() == ".jsonl":
-        prompts = []
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            if not line.strip():
-                continue
-            payload = json.loads(line)
-            if not isinstance(payload, dict):
-                raise ValueError(f"JSONL row {line_no} must be an object")
-            prompt = payload.get("text", payload.get("prompt"))
-            if not isinstance(prompt, str):
-                raise ValueError(f"JSONL row {line_no} must include text or prompt")
-            prompts.append(prompt)
-        return prompts
-    if "\n\n" in text:
-        return [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
-    return [line.strip() for line in text.splitlines() if line.strip()]
+    return [str(record["text"]) for record in load_prompt_records(path)]
+
+
+def compare_benchmarks(base: Path | str, target: Path | str) -> dict[str, Any]:
+    """Compare two benchmark JSON reports."""
+
+    base_report = _load_benchmark_report(base)
+    target_report = _load_benchmark_report(target)
+    base_summary = base_report.get("summary", {})
+    target_summary = target_report.get("summary", {})
+    saved_delta = float(target_summary.get("saved_pct", 0.0)) - float(base_summary.get("saved_pct", 0.0))
+    wire_delta = float(target_summary.get("wire_saved_pct", 0.0)) - float(base_summary.get("wire_saved_pct", 0.0))
+    token_delta = int(target_summary.get("saved_tokens", 0)) - int(base_summary.get("saved_tokens", 0))
+    status = "improved" if saved_delta > 0 else "regressed" if saved_delta < 0 else "same"
+    return {
+        "schema_version": "tokensquash.bench.compare.v1",
+        "status": status,
+        "base": _benchmark_identity(base, base_report),
+        "target": _benchmark_identity(target, target_report),
+        "delta": {
+            "saved_pct": round(saved_delta, 4),
+            "wire_saved_pct": round(wire_delta, 4),
+            "saved_tokens": token_delta,
+            "passthroughs": int(target_summary.get("passthroughs", 0)) - int(base_summary.get("passthroughs", 0)),
+        },
+    }
 
 
 def format_benchmark_markdown(report: dict[str, Any]) -> str:
@@ -211,6 +218,26 @@ def format_benchmark_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_benchmark_compare_markdown(report: dict[str, Any]) -> str:
+    delta = report.get("delta", {})
+    base = report.get("base", {})
+    target = report.get("target", {})
+    return "\n".join(
+        [
+            "# TokenSquash Benchmark Compare",
+            "",
+            f"- Status: `{report.get('status')}`",
+            f"- Base: `{base.get('path')}` saved=`{base.get('saved_pct')}%` raw=`{base.get('wire_saved_pct')}%`",
+            f"- Target: `{target.get('path')}` saved=`{target.get('saved_pct')}%` raw=`{target.get('wire_saved_pct')}%`",
+            f"- Saved percent delta: `{delta.get('saved_pct')}%`",
+            f"- Raw wire percent delta: `{delta.get('wire_saved_pct')}%`",
+            f"- Saved token delta: `{delta.get('saved_tokens')}`",
+            f"- Pass-through row delta: `{delta.get('passthroughs')}`",
+            "",
+        ]
+    )
+
+
 def _count_tiktoken(text: str, encoding_name: str) -> int:
     try:
         import tiktoken  # type: ignore[import-not-found]
@@ -224,3 +251,26 @@ def _pct(part: int | float, whole: int | float) -> float:
     if not whole:
         return 0.0
     return round((float(part) / float(whole)) * 100.0, 4)
+
+
+def _load_benchmark_report(path: Path | str) -> dict[str, Any]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != "tokensquash.bench.v1":
+        raise ValueError(f"Not a TokenSquash benchmark report: {source}")
+    return payload
+
+
+def _benchmark_identity(path: Path | str, report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("summary", {})
+    return {
+        "path": str(path),
+        "counter": report.get("counter"),
+        "adaptive": report.get("adaptive"),
+        "source": report.get("source"),
+        "prompt_count": summary.get("prompt_count"),
+        "saved_pct": summary.get("saved_pct"),
+        "wire_saved_pct": summary.get("wire_saved_pct"),
+        "saved_tokens": summary.get("saved_tokens"),
+        "passthroughs": summary.get("passthroughs"),
+    }

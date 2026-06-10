@@ -64,6 +64,32 @@ Reports include both raw wire savings and adaptive savings:
 The current corpora are synthetic starter corpora. They are useful for regression
 testing, but they are not proof of production-wide savings.
 
+## Real Prompt Workflow
+
+Use corpus commands before benchmarking real prompts:
+
+```powershell
+python -m tokensquash corpus validate prompts\real.jsonl
+python -m tokensquash corpus stats prompts\real.jsonl
+python -m tokensquash corpus redact prompts\real.jsonl --out prompts\real.redacted.jsonl
+python -m tokensquash bench prompts\real.redacted.jsonl --counter tiktoken:cl100k_base --json --out benchmarks\real-cl100k.json
+python -m tokensquash compare benchmarks\messy-cl100k.json benchmarks\real-cl100k.json
+```
+
+The `prompts/` and `private-prompts/` folders are ignored by Git so local real
+corpora do not get committed by accident.
+
+`corpus validate` flags malformed JSONL rows and common privacy risks such as
+email addresses, token-looking values, secret assignments, phone numbers, and
+user home paths. Redaction is a safety net, not a privacy guarantee; review the
+redacted file before sharing it.
+
+JSONL rows can use either `text` or `prompt`:
+
+```json
+{"id":"example-001","text":"fix the login bug, keep the diff small, run tests"}
+```
+
 ## Install For Local Development
 
 ```powershell
