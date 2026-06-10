@@ -31,6 +31,27 @@ Decode it back:
 python -m tokensquash decode 'ts1 f "login bug" c=sd v=t r=m,f'
 ```
 
+## Compact Replies
+
+`tr1` is the matching compact format for agent replies. It keeps routine result
+messages structured so the sidecar can turn them back into normal human text.
+
+```powershell
+python -m tokensquash reply encode --summary "added compact reply codec" --file tokensquash/reply.py --file tokensquash/cli.py --verify "unit tests pass" --command "python -m unittest discover -s tests" --risk none
+```
+
+Output:
+
+```text
+tr1 d "added compact reply codec" f=tokensquash/reply.py f=tokensquash/cli.py v="unit tests pass" c="python -m unittest discover -s tests" r=none
+```
+
+Decode it back:
+
+```powershell
+python -m tokensquash reply decode 'tr1 d "added compact reply codec" f=tokensquash/reply.py v="unit tests pass" r=none'
+```
+
 ## Benchmark
 
 ```powershell
@@ -100,8 +121,9 @@ python -m unittest discover -s tests
 ## Current Scope
 
 - Compact coding-agent intent format: `ts1`.
+- Compact coding-agent reply format: `tr1`.
 - Deterministic human-request encoder for common coding workflows.
-- Decoder back into readable task text.
+- Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No network calls, no API keys, no model dependency.
@@ -110,7 +132,7 @@ python -m unittest discover -s tests
 
 - Collect larger real-world prompt corpora with privacy filtering.
 - Compare multiple model tokenizers, not just one encoding.
-- Add compact reply schemas for agent summaries and verification results.
+- Add benchmark corpora for compact replies and verification results.
 - Integrate RepoMori pack and snapshot references into compact intents.
 - Measure task success as well as token savings.
 

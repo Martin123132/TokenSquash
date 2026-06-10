@@ -20,6 +20,7 @@ from .metrics import (
     format_benchmark_markdown,
     load_prompts,
 )
+from .reply import decode_reply, encode_reply, parse_reply_wire
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,6 +66,23 @@ def main(argv: list[str] | None = None) -> int:
     corpus_redact.add_argument("corpus", type=Path)
     corpus_redact.add_argument("--out", type=Path, required=True)
     corpus_redact.add_argument("--json", action="store_true")
+
+    reply = sub.add_parser("reply", help="Encode and decode compact agent replies.")
+    reply_sub = reply.add_subparsers(dest="reply_command", required=True)
+
+    reply_encode = reply_sub.add_parser("encode", help="Encode structured result fields into reply wire format.")
+    reply_encode.add_argument("--status", default="done", choices=("done", "partial", "blocked", "failed"))
+    reply_encode.add_argument("--summary", required=True, help="Short human-readable result summary.")
+    reply_encode.add_argument("--file", dest="files", action="append", default=[], help="Changed or relevant file.")
+    reply_encode.add_argument("--verify", dest="verification", action="append", default=[], help="Verification result.")
+    reply_encode.add_argument("--command", dest="commands", action="append", default=[], help="Command that was run.")
+    reply_encode.add_argument("--risk", dest="risks", action="append", default=[], help="Risk or caveat.")
+    reply_encode.add_argument("--next", dest="next_steps", action="append", default=[], help="Suggested next step.")
+    reply_encode.add_argument("--json", action="store_true", help="Print full reply JSON.")
+
+    reply_decode = reply_sub.add_parser("decode", help="Decode reply wire text into readable result text.")
+    reply_decode.add_argument("wire", nargs="+", help="TokenSquash reply wire string or reply JSON.")
+    reply_decode.add_argument("--json", action="store_true", help="Print parsed reply JSON.")
 
     args = parser.parse_args(argv)
 
@@ -137,6 +155,30 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(report, indent=2))
                 else:
                     print(f"wrote {report['output']} with {report['redaction_count']} redactions\n", end="")
+                return 0
+
+        if args.command == "reply":
+            if args.reply_command == "encode":
+                result = encode_reply(
+                    args.summary,
+                    status=args.status,
+                    files=args.files,
+                    verification=args.verification,
+                    commands=args.commands,
+                    risks=args.risks,
+                    next_steps=args.next_steps,
+                )
+                if args.json:
+                    print(json.dumps(result.to_dict(), indent=2))
+                else:
+                    print(result.to_wire())
+                return 0
+            if args.reply_command == "decode":
+                result = parse_reply_wire(" ".join(args.wire))
+                if args.json:
+                    print(json.dumps(result.to_dict(), indent=2))
+                else:
+                    print(decode_reply(result))
                 return 0
     except Exception as exc:
         print(f"tokensquash: error: {exc}", file=sys.stderr)

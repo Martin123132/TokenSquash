@@ -8,6 +8,7 @@ from pathlib import Path
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
 from tokensquash.metrics import benchmark_prompts, compare_benchmarks, count_tokens, load_prompts
+from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 
 
 class TokenSquashCodecTests(unittest.TestCase):
@@ -169,6 +170,56 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "improved")
             self.assertEqual(report["delta"]["saved_pct"], 1.5)
             self.assertEqual(report["delta"]["saved_tokens"], 5)
+
+    def test_reply_wire_round_trip(self) -> None:
+        reply = encode_reply(
+            "added compact reply codec",
+            files=["tokensquash/reply.py", "tokensquash/cli.py"],
+            verification=["unit tests pass"],
+            commands=["python -m unittest discover -s tests"],
+            risks=["none"],
+        )
+
+        wire = reply.to_wire()
+        parsed = parse_reply_wire(wire)
+
+        self.assertEqual(parsed.status, "done")
+        self.assertEqual(parsed.summary, "added compact reply codec")
+        self.assertEqual(parsed.files, ("tokensquash/reply.py", "tokensquash/cli.py"))
+        self.assertEqual(parsed.verification, ("unit tests pass",))
+        self.assertEqual(parsed.commands, ("python -m unittest discover -s tests",))
+        self.assertEqual(parsed.risks, ("none",))
+        self.assertEqual(parsed.to_wire(), wire)
+
+    def test_reply_decode_is_human_readable(self) -> None:
+        text = decode_reply('tr1 p "benchmark added" f=benchmarks/reply.json v="tests pass" n="collect real replies"')
+
+        self.assertIn("partially done", text)
+        self.assertIn("benchmark added", text)
+        self.assertIn("benchmarks/reply.json", text)
+        self.assertIn("collect real replies", text)
+
+    def test_reply_decode_allows_unquoted_field_words(self) -> None:
+        parsed = parse_reply_wire("tr1 d compact reply added f=tokensquash/reply.py v=unit tests pass r=none")
+
+        self.assertEqual(parsed.summary, "compact reply added")
+        self.assertEqual(parsed.verification, ("unit tests pass",))
+        self.assertEqual(parsed.risks, ("none",))
+
+    def test_reply_accepts_json(self) -> None:
+        wire = parse_reply_wire(
+            json.dumps(
+                {
+                    "status": "blocked",
+                    "summary": "need a private prompt export",
+                    "next_steps": ["add local corpus"],
+                }
+            )
+        )
+
+        self.assertEqual(wire.status, "blocked")
+        self.assertEqual(wire.summary, "need a private prompt export")
+        self.assertEqual(wire.next_steps, ("add local corpus",))
 
 
 if __name__ == "__main__":
