@@ -27,6 +27,7 @@ jobs:
         run: python -m tokensquash reply bench examples/agent-replies.jsonl
       - name: Run turn corpus workflow
         run: |
+          python -m tokensquash turns add --out /tmp/tokensquash-real.jsonl --prompt "fix login" --reply "Done. I fixed login and ran tests." --verify "unit tests pass"
           python -m tokensquash turns validate examples/real-turns.template.jsonl
           python -m tokensquash turns bench examples/real-turns.template.jsonl
           python -m tokensquash turns split examples/real-turns.template.jsonl --prompts-out /tmp/tokensquash-prompts.jsonl --replies-out /tmp/tokensquash-replies.jsonl

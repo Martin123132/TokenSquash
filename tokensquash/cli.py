@@ -25,7 +25,9 @@ from .metrics import (
 )
 from .reply import decode_reply, encode_reply, parse_reply_wire
 from .turns import (
+    append_turn_record,
     benchmark_turns,
+    format_turn_add_markdown,
     format_turn_benchmark_markdown,
     format_turn_split_markdown,
     format_turn_stats_markdown,
@@ -97,6 +99,22 @@ def main(argv: list[str] | None = None) -> int:
     turns_redact.add_argument("corpus", type=Path)
     turns_redact.add_argument("--out", type=Path, required=True)
     turns_redact.add_argument("--json", action="store_true")
+
+    turns_add = turns_sub.add_parser("add", help="Append one prompt/reply turn to a local JSONL corpus.")
+    turns_add.add_argument("--out", type=Path, default=Path("private-turns/real.jsonl"))
+    turns_add.add_argument("--id", dest="item_id", help="Optional stable turn id.")
+    turns_add.add_argument("--prompt", help="Human prompt text.")
+    turns_add.add_argument("--prompt-file", type=Path, help="File containing human prompt text.")
+    turns_add.add_argument("--reply", help="Assistant reply text.")
+    turns_add.add_argument("--reply-file", type=Path, help="File containing assistant reply text.")
+    turns_add.add_argument("--status", choices=("done", "partial", "blocked", "failed"), help="Optional reply status.")
+    turns_add.add_argument("--summary", help="Optional reply summary.")
+    turns_add.add_argument("--changed-file", dest="files", action="append", default=[], help="Changed or relevant file.")
+    turns_add.add_argument("--verify", dest="verification", action="append", default=[], help="Verification result.")
+    turns_add.add_argument("--command", dest="commands", action="append", default=[], help="Command that was run.")
+    turns_add.add_argument("--risk", dest="risks", action="append", default=[], help="Risk or caveat.")
+    turns_add.add_argument("--next", dest="next_steps", action="append", default=[], help="Suggested next step.")
+    turns_add.add_argument("--json", action="store_true")
 
     turns_split = turns_sub.add_parser("split", help="Split turns into prompt and reply corpora.")
     turns_split.add_argument("corpus", type=Path)
@@ -234,6 +252,27 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(f"wrote {report['output']} with {report['redaction_count']} redactions\n", end="")
                 return 0
+            if args.turns_command == "add":
+                prompt_text = args.prompt if args.prompt is not None else _read_required_text(args.prompt_file, "prompt")
+                reply_text = args.reply if args.reply is not None else _read_required_text(args.reply_file, "reply")
+                report = append_turn_record(
+                    args.out,
+                    prompt=prompt_text,
+                    reply=reply_text,
+                    item_id=args.item_id,
+                    status=args.status,
+                    summary=args.summary,
+                    files=args.files,
+                    verification=args.verification,
+                    commands=args.commands,
+                    risks=args.risks,
+                    next_steps=args.next_steps,
+                )
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(format_turn_add_markdown(report), end="")
+                return 0
             if args.turns_command == "split":
                 report = split_turn_corpus(
                     args.corpus,
@@ -315,3 +354,9 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.error("unknown command")
     return 2
+
+
+def _read_required_text(path: Path | None, label: str) -> str:
+    if path is None:
+        raise ValueError(f"{label} must be provided with --{label} or --{label}-file")
+    return path.read_text(encoding="utf-8")

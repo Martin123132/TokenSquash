@@ -150,6 +150,71 @@ def redact_turn_corpus(input_path: Path | str, output_path: Path | str) -> dict[
     }
 
 
+def append_turn_record(
+    output_path: Path | str,
+    *,
+    prompt: str,
+    reply: str,
+    item_id: str | None = None,
+    status: str | None = None,
+    summary: str | None = None,
+    files: Iterable[str] = (),
+    verification: Iterable[str] = (),
+    commands: Iterable[str] = (),
+    risks: Iterable[str] = (),
+    next_steps: Iterable[str] = (),
+) -> dict[str, Any]:
+    """Append one prompt/reply turn to a JSONL corpus."""
+
+    target = Path(output_path)
+    if target.suffix.lower() == ".json":
+        raise ValueError("turns add writes JSONL; use a .jsonl output path")
+    existing = _load_raw_payloads(target) if target.exists() else []
+    existing_ids = {str(item.get("id")) for item in existing if item.get("id") is not None}
+    record_id = item_id or _next_turn_id(existing)
+    if record_id in existing_ids:
+        raise ValueError(f"turn id already exists: {record_id}")
+
+    clean_prompt = _clean_text(prompt)
+    clean_reply = _clean_text(reply)
+    if not clean_prompt:
+        raise ValueError("prompt must not be empty")
+    if not clean_reply:
+        raise ValueError("reply must not be empty")
+
+    record: dict[str, Any] = {
+        "id": record_id,
+        "prompt": clean_prompt,
+        "reply": clean_reply,
+    }
+    if status:
+        record["status"] = status
+    if summary:
+        record["summary"] = _clean_text(summary)
+    _append_optional_list(record, "files", files)
+    _append_optional_list(record, "verification", verification)
+    _append_optional_list(record, "commands", commands)
+    _append_optional_list(record, "risks", risks)
+    _append_optional_list(record, "next_steps", next_steps)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(record, ensure_ascii=True, separators=(",", ":"))
+    newline = ""
+    if target.exists() and target.stat().st_size > 0:
+        text = target.read_text(encoding="utf-8")
+        newline = "" if text.endswith("\n") else "\n"
+    with target.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(newline + line + "\n")
+
+    return {
+        "schema_version": "tokensquash.turns.add.v1",
+        "status": "written",
+        "output": str(target),
+        "id": record_id,
+        "turns": len(existing) + 1,
+    }
+
+
 def split_turn_corpus(
     input_path: Path | str,
     prompts_output: Path | str,
@@ -333,6 +398,20 @@ def format_turn_split_markdown(report: dict[str, Any]) -> str:
             f"- Prompts: `{report.get('prompts_output')}`",
             f"- Replies: `{report.get('replies_output')}`",
             f"- Reply fields: `{report.get('reply_fields')}`",
+            "",
+        ]
+    )
+
+
+def format_turn_add_markdown(report: dict[str, Any]) -> str:
+    return "\n".join(
+        [
+            "# TokenSquash Turn Add",
+            "",
+            f"- Status: `{report.get('status')}`",
+            f"- Output: `{report.get('output')}`",
+            f"- ID: `{report.get('id')}`",
+            f"- Turns: `{report.get('turns', 0)}`",
             "",
         ]
     )
@@ -569,6 +648,16 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
         "\n".join(json.dumps(row, ensure_ascii=True, separators=(",", ":")) for row in rows) + ("\n" if rows else ""),
         encoding="utf-8",
     )
+
+
+def _append_optional_list(record: dict[str, Any], key: str, values: Iterable[str]) -> None:
+    items = _unique(_clean_text(str(value)) for value in values)
+    if items:
+        record[key] = items
+
+
+def _next_turn_id(records: list[dict[str, Any]]) -> str:
+    return f"turn-{len(records) + 1:04d}"
 
 
 def _clean_text(text: str) -> str:

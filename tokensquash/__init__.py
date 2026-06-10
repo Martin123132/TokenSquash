@@ -5,6 +5,7 @@ from .corpus import corpus_stats, load_prompt_records, redact_corpus, validate_c
 from .metrics import benchmark_prompts, benchmark_replies, compare_benchmarks, count_tokens, load_reply_records
 from .reply import AgentReply, decode_reply, encode_reply, parse_reply_wire
 from .turns import (
+    append_turn_record,
     benchmark_turns,
     load_turn_records,
     redact_turn_corpus,
@@ -16,6 +17,7 @@ from .turns import (
 __all__ = [
     "AgentReply",
     "Intent",
+    "append_turn_record",
     "benchmark_prompts",
     "benchmark_replies",
     "benchmark_turns",

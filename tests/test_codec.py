@@ -17,6 +17,7 @@ from tokensquash.metrics import (
 )
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 from tokensquash.turns import (
+    append_turn_record,
     benchmark_turns,
     load_turn_records,
     redact_turn_corpus,
@@ -353,6 +354,30 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(split_report["turns"], 1)
             self.assertIn("[REDACTED_EMAIL]", prompts.read_text(encoding="utf-8"))
             self.assertIn("python -m unittest discover -s tests", reply_payload["commands"])
+
+    def test_append_turn_record_writes_jsonl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "real.jsonl"
+
+            first = append_turn_record(
+                path,
+                prompt="fix login",
+                reply="Done. I fixed login and ran tests.",
+                status="done",
+                verification=["unit tests pass"],
+            )
+            second = append_turn_record(
+                path,
+                prompt="review checkout",
+                reply="Done. Risk: payment sandbox not exercised.",
+                risks=["payment sandbox not exercised"],
+            )
+            records = load_turn_records(path)
+
+            self.assertEqual(first["id"], "turn-0001")
+            self.assertEqual(second["id"], "turn-0002")
+            self.assertEqual(len(records), 2)
+            self.assertEqual(records[0]["reply_fields"]["verification"], ["unit tests pass"])
 
     def test_turn_benchmark_combines_prompt_and_reply(self) -> None:
         records = [

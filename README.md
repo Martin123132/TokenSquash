@@ -135,6 +135,16 @@ For paired prompt/reply exports, use a local JSONL turn corpus:
 
 Keep real files under `turns/` or `private-turns/`; both are ignored by Git.
 
+Append one turn without hand-editing JSON:
+
+```powershell
+python -m tokensquash turns add --prompt "fix the login bug, keep the diff small, run tests" --reply "Done. I fixed the login bug in src/auth.py and verified it with python -m unittest discover -s tests. Risks: none." --changed-file src/auth.py --verify "unit tests pass" --command "python -m unittest discover -s tests" --risk none
+```
+
+By default, `turns add` writes to `private-turns\real.jsonl`.
+For longer turns, put the text in files and use `--prompt-file` and
+`--reply-file`.
+
 ```powershell
 python -m tokensquash turns validate private-turns\real.jsonl
 python -m tokensquash turns stats private-turns\real.jsonl
