@@ -1,0 +1,8 @@
+{"text":"Please inspect the repo, find where storage is handled, make the smallest safe change, run tests, and summarize the files changed."}
+{"text":"Can you fix the login button staying disabled after a failed auth attempt, keep the diff small, and tell me which files changed?"}
+{"text":"Add a dark mode toggle in src/App.tsx, match the existing style, run the tests, and give me a short summary."}
+{"text":"Review the checkout flow for obvious regressions, do not refactor unrelated code, and return risks plus files changed."}
+{"text":"Update the README docs for the new CLI command and keep the wording concise."}
+{"text":"Find where the API client retries requests and explain how it works without changing code."}
+{"text":"Fix the failing unit tests around the cache expiry logic, keep the public API backwards compatible, and run the test suite."}
+{"text":"Refactor the duplicated validation helper in tokensquash/codec.py, avoid new dependencies, run lint, and summarize the change."}

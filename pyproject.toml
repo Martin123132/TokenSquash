@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tokensquash"
+version = "0.1.0"
+description = "Compact AI-agent intent codec and token-savings benchmark tools."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Martin Ollett" }]
+
+[project.scripts]
+tokensquash = "tokensquash.cli:main"
+
+[project.optional-dependencies]
+tokenizer = ["tiktoken"]
+
+[tool.setuptools.packages.find]
+include = ["tokensquash*"]
