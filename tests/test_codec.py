@@ -6,6 +6,7 @@ import json
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
 from tokensquash.cli import main as cli_main
@@ -723,6 +724,274 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue(raw.exists())
             self.assertTrue(redacted.exists())
             self.assertTrue((eval_dir / "evaluation.json").exists())
+
+    def test_turns_capture_cli_accepts_stdin_prompt_and_reply(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            stdout = StringIO()
+            stdin = StringIO("fix login for dev@example.com\n---reply---\nDone. api_key=secret123\n")
+
+            with patch("sys.stdin", stdin), redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "capture",
+                        "--stdin",
+                        "--raw-out",
+                        str(raw),
+                        "--redacted-out",
+                        str(redacted),
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.capture.v1")
+            self.assertEqual(payload["id"], "turn-0001")
+            self.assertGreaterEqual(payload["redaction_count"], 2)
+            self.assertIn("dev@example.com", raw.read_text(encoding="utf-8"))
+            self.assertIn("[REDACTED_EMAIL]", redacted.read_text(encoding="utf-8"))
+
+    def test_turns_capture_cli_stdin_evaluate_markdown_summarizes_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            eval_dir = Path(tmp) / "private-turns" / "eval-real"
+            stdout = StringIO()
+            stdin = StringIO("review packages/mobile/src/screens/login.tsx and summarize files\n---reply---\nDone.\n")
+
+            with patch("sys.stdin", stdin), redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "capture",
+                        "--stdin",
+                        "--raw-out",
+                        str(raw),
+                        "--redacted-out",
+                        str(redacted),
+                        "--evaluate",
+                        "--eval-out-dir",
+                        str(eval_dir),
+                        "--counter",
+                        "chars",
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Capture", output)
+            self.assertIn("- Prompt saved percent:", output)
+            self.assertIn("- Reply saved percent:", output)
+            self.assertIn("- Selected path aliases:", output)
+            self.assertIn("- Alias setup tokens:", output)
+            self.assertIn("## Top Win", output)
+            self.assertIn("## Top Raw Wire Loss", output)
+            self.assertTrue((eval_dir / "evaluation.json").exists())
+
+    def test_turns_report_cli_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                '{"id":"t1","prompt":"review packages/mobile/src/screens/login.tsx and summarize files","reply":"Done. I reviewed packages/mobile/src/screens/login.tsx and ran `npm test`."}\n'
+                '{"id":"t2","prompt":"review packages/mobile/src/screens/checkout.tsx and summarize files","reply":"Done. I reviewed packages/mobile/src/screens/checkout.tsx and ran `npm test`."}\n',
+                encoding="utf-8",
+            )
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "report",
+                        str(path),
+                        "--counter",
+                        "chars",
+                        "--out",
+                        str(Path(tmp) / "report.md"),
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Report", output)
+            self.assertIn("- Saved percent:", output)
+            self.assertIn("## Top Win", output)
+            self.assertIn("## Top Raw Wire Loss", output)
+            self.assertIn("## Top Repeated Path Candidates", output)
+            self.assertIn("## Top Repeated Field Candidates", output)
+            self.assertTrue((Path(tmp) / "report.md").exists())
+
+    def test_turns_report_cli_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                '{"id":"t1","prompt":"review packages/mobile/src/screens/login.tsx and summarize files","reply":"Done. I reviewed packages/mobile/src/screens/login.tsx and ran `npm test`."}\n'
+                '{"id":"t2","prompt":"review packages/mobile/src/screens/checkout.tsx and summarize files","reply":"Done. I reviewed packages/mobile/src/screens/checkout.tsx and ran `npm test`."}\n',
+                encoding="utf-8",
+            )
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "report",
+                        str(path),
+                        "--counter",
+                        "chars",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.report.v1")
+            self.assertIn("path", payload)
+            self.assertEqual(payload["path"], str(path))
+            summary = payload["summary"]
+            self.assertIn("turn_count", summary)
+            self.assertIn("saved_pct", summary)
+            self.assertGreater(summary["wire_tokens"], 0)
+            self.assertEqual(summary["wire_tokens"], payload["measure"]["benchmark"]["summary"]["wire_tokens"])
+            self.assertIn("top_wins", payload)
+            self.assertIn("top_raw_wire_losses", payload)
+            self.assertIn("top_path_candidates", payload)
+            self.assertIn("top_field_candidates", payload)
+            self.assertEqual(summary["turn_count"], 2)
+
+    def test_turns_compare_reports_cli_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "report-before.json"
+            target = Path(tmp) / "report-after.json"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "adaptive": True,
+                        "summary": {
+                            "turn_count": 2,
+                            "original_tokens": 100,
+                            "wire_tokens": 90,
+                            "squashed_tokens": 95,
+                            "saved_tokens": 5,
+                            "saved_pct": 5.0,
+                            "prompt_saved_pct": 3.0,
+                            "reply_saved_pct": 7.0,
+                            "privacy_finding_count": 0,
+                            "selected_path_prefix_count": 1,
+                            "selected_field_value_count": 0,
+                            "alias_saved_tokens_delta": 2,
+                            "alias_saved_pct_delta": 1.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "adaptive": True,
+                        "summary": {
+                            "turn_count": 3,
+                            "original_tokens": 120,
+                            "wire_tokens": 100,
+                            "squashed_tokens": 108,
+                            "saved_tokens": 12,
+                            "saved_pct": 10.0,
+                            "prompt_saved_pct": 6.0,
+                            "reply_saved_pct": 14.0,
+                            "privacy_finding_count": 1,
+                            "selected_path_prefix_count": 2,
+                            "selected_field_value_count": 1,
+                            "alias_saved_tokens_delta": 5,
+                            "alias_saved_pct_delta": 2.5,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "compare-reports", str(base), str(target), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.report.compare.v1")
+            self.assertEqual(payload["status"], "improved")
+            self.assertEqual(payload["base"]["report_path"], str(base))
+            self.assertEqual(payload["target"]["report_path"], str(target))
+            self.assertEqual(payload["delta"]["saved_pct"], 5.0)
+            self.assertEqual(payload["delta"]["saved_tokens"], 7)
+            self.assertEqual(payload["delta"]["prompt_saved_pct"], 3.0)
+            self.assertEqual(payload["delta"]["reply_saved_pct"], 7.0)
+            self.assertEqual(payload["delta"]["alias_saved_tokens_delta"], 3)
+            self.assertEqual(payload["delta"]["selected_path_prefix_count"], 1)
+            self.assertEqual(payload["delta"]["selected_field_value_count"], 1)
+
+    def test_turns_compare_reports_cli_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "report-before.json"
+            target = Path(tmp) / "report-after.json"
+            out = Path(tmp) / "report-compare.md"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "summary": {
+                            "saved_pct": 4.0,
+                            "saved_tokens": 8,
+                            "prompt_saved_pct": 2.0,
+                            "reply_saved_pct": 6.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "summary": {
+                            "saved_pct": 3.5,
+                            "saved_tokens": 7,
+                            "prompt_saved_pct": 2.0,
+                            "reply_saved_pct": 5.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "compare-reports", str(base), str(target), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Report Compare", output)
+            self.assertIn("- Status: `regressed`", output)
+            self.assertIn("- Saved percent delta: `-0.5%`", output)
+            self.assertIn("- Saved token delta: `-1`", output)
+            self.assertTrue(out.exists())
+            self.assertEqual(out.read_text(encoding="utf-8"), output)
+
+    def test_private_turn_storage_is_gitignored(self) -> None:
+        ignore_text = Path(".gitignore").read_text(encoding="utf-8")
+
+        self.assertIn("private-turns/", ignore_text.splitlines())
 
     def test_capture_turn_record_rejects_duplicate_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

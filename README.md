@@ -180,6 +180,17 @@ For longer turns, put the text in files and use `--prompt-file` and
 `--reply-file`. `turns add` remains available as the low-level append-only
 command when you do not want redaction or evaluation side effects.
 
+You can also paste a complete turn through stdin. Separate the prompt from the
+reply with a line containing `---reply---`:
+
+```powershell
+@"
+fix the login bug, keep the diff small, run tests
+---reply---
+Done. I fixed the login bug in src/auth.py and verified it with python -m unittest discover -s tests.
+"@ | python -m tokensquash turns capture --stdin --evaluate --counter tiktoken:cl100k_base
+```
+
 Import an existing JSON or JSONL export in bulk with the same private raw plus
 redacted workflow. This appends each imported turn to `private-turns\real.jsonl`,
 regenerates `private-turns\real.redacted-turns.jsonl`, and can run evaluation
@@ -188,6 +199,35 @@ against the redacted corpus:
 ```powershell
 python -m tokensquash turns import exports\turns.jsonl --evaluate --counter tiktoken:cl100k_base
 ```
+
+After you build a redacted corpus, run a compact feedback report to review gains
+and regressions:
+
+```powershell
+python -m tokensquash turns report private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json > private-turns\real-report.json
+```
+
+Compare two saved reports after a codec change:
+
+```powershell
+python -m tokensquash turns compare-reports private-turns\report-before.json private-turns\report-after.json
+```
+
+`turns report` defaults to `private-turns\real.redacted-turns.jsonl`, so you can
+just run:
+
+```powershell
+python -m tokensquash turns report --counter tiktoken:cl100k_base
+```
+
+Use this loop:
+
+1. Capture turns with `turns capture`.
+2. Run `turns report`.
+3. Review top wins, top raw-wire losses, and repeated candidates.
+4. Save a before/after report around codec changes.
+5. Run `turns compare-reports` to check whether saved percent improved.
+6. Keep iterating with more capture turns.
 
 ```powershell
 python -m tokensquash turns validate private-turns\real.jsonl

@@ -31,6 +31,7 @@ from .turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     capture_turn_record,
+    compare_turn_reports,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
     format_turn_alias_impact_markdown,
@@ -38,12 +39,15 @@ from .turns import (
     format_turn_benchmark_markdown,
     format_turn_capture_markdown,
     format_turn_diagnose_markdown,
+    format_turn_report_markdown,
+    format_turn_report_compare_markdown,
     format_turn_evaluate_markdown,
     format_turn_import_markdown,
     format_turn_measure_markdown,
     format_turn_split_markdown,
     format_turn_stats_markdown,
     format_turn_validation_markdown,
+    report_turn_corpus,
     import_turn_corpus,
     learn_turn_aliases,
     load_turn_records,
@@ -143,6 +147,11 @@ def main(argv: list[str] | None = None) -> int:
     turns_capture.add_argument("--prompt-file", type=Path, help="File containing human prompt text.")
     turns_capture.add_argument("--reply", help="Assistant reply text.")
     turns_capture.add_argument("--reply-file", type=Path, help="File containing assistant reply text.")
+    turns_capture.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read prompt and reply from stdin, separated by a line containing ---reply---.",
+    )
     turns_capture.add_argument("--status", choices=("done", "partial", "blocked", "failed"), help="Optional reply status.")
     turns_capture.add_argument("--summary", help="Optional reply summary.")
     turns_capture.add_argument("--changed-file", dest="files", action="append", default=[], help="Changed or relevant file.")
@@ -155,6 +164,27 @@ def main(argv: list[str] | None = None) -> int:
     turns_capture.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     turns_capture.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
     turns_capture.add_argument("--json", action="store_true")
+
+    turns_report = turns_sub.add_parser("report", help="Generate a compact turn-corpus feedback report.")
+    turns_report.add_argument("corpus", nargs="?", type=Path, default=Path("private-turns/real.redacted-turns.jsonl"))
+    turns_report.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_report.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_report.add_argument("--limit", type=int, default=3, help="Rows to show per top section.")
+    turns_report.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_report.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_report.add_argument("--min-count", type=int, default=2, help="Minimum alias/pattern occurrences before reporting.")
+    turns_report.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to show.")
+    turns_report.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to show.")
+    turns_report.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token savings per alias.")
+    turns_report.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    turns_report.add_argument("--out", type=Path, help="Write report output to this file.")
+    turns_report.add_argument("--json", action="store_true")
+
+    turns_compare_reports = turns_sub.add_parser("compare-reports", help="Compare two saved turn report JSON files.")
+    turns_compare_reports.add_argument("base", type=Path)
+    turns_compare_reports.add_argument("target", type=Path)
+    turns_compare_reports.add_argument("--out", type=Path, help="Write comparison output to this file.")
+    turns_compare_reports.add_argument("--json", action="store_true", help="Print comparison JSON.")
 
     turns_import = turns_sub.add_parser("import", help="Import a JSON/JSONL turn corpus into private raw/redacted storage.")
     turns_import.add_argument("corpus", type=Path)
@@ -422,8 +452,11 @@ def main(argv: list[str] | None = None) -> int:
                     print(format_turn_add_markdown(report), end="")
                 return 0
             if args.turns_command == "capture":
-                prompt_text = args.prompt if args.prompt is not None else _read_required_text(args.prompt_file, "prompt")
-                reply_text = args.reply if args.reply is not None else _read_required_text(args.reply_file, "reply")
+                if args.stdin:
+                    prompt_text, reply_text = _read_capture_stdin(args)
+                else:
+                    prompt_text = args.prompt if args.prompt is not None else _read_required_text(args.prompt_file, "prompt")
+                    reply_text = args.reply if args.reply is not None else _read_required_text(args.reply_file, "reply")
                 report = capture_turn_record(
                     prompt=prompt_text,
                     reply=reply_text,
@@ -447,6 +480,42 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(format_turn_capture_markdown(report), end="")
                 return 0 if report["status"] in {"written", "pass", "warn", "miss", "empty"} else 1
+            if args.turns_command == "report":
+                report = report_turn_corpus(
+                    args.corpus,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    limit=args.limit,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                    min_count=args.min_count,
+                    max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
+                    min_saved_tokens=args.min_saved_tokens,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_report_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "miss", "empty"} else 1
+            if args.turns_command == "compare-reports":
+                report = compare_turn_reports(args.base, args.target)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_report_compare_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0
             if args.turns_command == "import":
                 report = import_turn_corpus(
                     args.corpus,
@@ -721,3 +790,20 @@ def _read_required_text(path: Path | None, label: str) -> str:
     if path is None:
         raise ValueError(f"{label} must be provided with --{label} or --{label}-file")
     return path.read_text(encoding="utf-8-sig")
+
+
+def _read_capture_stdin(args: argparse.Namespace) -> tuple[str, str]:
+    if args.prompt is not None or args.prompt_file is not None or args.reply is not None or args.reply_file is not None:
+        raise ValueError("--stdin cannot be combined with --prompt, --prompt-file, --reply, or --reply-file")
+
+    text = sys.stdin.read()
+    delimiter = None
+    for candidate in ("\n---reply---\n", "\n---REPLY---\n"):
+        if candidate in text:
+            delimiter = candidate
+            break
+    if delimiter is None:
+        raise ValueError("--stdin input must contain a line with ---reply--- between prompt and reply")
+
+    prompt, reply = text.split(delimiter, 1)
+    return prompt, reply

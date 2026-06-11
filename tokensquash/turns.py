@@ -1048,6 +1048,131 @@ def evaluate_turn_corpus(
     return report
 
 
+def report_turn_corpus(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+    limit: int = 3,
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+    min_count: int = 2,
+    max_path_prefixes: int = 8,
+    max_field_values: int = 8,
+    min_saved_tokens: int = 1,
+    base_aliases: AliasTable | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Produce a compact turn-corpus feedback report for iterative compression work."""
+
+    started = time.time()
+    source = str(Path(path))
+    limit = max(1, int(limit))
+    evaluation = evaluate_turn_corpus(
+        path,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        guess_reply_fields=guess_reply_fields,
+        min_count=min_count,
+        limit=limit,
+        max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
+        min_saved_tokens=min_saved_tokens,
+        base_aliases=base_aliases,
+    )
+    measure_summary = (evaluation.get("measure") or {}).get("summary", {})
+    measure_benchmark_summary = ((evaluation.get("measure") or {}).get("benchmark") or {}).get("summary", {})
+    diagnosis = evaluation.get("diagnose") or {}
+    mine = evaluation.get("mine") or {}
+    alias_impact = evaluation.get("alias_impact") or {}
+    validation = evaluation.get("validation") or {}
+    validation_summary = validation.get("summary", {})
+    return {
+        "schema_version": "tokensquash.turns.report.v1",
+        "status": evaluation.get("status", "fail"),
+        "path": source,
+        "counter": counter,
+        "target_savings_pct": target_savings_pct,
+        "adaptive": adaptive,
+        "limit": limit,
+        "summary": {
+            "turn_count": measure_summary.get("turn_count", validation_summary.get("turn_count", 0)),
+            "original_tokens": measure_summary.get("original_tokens", 0),
+            "wire_tokens": measure_benchmark_summary.get("wire_tokens", 0),
+            "squashed_tokens": measure_summary.get("squashed_tokens", 0),
+            "saved_tokens": measure_summary.get("saved_tokens", 0),
+            "saved_pct": measure_summary.get("saved_pct", 0.0),
+            "prompt_saved_pct": measure_summary.get("prompt_saved_pct", 0.0),
+            "reply_saved_pct": measure_summary.get("reply_saved_pct", 0.0),
+            "privacy_finding_count": validation_summary.get("privacy_finding_count", 0),
+            "selected_path_prefix_count": alias_impact.get("summary", {}).get("selected_path_prefix_count", 0),
+            "selected_field_value_count": alias_impact.get("summary", {}).get("selected_field_value_count", 0),
+            "alias_saved_tokens_delta": alias_impact.get("summary", {}).get("saved_tokens_delta", 0),
+            "alias_saved_pct_delta": alias_impact.get("summary", {}).get("saved_pct_delta", 0.0),
+            "break_even_corpora": alias_impact.get("summary", {}).get("break_even_corpora"),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "top_wins": list((diagnosis.get("largest_wins", []) or [])[:limit]),
+        "top_raw_wire_losses": list((diagnosis.get("largest_losses", []) or [])[:limit]),
+        "top_path_candidates": list((mine.get("path_patterns", []) or [])[:limit]),
+        "top_field_candidates": list((mine.get("top_candidates", []) or [])[:limit]),
+        "validation": validation,
+        "measure": evaluation.get("measure"),
+        "diagnose": evaluation.get("diagnose"),
+        "mine": evaluation.get("mine"),
+        "aliases": evaluation.get("aliases"),
+        "alias_impact": alias_impact,
+        "bench": evaluation.get("bench"),
+    }
+
+
+def compare_turn_reports(base: Path | str, target: Path | str) -> dict[str, Any]:
+    """Compare two saved turn report JSON files."""
+
+    base_report = _load_turn_report(base)
+    target_report = _load_turn_report(target)
+    base_summary = base_report.get("summary", {})
+    target_summary = target_report.get("summary", {})
+    saved_pct_delta = _float_value(target_summary.get("saved_pct")) - _float_value(base_summary.get("saved_pct"))
+    status = "improved" if saved_pct_delta > 0 else "regressed" if saved_pct_delta < 0 else "same"
+
+    return {
+        "schema_version": "tokensquash.turns.report.compare.v1",
+        "status": status,
+        "base": _turn_report_identity(base, base_report),
+        "target": _turn_report_identity(target, target_report),
+        "delta": {
+            "turn_count": _int_value(target_summary.get("turn_count")) - _int_value(base_summary.get("turn_count")),
+            "original_tokens": _int_value(target_summary.get("original_tokens")) - _int_value(base_summary.get("original_tokens")),
+            "wire_tokens": _int_value(target_summary.get("wire_tokens")) - _int_value(base_summary.get("wire_tokens")),
+            "squashed_tokens": _int_value(target_summary.get("squashed_tokens")) - _int_value(base_summary.get("squashed_tokens")),
+            "saved_tokens": _int_value(target_summary.get("saved_tokens")) - _int_value(base_summary.get("saved_tokens")),
+            "saved_pct": round(saved_pct_delta, 4),
+            "prompt_saved_pct": round(
+                _float_value(target_summary.get("prompt_saved_pct")) - _float_value(base_summary.get("prompt_saved_pct")),
+                4,
+            ),
+            "reply_saved_pct": round(
+                _float_value(target_summary.get("reply_saved_pct")) - _float_value(base_summary.get("reply_saved_pct")),
+                4,
+            ),
+            "privacy_finding_count": _int_value(target_summary.get("privacy_finding_count"))
+            - _int_value(base_summary.get("privacy_finding_count")),
+            "selected_path_prefix_count": _int_value(target_summary.get("selected_path_prefix_count"))
+            - _int_value(base_summary.get("selected_path_prefix_count")),
+            "selected_field_value_count": _int_value(target_summary.get("selected_field_value_count"))
+            - _int_value(base_summary.get("selected_field_value_count")),
+            "alias_saved_tokens_delta": _int_value(target_summary.get("alias_saved_tokens_delta"))
+            - _int_value(base_summary.get("alias_saved_tokens_delta")),
+            "alias_saved_pct_delta": round(
+                _float_value(target_summary.get("alias_saved_pct_delta"))
+                - _float_value(base_summary.get("alias_saved_pct_delta")),
+                4,
+            ),
+        },
+    }
+
+
 def format_turn_evaluate_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     break_even = summary.get("break_even_corpora")
@@ -1331,6 +1456,8 @@ def format_turn_add_markdown(report: dict[str, Any]) -> str:
 
 def format_turn_capture_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
+    evaluation = report.get("evaluation") or {}
+    evaluation_summary = evaluation.get("summary", {})
     lines = [
         "# TokenSquash Turn Capture",
         "",
@@ -1349,11 +1476,90 @@ def format_turn_capture_markdown(report: dict[str, Any]) -> str:
             [
                 f"- Evaluation output: `{report.get('evaluation_output_dir')}`",
                 f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+                f"- Prompt saved percent: `{evaluation_summary.get('prompt_saved_pct', 0.0)}%`",
+                f"- Reply saved percent: `{evaluation_summary.get('reply_saved_pct', 0.0)}%`",
                 f"- Alias saved token delta: `{summary.get('alias_saved_tokens_delta', 0)}`",
                 f"- Break-even corpora: `{break_even_text}`",
             ]
         )
+        alias_impact_summary = (evaluation.get("alias_impact") or {}).get("summary", {})
+        if alias_impact_summary:
+            lines.extend(
+                [
+                    f"- Selected path aliases: `{alias_impact_summary.get('selected_path_prefix_count', 0)}`",
+                    f"- Selected field aliases: `{alias_impact_summary.get('selected_field_value_count', 0)}`",
+                    f"- Alias setup tokens: `{alias_impact_summary.get('alias_setup_tokens', 0)}`",
+                    f"- Net saved after one setup: `{alias_impact_summary.get('net_saved_after_setup_tokens', 0)}`",
+                ]
+            )
+        lines.append("")
+        _append_capture_preview(lines, "Top Win", (evaluation.get("diagnose") or {}).get("largest_wins", []))
+        _append_capture_preview(lines, "Top Raw Wire Loss", (evaluation.get("diagnose") or {}).get("largest_losses", []))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def format_turn_report_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    alias_impact_summary = (report.get("alias_impact") or {}).get("summary", {})
+    lines = [
+        "# TokenSquash Turn Report",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Original tokens: `{summary.get('original_tokens', 0)}`",
+        f"- Wire tokens: `{summary.get('wire_tokens', 0)}`",
+        f"- Squashed tokens: `{summary.get('squashed_tokens', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Prompt saved percent: `{summary.get('prompt_saved_pct', 0.0)}%`",
+        f"- Reply saved percent: `{summary.get('reply_saved_pct', 0.0)}%`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        f"- Selected path aliases: `{summary.get('selected_path_prefix_count', 0)}`",
+        f"- Selected field aliases: `{summary.get('selected_field_value_count', 0)}`",
+        f"- Alias saved token delta: `{summary.get('alias_saved_tokens_delta', 0)}`",
+        f"- Alias saved percent delta: `{summary.get('alias_saved_pct_delta', 0.0)}%`",
+    ]
+    break_even = summary.get("break_even_corpora")
+    if break_even is not None:
+        lines.append(f"- Break-even corpora: `{break_even}`")
+    lines.append("")
+    lines.append(f"- Baseline saved percent: `{alias_impact_summary.get('baseline_saved_pct', 0.0)}%`")
+    lines.append(f"- Aliased saved percent: `{alias_impact_summary.get('aliased_saved_pct', 0.0)}%`")
+    lines.append(f"- Alias setup tokens: `{alias_impact_summary.get('alias_setup_tokens', 0)}`")
+    lines.append(f"- Net saved after one setup: `{alias_impact_summary.get('net_saved_after_setup_tokens', 0)}`")
+    lines.append("")
+    _append_capture_preview(lines, "Top Win", report.get("top_wins", []))
+    _append_capture_preview(lines, "Top Raw Wire Loss", report.get("top_raw_wire_losses", []))
+    _append_report_candidates(lines, "Top Repeated Path Candidates", report.get("top_path_candidates", []))
+    _append_report_candidates(lines, "Top Repeated Field Candidates", report.get("top_field_candidates", []), include_field=True)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_turn_report_compare_markdown(report: dict[str, Any]) -> str:
+    delta = report.get("delta", {})
+    base = report.get("base", {})
+    target = report.get("target", {})
+    return "\n".join(
+        [
+            "# TokenSquash Turn Report Compare",
+            "",
+            f"- Status: `{report.get('status')}`",
+            f"- Base report: `{base.get('report_path')}` saved=`{base.get('saved_pct')}%` tokens=`{base.get('saved_tokens')}`",
+            f"- Target report: `{target.get('report_path')}` saved=`{target.get('saved_pct')}%` tokens=`{target.get('saved_tokens')}`",
+            f"- Saved percent delta: `{delta.get('saved_pct')}%`",
+            f"- Saved token delta: `{delta.get('saved_tokens')}`",
+            f"- Prompt saved percent delta: `{delta.get('prompt_saved_pct')}%`",
+            f"- Reply saved percent delta: `{delta.get('reply_saved_pct')}%`",
+            f"- Alias saved token delta: `{delta.get('alias_saved_tokens_delta')}`",
+            f"- Alias saved percent delta: `{delta.get('alias_saved_pct_delta')}%`",
+            f"- Selected path alias delta: `{delta.get('selected_path_prefix_count')}`",
+            f"- Selected field alias delta: `{delta.get('selected_field_value_count')}`",
+            f"- Turn count delta: `{delta.get('turn_count')}`",
+            "",
+        ]
+    )
 
 
 def format_turn_import_markdown(report: dict[str, Any]) -> str:
@@ -1391,6 +1597,39 @@ def _load_turn_payloads(path: Path | str) -> list[dict[str, Any]]:
     if not source.exists():
         raise FileNotFoundError(f"turn corpus not found: {source}")
     return _load_raw_payloads(source)
+
+
+def _load_turn_report(path: Path | str) -> dict[str, Any]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != "tokensquash.turns.report.v1":
+        raise ValueError(f"Not a TokenSquash turn report: {source}")
+    return payload
+
+
+def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("summary", {})
+    return {
+        "report_path": str(path),
+        "corpus_path": report.get("path"),
+        "status": report.get("status"),
+        "counter": report.get("counter"),
+        "adaptive": report.get("adaptive"),
+        "turn_count": summary.get("turn_count"),
+        "original_tokens": summary.get("original_tokens"),
+        "wire_tokens": summary.get("wire_tokens"),
+        "squashed_tokens": summary.get("squashed_tokens"),
+        "saved_tokens": summary.get("saved_tokens"),
+        "saved_pct": summary.get("saved_pct"),
+        "prompt_saved_pct": summary.get("prompt_saved_pct"),
+        "reply_saved_pct": summary.get("reply_saved_pct"),
+        "privacy_finding_count": summary.get("privacy_finding_count"),
+        "selected_path_prefix_count": summary.get("selected_path_prefix_count"),
+        "selected_field_value_count": summary.get("selected_field_value_count"),
+        "alias_saved_tokens_delta": summary.get("alias_saved_tokens_delta"),
+        "alias_saved_pct_delta": summary.get("alias_saved_pct_delta"),
+        "break_even_corpora": summary.get("break_even_corpora"),
+    }
 
 
 def _load_raw_payloads(source: Path) -> list[dict[str, Any]]:
@@ -1694,6 +1933,14 @@ def _optional_text(value: Any) -> str | None:
     return text or None
 
 
+def _float_value(value: Any) -> float:
+    return float(value or 0.0)
+
+
+def _int_value(value: Any) -> int:
+    return int(value or 0)
+
+
 def _coerce_import_items(value: Any) -> list[str]:
     if value is None:
         return []
@@ -1969,6 +2216,63 @@ def _append_diagnostic_table(lines: list[str], title: str, rows: list[dict[str, 
             f"{_markdown_cell(_side_summary(row.get('reply', {})))} | "
             f"{_markdown_cell(', '.join(row.get('tags', [])[:5]))} |"
         )
+    lines.append("")
+
+
+def _append_capture_preview(lines: list[str], title: str, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        lines.extend([f"## {title}", "", "No rows.", ""])
+        return
+
+    row = rows[0]
+    lines.extend(
+        [
+            f"## {title}",
+            "",
+            f"- ID: `{row.get('id')}`",
+            f"- Adaptive saved: `{row.get('saved_tokens')} ({row.get('saved_pct')}%)`",
+            f"- Raw wire saved: `{row.get('wire_saved_tokens')} ({row.get('wire_saved_pct')}%)`",
+            f"- Prompt: `{_side_summary(row.get('prompt', {}))}`",
+            f"- Reply: `{_side_summary(row.get('reply', {}))}`",
+        ]
+    )
+    tags = row.get("tags", [])
+    if tags:
+        lines.append(f"- Tags: `{', '.join(tags[:5])}`")
+    lines.append("")
+
+
+def _append_report_candidates(
+    lines: list[str],
+    title: str,
+    candidates: list[dict[str, Any]],
+    *,
+    include_field: bool = False,
+) -> None:
+    if not candidates:
+        lines.extend([f"## {title}", "", "No candidates.", ""])
+        return
+
+    lines.extend([f"## {title}", ""])
+    if include_field:
+        lines.extend(["| Field | Value | Count | Est new saved |", "|---|---|---:|---:|"])
+        for item in candidates:
+            lines.append(
+                "| "
+                f"{_markdown_cell(str(item.get('field')))} | "
+                f"{_markdown_cell(str(item.get('value')))} | "
+                f"{item.get('count')} | "
+                f"{item.get('estimated_new_saved_tokens', 0)} |"
+            )
+    else:
+        lines.extend(["| Pattern | Count | Est new saved |", "|---|---:|---:|"])
+        for item in candidates:
+            lines.append(
+                "| "
+                f"{_markdown_cell(str(item.get('value')))} | "
+                f"{item.get('count')} | "
+                f"{item.get('estimated_new_saved_tokens', 0)} |"
+            )
     lines.append("")
 
 
