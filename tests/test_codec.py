@@ -542,6 +542,27 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("src/auth.py", report["text"])
         self.assertFalse(report["warnings"])
 
+    def test_sidecar_decode_warns_on_schema_placeholders(self) -> None:
+        report = decode_semantic(
+            {
+                "o": "refactor",
+                "q": "<=5 words",
+                "c": ["constraint1", "constraint2"],
+                "v": ["verify"],
+                "r": ["returns:evaluation results"],
+            },
+            mode="prompt",
+        )
+
+        self.assertEqual(report["status"], "warn")
+        self.assertIn("semantic.query looks like schema placeholder: <=5 words", report["warnings"])
+        self.assertIn("semantic.constraints looks like schema placeholder: constraint1", report["warnings"])
+        self.assertIn("semantic.verify looks like schema placeholder: verify", report["warnings"])
+        self.assertIn(
+            "semantic.returns looks like schema placeholder: returns:evaluation results",
+            report["warnings"],
+        )
+
     def test_sidecar_decode_reply_is_deterministic(self) -> None:
         report = decode_semantic(
             {

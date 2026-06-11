@@ -14,6 +14,18 @@ DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
 VALID_MODES = ("prompt", "reply")
 STATUS_CODES = {"done": "d", "partial": "p", "blocked": "b", "failed": "f"}
 STATUS_FROM_CODES = {value: key for key, value in STATUS_CODES.items()}
+SCHEMA_PLACEHOLDER_VALUES = {
+    "<=5 words",
+    "<=6 words",
+    "constraint",
+    "constraints",
+    "constraint1",
+    "constraint2",
+    "return",
+    "returns",
+    "verify",
+    "verification",
+}
 
 
 def build_sidecar_request(
@@ -113,6 +125,7 @@ def decode_semantic(semantic: dict[str, Any], *, mode: str) -> dict[str, Any]:
         pass
     elif kind != mode:
         warnings.append(f"semantic.kind '{kind}' does not match requested mode '{mode}'")
+    warnings.extend(_semantic_placeholder_warnings(semantic, mode))
 
     if mode == "prompt":
         text = _decode_prompt_semantic(semantic, warnings=warnings)
@@ -855,6 +868,62 @@ def _normalize_kind(value: Any) -> str | None:
     if text in VALID_MODES:
         return text
     return None
+
+
+def _semantic_placeholder_warnings(semantic: dict[str, Any], mode: str) -> list[str]:
+    fields = (
+        ("op",),
+        ("query",),
+        ("paths",),
+        ("constraints",),
+        ("verify",),
+        ("returns",),
+    )
+    if mode == "reply":
+        fields = (
+            ("status",),
+            ("summary",),
+            ("files",),
+            ("verification",),
+            ("commands",),
+            ("risks",),
+            ("next_steps",),
+        )
+
+    warnings: list[str] = []
+    for field_tuple in fields:
+        field = field_tuple[0]
+        for item in _semantic_warning_values(semantic.get(field)):
+            if _looks_like_schema_placeholder(item, field=field):
+                warnings.append(f"semantic.{field} looks like schema placeholder: {item}")
+    return warnings
+
+
+def _semantic_warning_values(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _looks_like_schema_placeholder(value: str, *, field: str) -> bool:
+    text = value.strip().strip("`'\"").lower()
+    compact = text.replace(" ", "")
+    if field in {"paths", "files"} and text in {"file", "files", "path", "paths"}:
+        return True
+    if text in SCHEMA_PLACEHOLDER_VALUES or compact in SCHEMA_PLACEHOLDER_VALUES:
+        return True
+    if compact.startswith("<=") and compact.endswith("words"):
+        return True
+    if text.startswith(("returns:", "return:")):
+        return True
+    for stem in ("constraint", "verify", "verification"):
+        suffix = text.removeprefix(stem)
+        if suffix.isdigit():
+            return True
+    return False
 
 
 def _source_anchored_items(items: list[str], source_text: str | None) -> list[str]:
