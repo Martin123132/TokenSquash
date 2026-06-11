@@ -557,6 +557,84 @@ def format_sidecar_experiment_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_sidecar_sweep_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    outputs = report.get("outputs", {})
+    lines = [
+        "# TokenSquash Sidecar Sweep",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Name: `{report.get('name')}`",
+        f"- Run ID: `{report.get('run_id')}`",
+        f"- Output: `{report.get('output_dir')}`",
+        f"- Runs: `{summary.get('run_count', 0)}`",
+        f"- Comparisons: `{summary.get('comparison_count', 0)}`",
+        f"- Skipped comparisons: `{summary.get('skipped_comparison_count', 0)}`",
+        "",
+        "## Runs",
+        "",
+        "| Run | Source | Model | Counter | Status | Items | Saved | Saved % | Warnings | Failures |",
+        "|---|---|---|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for run in report.get("runs", []):
+        run_summary = run.get("summary", {})
+        lines.append(
+            "| "
+            f"`{run.get('run_id')}` | "
+            f"`{run.get('source')}` | "
+            f"`{run.get('model')}` | "
+            f"`{run.get('counter')}` | "
+            f"`{run.get('status')}` | "
+            f"{run_summary.get('item_count', 0)} | "
+            f"{run_summary.get('saved_tokens', 0)} | "
+            f"{run_summary.get('saved_pct', 0.0)} | "
+            f"{run_summary.get('warning_count', 0)} | "
+            f"{run_summary.get('failure_count', 0)} |"
+        )
+
+    best_run = summary.get("best_run")
+    if best_run:
+        lines.extend(
+            [
+                "",
+                "## Best Run",
+                "",
+                f"- Run: `{best_run.get('run_id')}`",
+                f"- Saved tokens: `{best_run.get('summary', {}).get('saved_tokens', 0)}`",
+                f"- Saved percent: `{best_run.get('summary', {}).get('saved_pct', 0.0)}%`",
+            ]
+        )
+
+    comparisons = report.get("comparisons", [])
+    if comparisons:
+        lines.extend(
+            [
+                "",
+                "## Comparisons",
+                "",
+                "| Target | Status | Saved Delta | Warning Delta | Failure Delta |",
+                "|---|---|---:|---:|---:|",
+            ]
+        )
+        for comparison in comparisons:
+            delta = comparison.get("delta", {})
+            target = comparison.get("target", {})
+            lines.append(
+                "| "
+                f"`{target.get('run_id')}` | "
+                f"`{comparison.get('status')}` | "
+                f"{delta.get('saved_tokens', 0)} | "
+                f"{delta.get('warning_count', 0)} | "
+                f"{delta.get('failure_count', 0)} |"
+            )
+
+    if outputs:
+        lines.extend(["", "## Outputs", ""])
+        for key, path in sorted(outputs.items()):
+            lines.append(f"- {key}: `{path}`")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_sidecar_request_markdown(report: dict[str, Any]) -> str:
     payload = report.get("payload", {})
     lines = [

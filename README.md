@@ -323,6 +323,16 @@ This creates a timestamped folder under
 `private-turns\sidecar-experiments\` containing `evaluation.json`,
 `rows.jsonl`, `summary.md`, and `run.json`.
 
+Run a sweep when you want the same corpus checked across multiple counters,
+models, or input corpora. Each run gets its own evidence pack, and the sweep
+writes top-level comparisons against the first run when the source, mode, and
+counter are like-for-like. Mixed-counter or mixed-corpus comparisons are listed
+as skipped so token deltas do not look more meaningful than they are:
+
+```powershell
+python -m tokensquash sidecar sweep private-turns\real.redacted-turns.jsonl --name real-corpus-sweep --mode both --limit 20 --model llama3.2:3b --model another-local-model --counter chars
+```
+
 Compare two saved sidecar evaluation reports after changing the semantic prompt,
 schema, or local model:
 
@@ -350,9 +360,10 @@ round-trip checks and comparing both token savings and whether the decoded text
 still preserves meaning. `sidecar evaluate` writes a batch report with total
 savings, warning/failure counts, and best/worst examples when `--out-dir` is
 set. `sidecar experiment` wraps that evaluation in a named run folder so real
-experiments are easy to repeat and compare. `sidecar compare-evaluations`
-reports before/after token deltas alongside warning and failure deltas, so
-increased savings do not hide worse meaning-risk signals.
+experiments are easy to repeat and compare. `sidecar sweep` runs a small matrix
+of experiments and writes a top-level summary plus comparison files. `sidecar
+compare-evaluations` reports before/after token deltas alongside warning and
+failure deltas, so increased savings do not hide worse meaning-risk signals.
 
 ## Install For Local Development
 
@@ -376,7 +387,7 @@ python -m unittest discover -s tests
 - Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - One-command turn evaluation report packs for real-corpus measurement.
-- Experimental local-AI sidecar round-trip, corpus evaluation, experiment packs, and evaluation comparison.
+- Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No API keys or model dependency for the deterministic core codec; the optional

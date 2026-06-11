@@ -39,8 +39,9 @@ from .sidecar import (
     format_sidecar_evaluation_markdown,
     format_sidecar_experiment_markdown,
     format_sidecar_request_markdown,
-    format_sidecar_translation_markdown,
     format_sidecar_roundtrip_markdown,
+    format_sidecar_sweep_markdown,
+    format_sidecar_translation_markdown,
     parse_semantic_json,
     roundtrip_with_ollama,
     translate_with_ollama,
@@ -203,6 +204,47 @@ def main(argv: list[str] | None = None) -> int:
     sidecar_experiment.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     sidecar_experiment.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
     sidecar_experiment.add_argument("--json", action="store_true", help="Print experiment JSON.")
+
+    sidecar_sweep = sidecar_sub.add_parser(
+        "sweep",
+        help="Run a small matrix of sidecar corpus experiments and compare the results.",
+    )
+    sidecar_sweep.add_argument(
+        "corpora",
+        nargs="*",
+        type=Path,
+        help="Redacted turn corpora to evaluate; defaults to private-turns/real.redacted-turns.jsonl.",
+    )
+    sidecar_sweep.add_argument("--name", default="sidecar-sweep", help="Human-friendly sweep name.")
+    sidecar_sweep.add_argument("--run-id", help="Stable sweep id for repeatable or scripted output paths.")
+    sidecar_sweep.add_argument(
+        "--out-root",
+        type=Path,
+        default=Path("private-turns/sidecar-sweeps"),
+        help="Directory that will contain this sweep folder.",
+    )
+    sidecar_sweep.add_argument(
+        "--mode",
+        choices=("prompt", "reply", "both"),
+        default="both",
+        help="Evaluate prompts, replies, or both.",
+    )
+    sidecar_sweep.add_argument("--limit", type=int, default=0, help="Maximum prompt/reply items per run; 0 means all.")
+    sidecar_sweep.add_argument(
+        "--model",
+        dest="models",
+        action="append",
+        help="Ollama model name. Repeat to evaluate multiple models.",
+    )
+    sidecar_sweep.add_argument("--endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    sidecar_sweep.add_argument(
+        "--counter",
+        dest="counters",
+        action="append",
+        help="heuristic, chars, char4, or tiktoken:<encoding>. Repeat to evaluate multiple counters.",
+    )
+    sidecar_sweep.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
+    sidecar_sweep.add_argument("--json", action="store_true", help="Print sweep JSON.")
 
     sidecar_compare_evaluations = sidecar_sub.add_parser(
         "compare-evaluations",
@@ -615,6 +657,60 @@ def main(argv: list[str] | None = None) -> int:
                     limit=args.limit,
                 )
                 output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_experiment_markdown(report)
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.sidecar_command == "sweep":
+                corpora = args.corpora or [Path("private-turns/real.redacted-turns.jsonl")]
+                models = args.models or [DEFAULT_OLLAMA_MODEL]
+                counters = args.counters or ["heuristic"]
+                run_id = args.run_id or _sidecar_experiment_run_id(args.name)
+                output_dir = args.out_root / run_id
+                runs = []
+                run_number = 0
+                for corpus in corpora:
+                    records = load_turn_records(corpus)
+                    for model in models:
+                        for counter in counters:
+                            run_number += 1
+                            evaluation = evaluate_sidecar_turns(
+                                records,
+                                source=str(corpus),
+                                part=args.mode,
+                                limit=args.limit,
+                                model=model,
+                                endpoint=args.endpoint,
+                                counter=counter,
+                                timeout_seconds=args.timeout,
+                            )
+                            child_run_id = _sidecar_sweep_child_run_id(run_number, corpus, model, counter)
+                            child_name = f"{args.name}: {corpus.stem} / {model} / {counter}"
+                            runs.append(
+                                _write_sidecar_experiment_outputs(
+                                    output_dir / "runs" / child_run_id,
+                                    evaluation,
+                                    name=child_name,
+                                    run_id=child_run_id,
+                                    source=str(corpus),
+                                    mode=args.mode,
+                                    model=model,
+                                    endpoint=args.endpoint,
+                                    counter=counter,
+                                    limit=args.limit,
+                                )
+                            )
+                report = _write_sidecar_sweep_outputs(
+                    output_dir,
+                    runs,
+                    name=args.name,
+                    run_id=run_id,
+                    corpora=[str(corpus) for corpus in corpora],
+                    models=models,
+                    counters=counters,
+                    mode=args.mode,
+                    endpoint=args.endpoint,
+                    limit=args.limit,
+                )
+                output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_sweep_markdown(report)
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
             if args.sidecar_command == "compare-evaluations":
@@ -1131,6 +1227,189 @@ def _write_sidecar_experiment_outputs(
     summary_path.write_text(format_sidecar_experiment_markdown(report), encoding="utf-8")
     run_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
     return report
+
+
+def _write_sidecar_sweep_outputs(
+    out_dir: Path,
+    runs: list[dict],
+    *,
+    name: str,
+    run_id: str,
+    corpora: list[str],
+    models: list[str],
+    counters: list[str],
+    mode: str,
+    endpoint: str,
+    limit: int,
+) -> dict:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    comparisons = _write_sidecar_sweep_comparisons(out_dir, runs)
+    sweep_path = out_dir / "sweep.json"
+    summary_path = out_dir / "summary.md"
+    outputs = {
+        "sweep": str(sweep_path),
+        "summary": str(summary_path),
+    }
+    report = {
+        "schema_version": "tokensquash.sidecar.sweep.v1",
+        "status": _sidecar_sweep_status(runs),
+        "name": name,
+        "run_id": run_id,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "corpora": corpora,
+        "models": models,
+        "counters": counters,
+        "mode": mode,
+        "endpoint": endpoint.rstrip("/"),
+        "limit": limit,
+        "output_dir": str(out_dir),
+        "summary": _sidecar_sweep_summary(runs, comparisons),
+        "runs": [_sidecar_sweep_run_brief(run) for run in runs],
+        "comparisons": comparisons,
+        "outputs": outputs,
+    }
+    summary_path.write_text(format_sidecar_sweep_markdown(report), encoding="utf-8")
+    sweep_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+def _write_sidecar_sweep_comparisons(out_dir: Path, runs: list[dict]) -> list[dict]:
+    if len(runs) < 2:
+        return []
+    comparison_dir = out_dir / "comparisons"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+    base = runs[0]
+    base_path = Path(base["outputs"]["evaluation"])
+    comparisons = []
+    for target in runs[1:]:
+        target_path = Path(target["outputs"]["evaluation"])
+        if _sidecar_sweep_runs_are_comparable(base, target):
+            comparison = compare_sidecar_evaluations(base_path, target_path)
+            comparison["base"]["run_id"] = base["run_id"]
+            comparison["target"]["run_id"] = target["run_id"]
+        else:
+            comparison = _sidecar_sweep_skipped_comparison(base, target)
+        stem = f"{base['run_id']}__vs__{target['run_id']}"
+        json_path = comparison_dir / f"{stem}.json"
+        markdown_path = comparison_dir / f"{stem}.md"
+        comparison["outputs"] = {
+            "json": str(json_path),
+            "markdown": str(markdown_path),
+        }
+        json_path.write_text(json.dumps(comparison, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        markdown_path.write_text(format_sidecar_evaluation_compare_markdown(comparison), encoding="utf-8")
+        comparisons.append(
+            {
+                "status": comparison.get("status"),
+                "base": comparison.get("base", {}),
+                "target": comparison.get("target", {}),
+                "delta": comparison.get("delta", {}),
+                "notes": comparison.get("notes", []),
+                "outputs": comparison["outputs"],
+            }
+        )
+    return comparisons
+
+
+def _sidecar_sweep_summary(runs: list[dict], comparisons: list[dict]) -> dict:
+    return {
+        "run_count": len(runs),
+        "comparison_count": len(comparisons),
+        "pass_count": sum(1 for run in runs if run.get("status") == "pass"),
+        "warn_count": sum(1 for run in runs if run.get("status") == "warn"),
+        "fail_count": sum(1 for run in runs if run.get("status") == "fail"),
+        "empty_count": sum(1 for run in runs if run.get("status") == "empty"),
+        "skipped_comparison_count": sum(1 for comparison in comparisons if comparison.get("status") == "skipped"),
+        "best_run": _sidecar_sweep_best_run(runs),
+    }
+
+
+def _sidecar_sweep_status(runs: list[dict]) -> str:
+    statuses = {run.get("status") for run in runs}
+    if not runs or statuses == {"empty"}:
+        return "empty"
+    if "fail" in statuses:
+        return "fail"
+    if statuses & {"warn", "empty"}:
+        return "warn"
+    return "pass"
+
+
+def _sidecar_sweep_best_run(runs: list[dict]) -> dict | None:
+    if not runs:
+        return None
+    best = max(
+        runs,
+        key=lambda run: (
+            run.get("summary", {}).get("saved_tokens", 0),
+            run.get("summary", {}).get("saved_pct", 0.0),
+        ),
+    )
+    return _sidecar_sweep_run_brief(best)
+
+
+def _sidecar_sweep_run_brief(run: dict) -> dict:
+    return {
+        "status": run.get("status"),
+        "name": run.get("name"),
+        "run_id": run.get("run_id"),
+        "source": run.get("source"),
+        "mode": run.get("mode"),
+        "model": run.get("model"),
+        "counter": run.get("counter"),
+        "output_dir": run.get("output_dir"),
+        "summary": run.get("summary", {}),
+        "outputs": run.get("outputs", {}),
+    }
+
+
+def _sidecar_sweep_runs_are_comparable(base: dict, target: dict) -> bool:
+    return (
+        base.get("source") == target.get("source")
+        and base.get("mode") == target.get("mode")
+        and base.get("counter") == target.get("counter")
+    )
+
+
+def _sidecar_sweep_skipped_comparison(base: dict, target: dict) -> dict:
+    return {
+        "schema_version": "tokensquash.sidecar.sweep.compare.v1",
+        "status": "skipped",
+        "base": _sidecar_sweep_comparison_brief(base),
+        "target": _sidecar_sweep_comparison_brief(target),
+        "delta": {
+            "saved_tokens": 0,
+            "saved_pct": 0.0,
+            "warning_count": 0,
+            "failure_count": 0,
+        },
+        "notes": [
+            "Comparison skipped because source, mode, or counter differs; token deltas would not be like-for-like.",
+        ],
+    }
+
+
+def _sidecar_sweep_comparison_brief(run: dict) -> dict:
+    return {
+        "path": run.get("outputs", {}).get("evaluation"),
+        "status": run.get("status"),
+        "source": run.get("source"),
+        "mode": run.get("mode"),
+        "model": run.get("model"),
+        "counter": run.get("counter"),
+        "summary": run.get("summary", {}),
+        "run_id": run.get("run_id"),
+    }
+
+
+def _sidecar_sweep_child_run_id(index: int, corpus: Path, model: str, counter: str) -> str:
+    pieces = [
+        f"{index:03d}",
+        _slugify_sidecar_experiment_name(corpus.stem),
+        _slugify_sidecar_experiment_name(model),
+        _slugify_sidecar_experiment_name(counter),
+    ]
+    return "-".join(piece for piece in pieces if piece)
 
 
 def _sidecar_experiment_run_id(name: str) -> str:

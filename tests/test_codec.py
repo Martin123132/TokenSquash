@@ -873,6 +873,132 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((run_dir / "run.json").exists())
             self.assertIn("TokenSquash Sidecar Experiment", (run_dir / "summary.md").read_text(encoding="utf-8"))
 
+    def test_sidecar_sweep_cli_writes_runs_and_comparisons(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "s": "d",
+                                "m": "fixed login",
+                                "f": ["src/auth.py"],
+                                "v": ["tests pass"],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "turns.jsonl"
+            out_root = Path(tmp) / "sweeps"
+            sweep_dir = out_root / "sweep-001"
+            corpus.write_text(
+                '{"id":"turn-1","prompt":"fix login","reply":"Done. I fixed login in src/auth.py and tests pass."}\n',
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+                with redirect_stdout(stdout):
+                    code = cli_main(
+                        [
+                            "sidecar",
+                            "sweep",
+                            str(corpus),
+                            "--name",
+                            "counter sweep",
+                            "--run-id",
+                            "sweep-001",
+                            "--out-root",
+                            str(out_root),
+                            "--mode",
+                            "reply",
+                            "--limit",
+                            "1",
+                            "--model",
+                            "tiny-a",
+                            "--model",
+                            "tiny-b",
+                            "--counter",
+                            "chars",
+                            "--counter",
+                            "char4",
+                            "--json",
+                        ]
+                    )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.sidecar.sweep.v1")
+            self.assertEqual(payload["name"], "counter sweep")
+            self.assertEqual(payload["run_id"], "sweep-001")
+            self.assertEqual(payload["summary"]["run_count"], 4)
+            self.assertEqual(payload["summary"]["comparison_count"], 3)
+            self.assertEqual(payload["summary"]["skipped_comparison_count"], 2)
+            self.assertEqual(len(payload["runs"]), 4)
+            self.assertEqual(len(payload["comparisons"]), 3)
+            self.assertTrue(any(comparison["status"] != "skipped" for comparison in payload["comparisons"]))
+            self.assertTrue(any(comparison["status"] == "skipped" for comparison in payload["comparisons"]))
+            self.assertTrue((sweep_dir / "sweep.json").exists())
+            self.assertTrue((sweep_dir / "summary.md").exists())
+            self.assertTrue((sweep_dir / "runs" / payload["runs"][0]["run_id"] / "evaluation.json").exists())
+            self.assertTrue((sweep_dir / "comparisons").exists())
+            self.assertIn("TokenSquash Sidecar Sweep", (sweep_dir / "summary.md").read_text(encoding="utf-8"))
+
+    def test_sidecar_sweep_cli_markdown_output(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps({"response": '{"s":"d","m":"fixed login","f":["src/auth.py"]}'}).encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "turns.jsonl"
+            out_root = Path(tmp) / "sweeps"
+            corpus.write_text(
+                '{"id":"turn-1","prompt":"fix login","reply":"Done. I fixed login in src/auth.py."}\n',
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+                with redirect_stdout(stdout):
+                    code = cli_main(
+                        [
+                            "sidecar",
+                            "sweep",
+                            str(corpus),
+                            "--run-id",
+                            "sweep-001",
+                            "--out-root",
+                            str(out_root),
+                            "--mode",
+                            "reply",
+                            "--limit",
+                            "1",
+                            "--counter",
+                            "chars",
+                        ]
+                    )
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("TokenSquash Sidecar Sweep", output)
+            self.assertIn("## Runs", output)
+            self.assertIn("Saved %", output)
+            self.assertIn("sweep.json", output)
+
     def test_compare_sidecar_evaluations_reports_improvement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp) / "base.json"
