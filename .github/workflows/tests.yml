@@ -39,6 +39,7 @@ jobs:
           python -m tokensquash turns diagnose examples/real-turns.template.jsonl
           python -m tokensquash turns mine examples/real-turns.template.jsonl
           python -m tokensquash turns aliases examples/real-turns.template.jsonl --out /tmp/tokensquash-turn-aliases.json
+          python -m tokensquash turns alias-impact examples/real-turns.template.jsonl --target 0
           python -m tokensquash turns bench examples/real-turns.template.jsonl
           python -m tokensquash turns split examples/real-turns.template.jsonl --prompts-out /tmp/tokensquash-prompts.jsonl --replies-out /tmp/tokensquash-replies.jsonl
       - name: Validate messy corpus
@@ -73,3 +74,5 @@ jobs:
         run: python -m tokensquash turns diagnose examples/real-turns.template.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer turn mine
         run: python -m tokensquash turns mine examples/real-turns.template.jsonl --counter tiktoken:cl100k_base
+      - name: Run exact tokenizer alias impact
+        run: python -m tokensquash turns alias-impact examples/real-turns.template.jsonl --counter tiktoken:cl100k_base --target 0

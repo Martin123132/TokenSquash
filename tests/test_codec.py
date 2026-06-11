@@ -20,6 +20,7 @@ from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 from tokensquash.turns import (
     append_turn_record,
+    benchmark_turn_alias_impact,
     benchmark_turns,
     diagnose_turn_corpus,
     learn_turn_aliases,
@@ -676,6 +677,46 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["turn_count"], 2)
             self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
             self.assertTrue(aliases.encode_path("packages/mobile/src/screens/login.tsx").startswith("@0/"))
+
+    def test_turn_alias_impact_reports_delta_and_break_even(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"update login","reply":"Done. I changed packages/mobile/src/screens/login.tsx."}\n'
+                '{"id":"b","prompt":"update checkout","reply":"Done. I changed packages/mobile/src/screens/checkout.tsx."}\n',
+                encoding="utf-8",
+            )
+
+            report = benchmark_turn_alias_impact(
+                path,
+                counter="chars",
+                target_savings_pct=0.0,
+                max_path_prefixes=1,
+            )
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.alias_impact.v1")
+            self.assertEqual(report["status"], "improved")
+            self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
+            self.assertGreater(report["summary"]["saved_tokens_delta"], 0)
+            self.assertGreater(report["summary"]["aliased_saved_pct"], report["summary"]["baseline_saved_pct"])
+            self.assertGreaterEqual(report["summary"]["break_even_corpora"], 1)
+            self.assertIn("baseline", report)
+            self.assertIn("aliased", report)
+
+    def test_turn_alias_impact_has_no_setup_cost_without_new_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"fix login","reply":"Done. I changed src/auth.py."}\n',
+                encoding="utf-8",
+            )
+
+            report = benchmark_turn_alias_impact(path, counter="chars", target_savings_pct=0.0)
+
+            self.assertEqual(report["status"], "same")
+            self.assertEqual(report["summary"]["selected_path_prefix_count"], 0)
+            self.assertEqual(report["summary"]["alias_setup_tokens"], 0)
+            self.assertIsNone(report["summary"]["break_even_corpora"])
 
 
 if __name__ == "__main__":

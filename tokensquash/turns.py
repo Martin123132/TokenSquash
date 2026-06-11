@@ -8,7 +8,7 @@ from typing import Any, Iterable
 
 from .aliases import AliasTable, learn_reply_aliases
 from .corpus import redact_text, scan_privacy
-from .metrics import benchmark_prompts, benchmark_replies
+from .metrics import benchmark_prompts, benchmark_replies, count_tokens
 from .mining import mine_reply_patterns
 
 
@@ -596,6 +596,119 @@ def learn_turn_aliases(
     return report
 
 
+def benchmark_turn_alias_impact(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.5,
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+    min_count: int = 2,
+    max_path_prefixes: int = 8,
+    min_saved_tokens: int = 1,
+    base_aliases: AliasTable | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Learn aliases and compare turn benchmarks before and after using them."""
+
+    started = time.time()
+    validation = validate_turn_corpus(path)
+    source = str(Path(path))
+    if validation["status"] == "fail":
+        return {
+            "schema_version": "tokensquash.turns.alias_impact.v1",
+            "status": "fail",
+            "path": source,
+            "counter": counter,
+            "adaptive": adaptive,
+            "target_savings_pct": target_savings_pct,
+            "summary": {
+                "turn_count": validation.get("summary", {}).get("turn_count", 0),
+                "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+                "selected_path_prefix_count": 0,
+                "saved_tokens_delta": 0,
+                "saved_pct_delta": 0.0,
+                "alias_setup_tokens": 0,
+                "net_saved_after_setup_tokens": 0,
+                "break_even_corpora": None,
+                "elapsed_seconds": round(time.time() - started, 4),
+            },
+            "delta": {},
+            "alias_report": None,
+            "baseline": None,
+            "aliased": None,
+            "validation": validation,
+        }
+
+    records = load_turn_records(path)
+    baseline = benchmark_turns(
+        records,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        source=source,
+        guess_reply_fields=guess_reply_fields,
+        aliases=base_aliases,
+    )
+    alias_report = learn_turn_aliases(
+        path,
+        counter=counter,
+        min_count=min_count,
+        max_path_prefixes=max_path_prefixes,
+        min_saved_tokens=min_saved_tokens,
+        guess_reply_fields=guess_reply_fields,
+        base_aliases=base_aliases,
+    )
+    aliases = AliasTable.from_dict(alias_report)
+    aliased = benchmark_turns(
+        records,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        source=source,
+        guess_reply_fields=guess_reply_fields,
+        aliases=aliases,
+    )
+    setup_tokens = _alias_setup_tokens(alias_report, counter)
+    delta = _alias_impact_delta(baseline, aliased, setup_tokens)
+    saved_tokens_delta = int(delta["saved_tokens"])
+    status = "empty" if not records else "improved" if saved_tokens_delta > 0 else "same" if saved_tokens_delta == 0 else "regressed"
+    if validation["status"] == "warn" and status == "improved":
+        status = "warn"
+
+    alias_summary = alias_report.get("summary", {})
+    baseline_summary = baseline.get("summary", {})
+    aliased_summary = aliased.get("summary", {})
+    return {
+        "schema_version": "tokensquash.turns.alias_impact.v1",
+        "status": status,
+        "path": source,
+        "counter": counter,
+        "adaptive": adaptive,
+        "target_savings_pct": target_savings_pct,
+        "summary": {
+            "turn_count": len(records),
+            "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+            "selected_path_prefix_count": alias_summary.get("selected_path_prefix_count", 0),
+            "baseline_saved_pct": baseline_summary.get("saved_pct", 0.0),
+            "aliased_saved_pct": aliased_summary.get("saved_pct", 0.0),
+            "saved_tokens_delta": saved_tokens_delta,
+            "saved_pct_delta": delta["saved_pct"],
+            "wire_tokens_delta": delta["wire_tokens"],
+            "squashed_tokens_delta": delta["squashed_tokens"],
+            "pass_through_delta": delta["passthroughs"],
+            "alias_setup_tokens": setup_tokens,
+            "net_saved_after_setup_tokens": delta["net_saved_after_setup_tokens"],
+            "break_even_corpora": delta["break_even_corpora"],
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "delta": delta,
+        "alias_report": alias_report,
+        "baseline": baseline,
+        "aliased": aliased,
+        "validation": validation,
+    }
+
+
 def format_turn_validation_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     lines = [
@@ -673,6 +786,58 @@ def format_turn_benchmark_markdown(report: dict[str, Any]) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def format_turn_alias_impact_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    alias_report = report.get("alias_report") or {}
+    selected = list(alias_report.get("selected_path_prefixes", []) or [])
+    break_even = summary.get("break_even_corpora")
+    break_even_text = "n/a" if break_even is None else str(break_even)
+    lines = [
+        "# TokenSquash Turn Alias Impact",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Adaptive: `{report.get('adaptive')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Selected custom aliases: `{summary.get('selected_path_prefix_count', 0)}`",
+        f"- Baseline saved percent: `{summary.get('baseline_saved_pct', 0.0)}%`",
+        f"- Aliased saved percent: `{summary.get('aliased_saved_pct', 0.0)}%`",
+        f"- Saved token delta: `{summary.get('saved_tokens_delta', 0)}`",
+        f"- Saved percent delta: `{summary.get('saved_pct_delta', 0.0)}%`",
+        f"- Raw wire token reduction: `{summary.get('wire_tokens_delta', 0)}`",
+        f"- Adaptive token reduction: `{summary.get('squashed_tokens_delta', 0)}`",
+        f"- Pass-through row delta: `{summary.get('pass_through_delta', 0)}`",
+        f"- Alias setup tokens: `{summary.get('alias_setup_tokens', 0)}`",
+        f"- Net saved after one setup: `{summary.get('net_saved_after_setup_tokens', 0)}`",
+        f"- Break-even corpora: `{break_even_text}`",
+        "",
+        "## Selected Aliases",
+        "",
+    ]
+    if not selected:
+        lines.extend(["No custom path prefixes selected.", ""])
+    else:
+        lines.extend(
+            [
+                "| Code | Prefix | Count | Est saved |",
+                "|---|---|---:|---:|",
+            ]
+        )
+        for item in selected:
+            lines.append(
+                f"| `{_markdown_cell(str(item.get('code')))}` | "
+                f"{_markdown_cell(str(item.get('prefix')))} | "
+                f"{item.get('count')} | "
+                f"{item.get('estimated_saved_tokens')} |"
+            )
+        lines.append("")
+    if report.get("validation", {}).get("status") == "warn":
+        lines.append("Validation warnings or privacy findings are present; review before sharing this corpus.")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def format_turn_measure_markdown(report: dict[str, Any]) -> str:
@@ -1226,6 +1391,47 @@ def _diagnostic_briefs(rows: Iterable[dict[str, Any]], limit: int) -> list[dict[
 
 def _format_issue_counts(counts: dict[str, int]) -> str:
     return ", ".join(f"{key}={value}" for key, value in list(counts.items())[:8])
+
+
+def _alias_impact_delta(
+    baseline: dict[str, Any],
+    aliased: dict[str, Any],
+    setup_tokens: int,
+) -> dict[str, Any]:
+    baseline_summary = baseline.get("summary", {})
+    aliased_summary = aliased.get("summary", {})
+    saved_tokens = int(aliased_summary.get("saved_tokens", 0)) - int(baseline_summary.get("saved_tokens", 0))
+    wire_tokens = int(baseline_summary.get("wire_tokens", 0)) - int(aliased_summary.get("wire_tokens", 0))
+    squashed_tokens = int(baseline_summary.get("squashed_tokens", 0)) - int(aliased_summary.get("squashed_tokens", 0))
+    passthroughs = int(aliased_summary.get("passthroughs", 0)) - int(baseline_summary.get("passthroughs", 0))
+    break_even = None if saved_tokens <= 0 else (setup_tokens + saved_tokens - 1) // saved_tokens
+    return {
+        "saved_tokens": saved_tokens,
+        "saved_pct": round(float(aliased_summary.get("saved_pct", 0.0)) - float(baseline_summary.get("saved_pct", 0.0)), 4),
+        "wire_tokens": wire_tokens,
+        "wire_saved_pct": round(
+            float(aliased_summary.get("wire_saved_pct", 0.0)) - float(baseline_summary.get("wire_saved_pct", 0.0)),
+            4,
+        ),
+        "squashed_tokens": squashed_tokens,
+        "passthroughs": passthroughs,
+        "alias_setup_tokens": setup_tokens,
+        "net_saved_after_setup_tokens": saved_tokens - setup_tokens,
+        "break_even_corpora": break_even,
+    }
+
+
+def _alias_setup_tokens(alias_report: dict[str, Any], counter: str) -> int:
+    selected = alias_report.get("selected_path_prefixes", []) or []
+    path_prefixes = {
+        str(item.get("prefix")): str(item.get("code"))
+        for item in selected
+        if item.get("prefix") and item.get("code")
+    }
+    if not path_prefixes:
+        return 0
+    payload = json.dumps(AliasTable(path_prefixes).to_dict(), ensure_ascii=True, separators=(",", ":"))
+    return count_tokens(payload, counter)
 
 
 def _append_diagnostic_table(lines: list[str], title: str, rows: list[dict[str, Any]]) -> None:

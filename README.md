@@ -178,6 +178,7 @@ python -m tokensquash turns measure private-turns\real.redacted-turns.jsonl --co
 python -m tokensquash turns diagnose private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns mine private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns aliases private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out aliases\session.json
+python -m tokensquash turns alias-impact private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --target 0
 python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out benchmarks\real-turns-cl100k.json
 python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --aliases aliases\session.json --counter tiktoken:cl100k_base
 ```
@@ -187,8 +188,10 @@ savings plus prompt-side and reply-side savings. `turns diagnose` shows the
 largest wins, raw wire losses, and adaptive pass-through rows so the next codec
 change has a target. `turns mine` reports repeated reply field values and path
 patterns with estimated token impact. `turns aliases` learns a session path
-dictionary from reply-side files. `turns bench` returns the full benchmark
-payload for saving as JSON.
+dictionary from reply-side files. `turns alias-impact` learns aliases and
+compares turn benchmarks with and without them, including alias setup tokens and
+break-even corpus count. `turns bench` returns the full benchmark payload for
+saving as JSON.
 For a first measurement run, add `--target 0` if you want the command to exit
 successfully even when the corpus does not beat the default `0.5%` target.
 When a raw reply has no structured fields, TokenSquash guesses a starter `tr1`
@@ -213,6 +216,7 @@ python -m unittest discover -s tests
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
 - Local paired-turn workflow for validating, redacting, splitting, and benchmarking private prompt/reply exports.
+- Alias-impact reports for learned session dictionaries.
 - Pattern mining for repeated reply values and path patterns.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No network calls, no API keys, no model dependency.

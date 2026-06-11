@@ -28,8 +28,10 @@ from .mining import format_pattern_mine_markdown, mine_reply_patterns
 from .reply import decode_reply, encode_reply, parse_reply_wire
 from .turns import (
     append_turn_record,
+    benchmark_turn_alias_impact,
     benchmark_turns,
     diagnose_turn_corpus,
+    format_turn_alias_impact_markdown,
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
     format_turn_diagnose_markdown,
@@ -181,6 +183,19 @@ def main(argv: list[str] | None = None) -> int:
     turns_aliases.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
     turns_aliases.add_argument("--out", type=Path, help="Write learned alias JSON to this file.")
     turns_aliases.add_argument("--json", action="store_true", help="Print learned alias JSON.")
+
+    turns_alias_impact = turns_sub.add_parser("alias-impact", help="Learn aliases and compare turn savings with and without them.")
+    turns_alias_impact.add_argument("corpus", type=Path)
+    turns_alias_impact.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_alias_impact.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
+    turns_alias_impact.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_alias_impact.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_alias_impact.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
+    turns_alias_impact.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
+    turns_alias_impact.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per prefix.")
+    turns_alias_impact.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    turns_alias_impact.add_argument("--out", type=Path, help="Write alias impact report to this file.")
+    turns_alias_impact.add_argument("--json", action="store_true", help="Print alias impact JSON.")
 
     reply = sub.add_parser("reply", help="Encode and decode compact agent replies.")
     reply_sub = reply.add_subparsers(dest="reply_command", required=True)
@@ -454,6 +469,28 @@ def main(argv: list[str] | None = None) -> int:
                     write_alias_table(args.out, report)
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.turns_command == "alias-impact":
+                report = benchmark_turn_alias_impact(
+                    args.corpus,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                    min_count=args.min_count,
+                    max_path_prefixes=args.max_prefixes,
+                    min_saved_tokens=args.min_saved_tokens,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_alias_impact_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"improved", "same", "warn", "empty"} else 1
 
         if args.command == "reply":
             if args.reply_command == "encode":

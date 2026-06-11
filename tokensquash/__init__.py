@@ -8,6 +8,7 @@ from .mining import mine_reply_patterns
 from .reply import AgentReply, decode_reply, encode_reply, parse_reply_wire
 from .turns import (
     append_turn_record,
+    benchmark_turn_alias_impact,
     benchmark_turns,
     diagnose_turn_corpus,
     learn_turn_aliases,
@@ -25,6 +26,7 @@ __all__ = [
     "AliasTable",
     "Intent",
     "append_turn_record",
+    "benchmark_turn_alias_impact",
     "benchmark_prompts",
     "benchmark_replies",
     "benchmark_turns",
