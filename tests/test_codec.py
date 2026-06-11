@@ -282,6 +282,11 @@ class TokenSquashCodecTests(unittest.TestCase):
         wire = reply.to_wire()
         parsed = parse_reply_wire(wire)
 
+        self.assertTrue(wire.startswith("tr1 "))
+        self.assertNotIn("tr1 d ", wire)
+        self.assertIn("v=t", wire)
+        self.assertIn("c=pyunit", wire)
+        self.assertIn("r=0", wire)
         self.assertEqual(parsed.status, "done")
         self.assertEqual(parsed.summary, "added compact reply codec")
         self.assertEqual(parsed.files, ("tokensquash/reply.py", "tokensquash/cli.py"))
@@ -304,6 +309,23 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(parsed.summary, "compact reply added")
         self.assertEqual(parsed.verification, ("unit tests pass",))
         self.assertEqual(parsed.risks, ("none",))
+
+    def test_reply_decode_accepts_default_status_and_field_codes(self) -> None:
+        parsed = parse_reply_wire('tr1 "compact reply added" v=t c=pyunit r=0')
+
+        self.assertEqual(parsed.status, "done")
+        self.assertEqual(parsed.summary, "compact reply added")
+        self.assertEqual(parsed.verification, ("unit tests pass",))
+        self.assertEqual(parsed.commands, ("python -m unittest discover -s tests",))
+        self.assertEqual(parsed.risks, ("none",))
+
+    def test_reply_wire_keeps_status_when_summary_looks_like_status(self) -> None:
+        wire = encode_reply("done").to_wire()
+        parsed = parse_reply_wire(wire)
+
+        self.assertEqual(wire, "tr1 d done")
+        self.assertEqual(parsed.status, "done")
+        self.assertEqual(parsed.summary, "done")
 
     def test_reply_accepts_json(self) -> None:
         wire = parse_reply_wire(
@@ -357,6 +379,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("[REDACTED_EMAIL]", prompts.read_text(encoding="utf-8"))
             self.assertIn("python -m unittest discover -s tests", reply_payload["commands"])
             self.assertTrue(reply_payload["summary"])
+            self.assertNotIn("python -m unittest", reply_payload["summary"])
 
     def test_append_turn_record_writes_jsonl(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

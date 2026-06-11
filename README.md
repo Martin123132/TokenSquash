@@ -43,13 +43,13 @@ python -m tokensquash reply encode --summary "added compact reply codec" --file 
 Output:
 
 ```text
-tr1 d "added compact reply codec" f=tokensquash/reply.py,tokensquash/cli.py v="unit tests pass" c="python -m unittest discover -s tests" r=none
+tr1 "added compact reply codec" f=tokensquash/reply.py,tokensquash/cli.py v=t c=pyunit r=0
 ```
 
 Decode it back:
 
 ```powershell
-python -m tokensquash reply decode 'tr1 d "added compact reply codec" f=tokensquash/reply.py v="unit tests pass" r=none'
+python -m tokensquash reply decode 'tr1 "added compact reply codec" f=tokensquash/reply.py v=t c=pyunit r=0'
 ```
 
 Benchmark structured reply records:
@@ -65,6 +65,10 @@ text used as the benchmark baseline:
 ```json
 {"status":"done","summary":"added compact reply codec","files":["tokensquash/reply.py"],"verification":["unit tests pass"],"text":"Done. I added the compact reply codec and verified it with unit tests."}
 ```
+
+Reply wire omits the default `done` status. Common field values use compact
+codes, for example `v=t` decodes to `unit tests pass`, `c=pyunit` decodes to
+`python -m unittest discover -s tests`, and `r=0` decodes to `none`.
 
 ## Benchmark
 
@@ -177,6 +181,7 @@ python -m unittest discover -s tests
 
 - Compact coding-agent intent format: `ts1`.
 - Compact coding-agent reply format: `tr1`.
+- Common reply field-code shortcuts for repeated verification, command, and risk values.
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.

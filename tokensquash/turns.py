@@ -782,10 +782,20 @@ def _summary_from_text(text: str) -> str:
             sentence,
             flags=re.IGNORECASE,
         )
+        summary = _strip_summary_details(summary)
         summary = _clean_text(summary)
         if summary:
             return _truncate(summary, 120)
     return _first_sentence(text)
+
+
+def _strip_summary_details(text: str) -> str:
+    summary = re.sub(r"`[^`]+`", "", text)
+    summary = re.sub(r"\b(?:and\s+)?(?:verified|validated|tested|ran|checked)\b.*$", "", summary, flags=re.IGNORECASE)
+    summary = re.sub(r"\b(?:risks?|caveats?|limitations?)\s*:.*$", "", summary, flags=re.IGNORECASE)
+    summary = _PATH_RE.sub("", summary)
+    summary = re.sub(r"\b(?:in|at|within|with)\s*([,.]|$)", r"\1", summary, flags=re.IGNORECASE)
+    return _clean_text(summary).strip(" ,.;:")
 
 
 def _first_sentence(text: str) -> str:
@@ -827,8 +837,19 @@ def _extract_tagged_sentences(text: str, tags: tuple[str, ...]) -> list[str]:
     for sentence in _SENTENCE_RE.split(_clean_text(text)):
         lowered = sentence.lower()
         if any(tag in lowered for tag in tags):
-            result.append(_truncate(sentence, 140))
+            result.append(_truncate(_strip_tag_prefix(sentence), 140))
     return _unique(result)
+
+
+def _strip_tag_prefix(text: str) -> str:
+    return _clean_text(
+        re.sub(
+            r"^(?:the\s+)?(?:main\s+)?(?:risks?|caveats?|limitations?|next\s+steps?|next\s+step)\s*(?:is|are)?\s*:\s*",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        )
+    ).strip(" .;:")
 
 
 def _scan_turn_privacy(records: list[dict[str, Any]]) -> dict[str, Any]:

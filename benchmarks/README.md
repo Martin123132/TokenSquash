@@ -18,8 +18,8 @@ They are regression baselines, not proof of production-wide savings.
 
 | Counter | Raw wire saved | Adaptive saved | Pass-through rows |
 |---|---:|---:|---:|
-| `tiktoken:cl100k_base` | `-25.2408%` | `6.7437%` | `7` |
-| `tiktoken:o200k_base` | `-25.4789%` | `6.705%` | `7` |
+| `tiktoken:cl100k_base` | `20.8092%` | `21.0019%` | `2` |
+| `tiktoken:o200k_base` | `20.6897%` | `21.2644%` | `2` |
 
 Regenerate locally:
 

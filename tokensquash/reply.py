@@ -28,6 +28,51 @@ FIELD_CODES = {
 }
 FIELD_NAMES = {value: key for key, value in FIELD_CODES.items()}
 
+FIELD_VALUE_CODES = {
+    "verification": {
+        "unit tests pass": "t",
+        "tests pass": "t",
+        "local tests pass": "lt",
+        "ci pass": "ci",
+        "github actions pass": "gha",
+        "build pass": "b",
+        "lint pass": "l",
+        "exact benchmark pass": "x",
+        "heuristic benchmark pass": "h",
+        "exact benchmark skipped": "xs",
+        "commands reviewed": "cr",
+        "baseline compare pass": "bc",
+        "reply cli smoke test pass": "rc",
+        "no code changes made": "nc",
+        "not implemented": "ni",
+        "messy corpus validation warns only": "mw",
+    },
+    "commands": {
+        "python -m unittest discover -s tests": "pyunit",
+        "python -m tokensquash reply encode --summary example": "renc",
+        "python -m tokensquash bench examples/messy-coding-prompts.jsonl": "benchmessy",
+        "python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base": "benchcl100k",
+        "python -m tokensquash corpus validate examples/messy-coding-prompts.jsonl": "validmessy",
+        "python -m tokensquash corpus redact examples/messy-coding-prompts.jsonl --out temp.redacted.jsonl": "redactmessy",
+        "python -m tokensquash compare benchmarks/messy-cl100k.json benchmarks/messy-o200k.json": "cmpmessy",
+        "gh run view latest": "ghrun",
+    },
+    "risks": {
+        "none": "0",
+        "synthetic corpus only": "syn",
+        "sample corpus is synthetic": "syn",
+        "examples remain synthetic": "synx",
+        "redaction is not a privacy guarantee": "redact",
+        "install tokenizer extra before comparing exact model counts": "tokextra",
+    },
+}
+FIELD_VALUE_NAMES: dict[str, dict[str, str]] = {}
+for field_name, values in FIELD_VALUE_CODES.items():
+    decoded: dict[str, str] = {}
+    for value, code in values.items():
+        decoded.setdefault(code, value)
+    FIELD_VALUE_NAMES[field_name] = decoded
+
 _SPACE_RE = re.compile(r"\s+")
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*=")
 
@@ -47,7 +92,9 @@ class AgentReply:
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     def to_wire(self) -> str:
-        parts = [self.version, _wire_atom(_encode_code(self.status, STATUS_CODES))]
+        parts = [self.version]
+        if self.status != "done" or _looks_like_status_token(self.summary):
+            parts.append(_wire_atom(_encode_code(self.status, STATUS_CODES)))
         if self.summary:
             parts.append(_wire_value(self.summary))
         parts.extend(_field_parts("files", self.files))
@@ -121,8 +168,10 @@ def parse_reply_wire(wire: str) -> AgentReply:
     status = "done"
     index = 1
     if index < len(parts) and "=" not in parts[index]:
-        status = _decode_code(parts[index], STATUS_NAMES)
-        index += 1
+        candidate = _decode_code(parts[index], STATUS_NAMES)
+        if candidate in STATUS_CODES:
+            status = candidate
+            index += 1
 
     summary_parts: list[str] = []
     values: dict[str, list[str]] = {
@@ -152,12 +201,12 @@ def parse_reply_wire(wire: str) -> AgentReply:
     return AgentReply(
         status=_normalize_status(status),
         summary=_clean_text(" ".join(summary_parts)),
-        files=_split_field_values(values["files"]),
-        verification=_split_field_values(values["verification"]),
-        commands=_split_field_values(values["commands"]),
-        risks=_split_field_values(values["risks"]),
-        next_steps=_split_field_values(values["next_steps"]),
-        warnings=_split_field_values(values["warnings"]),
+        files=_split_field_values("files", values["files"]),
+        verification=_split_field_values("verification", values["verification"]),
+        commands=_split_field_values("commands", values["commands"]),
+        risks=_split_field_values("risks", values["risks"]),
+        next_steps=_split_field_values("next_steps", values["next_steps"]),
+        warnings=_split_field_values("warnings", values["warnings"]),
     )
 
 
@@ -210,17 +259,25 @@ def decode_reply(value: AgentReply | str | dict[str, Any]) -> str:
 
 def _field_parts(name: str, values: tuple[str, ...]) -> list[str]:
     key = FIELD_CODES[name]
-    clean_values = [value for value in values if value]
+    clean_values = [_encode_field_value(name, value) for value in values if value]
     if len(clean_values) > 1 and all("," not in value for value in clean_values):
         return [f"{key}={','.join(_wire_value(value) for value in clean_values)}"]
     return [f"{key}={_wire_value(value)}" for value in clean_values]
 
 
-def _split_field_values(values: Iterable[str]) -> tuple[str, ...]:
+def _split_field_values(name: str, values: Iterable[str]) -> tuple[str, ...]:
     items = []
     for value in values:
-        items.extend(part.strip() for part in value.split(","))
+        items.extend(_decode_field_value(name, part.strip()) for part in value.split(","))
     return _unique(items)
+
+
+def _encode_field_value(name: str, value: str) -> str:
+    return FIELD_VALUE_CODES.get(name, {}).get(value.lower().strip(" .;:"), value)
+
+
+def _decode_field_value(name: str, value: str) -> str:
+    return FIELD_VALUE_NAMES.get(name, {}).get(value, value)
 
 
 def _wire_value(value: str) -> str:
@@ -240,6 +297,11 @@ def _encode_code(value: str, table: dict[str, str]) -> str:
 
 def _decode_code(value: str, table: dict[str, str]) -> str:
     return table.get(value, value)
+
+
+def _looks_like_status_token(value: str) -> bool:
+    text = _clean_text(value)
+    return bool(text) and " " not in text and _decode_code(text, STATUS_NAMES) in STATUS_CODES
 
 
 def _normalize_status(status: str) -> str:
