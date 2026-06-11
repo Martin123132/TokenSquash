@@ -73,6 +73,19 @@ for field_name, values in FIELD_VALUE_CODES.items():
         decoded.setdefault(code, value)
     FIELD_VALUE_NAMES[field_name] = decoded
 
+PATH_PREFIX_CODES = {
+    "tokensquash/": "@t/",
+    "tests/": "@x/",
+    "examples/": "@e/",
+    "benchmarks/": "@b/",
+    ".github/workflows/": "@g/",
+    "src/": "@s/",
+}
+PATH_PREFIX_NAMES = {
+    code: prefix
+    for prefix, code in sorted(PATH_PREFIX_CODES.items(), key=lambda item: len(item[1]), reverse=True)
+}
+
 _SPACE_RE = re.compile(r"\s+")
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*=")
 
@@ -273,11 +286,31 @@ def _split_field_values(name: str, values: Iterable[str]) -> tuple[str, ...]:
 
 
 def _encode_field_value(name: str, value: str) -> str:
+    if name == "files":
+        return _encode_path_alias(value)
     return FIELD_VALUE_CODES.get(name, {}).get(value.lower().strip(" .;:"), value)
 
 
 def _decode_field_value(name: str, value: str) -> str:
+    if name == "files":
+        return _decode_path_alias(value)
     return FIELD_VALUE_NAMES.get(name, {}).get(value, value)
+
+
+def _encode_path_alias(value: str) -> str:
+    normalized = value.replace("\\", "/")
+    for prefix, code in sorted(PATH_PREFIX_CODES.items(), key=lambda item: len(item[0]), reverse=True):
+        if normalized.startswith(prefix):
+            return code + normalized[len(prefix):]
+    return normalized
+
+
+def _decode_path_alias(value: str) -> str:
+    normalized = value.replace("\\", "/")
+    for code, prefix in PATH_PREFIX_NAMES.items():
+        if normalized.startswith(code):
+            return prefix + normalized[len(code):]
+    return normalized
 
 
 def _wire_value(value: str) -> str:

@@ -6,7 +6,7 @@ from collections import defaultdict
 from typing import Any, Iterable
 
 from .metrics import count_tokens
-from .reply import FIELD_VALUE_CODES, reply_from_dict
+from .reply import FIELD_VALUE_CODES, PATH_PREFIX_CODES, reply_from_dict
 
 
 MINE_FIELDS = ("verification", "commands", "risks", "next_steps", "warnings")
@@ -164,19 +164,22 @@ def _path_candidate(
     occurrences: list[dict[str, Any]],
     counter: str,
 ) -> dict[str, Any]:
-    suggested_code = _suggest_path_code(pattern_type, value)
-    gross_saved = _estimated_saved_tokens(value, suggested_code, len(occurrences), counter)
+    existing_code = _existing_path_code(pattern_type, value)
+    suggested_code = existing_code or _suggest_path_code(pattern_type, value)
+    encoded_value = _current_path_wire_value(value)
+    gross_saved = _estimated_saved_tokens(encoded_value, suggested_code, len(occurrences), counter)
     return {
         "kind": "path_pattern",
         "pattern_type": pattern_type,
         "value": value,
         "count": len(occurrences),
+        "existing_code": existing_code,
         "suggested_code": suggested_code,
-        "already_coded": False,
-        "value_tokens": count_tokens(_wire_value(value), counter),
+        "already_coded": existing_code is not None,
+        "value_tokens": count_tokens(_wire_value(encoded_value), counter),
         "code_tokens": count_tokens(suggested_code, counter),
         "gross_saved_tokens": gross_saved,
-        "estimated_new_saved_tokens": max(0, gross_saved),
+        "estimated_new_saved_tokens": 0 if existing_code else max(0, gross_saved),
         "sample_ids": _sample_ids(occurrences),
     }
 
@@ -216,6 +219,19 @@ def _suggest_path_code(pattern_type: str, value: str) -> str:
     words = re.findall(r"[A-Za-z0-9]+", value.lower())
     stem = "".join(word[0] for word in words[:3]) or "x"
     return f"{prefix}{stem[:4]}"
+
+
+def _existing_path_code(pattern_type: str, value: str) -> str | None:
+    if pattern_type == "path_prefix":
+        return PATH_PREFIX_CODES.get(value)
+    return None
+
+
+def _current_path_wire_value(value: str) -> str:
+    for prefix, code in sorted(PATH_PREFIX_CODES.items(), key=lambda item: len(item[0]), reverse=True):
+        if value.startswith(prefix):
+            return code + value[len(prefix):]
+    return value
 
 
 def _path_prefix(path: str) -> str:
@@ -270,14 +286,15 @@ def _append_candidate_table(
     else:
         lines.extend(
             [
-                "| Pattern | Count | Est saved | Code | Value |",
+                "| Pattern | Count | Est new saved | Code | Value |",
                 "|---|---:|---:|---|---|",
             ]
         )
         for item in candidates:
+            code = item.get("existing_code") or item.get("suggested_code")
             lines.append(
                 f"| {_markdown_cell(str(item.get('pattern_type')))} | {item.get('count')} | "
-                f"{item.get('estimated_new_saved_tokens')} | `{_markdown_cell(str(item.get('suggested_code')))}` | "
+                f"{item.get('estimated_new_saved_tokens')} | `{_markdown_cell(str(code))}` | "
                 f"{_markdown_cell(str(item.get('value')))} |"
             )
     lines.append("")
@@ -295,7 +312,7 @@ def _clean_value(value: str) -> str:
 
 
 def _normalize_path(path: str) -> str:
-    return _clean_value(path).replace("\\", "/")
+    return _SPACE_RE.sub(" ", str(path).strip()).strip(" ;:").replace("\\", "/")
 
 
 def _markdown_cell(value: str) -> str:

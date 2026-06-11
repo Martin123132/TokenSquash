@@ -122,6 +122,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             {
                 "id": "a",
                 "summary": "checked search flow",
+                "files": ["tokensquash/search.py"],
                 "verification": ["integration tests pass"],
                 "commands": ["npm test"],
                 "risks": ["staging database not seeded"],
@@ -130,6 +131,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             {
                 "id": "b",
                 "summary": "checked checkout flow",
+                "files": ["tokensquash/checkout.py"],
                 "verification": ["integration tests pass"],
                 "commands": ["npm test"],
                 "risks": ["staging database not seeded"],
@@ -145,6 +147,9 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn(("commands", "npm test"), candidates)
         self.assertGreater(candidates[("commands", "npm test")]["estimated_new_saved_tokens"], 0)
         self.assertIn(("risks", "staging database not seeded"), candidates)
+        path_prefix = next(item for item in report["path_patterns"] if item["value"] == "tokensquash/")
+        self.assertEqual(path_prefix["existing_code"], "@t/")
+        self.assertEqual(path_prefix["estimated_new_saved_tokens"], 0)
 
     def test_load_jsonl_prompts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -315,6 +320,7 @@ class TokenSquashCodecTests(unittest.TestCase):
 
         self.assertTrue(wire.startswith("tr1 "))
         self.assertNotIn("tr1 d ", wire)
+        self.assertIn("f=@t/reply.py,@t/cli.py", wire)
         self.assertIn("v=t", wire)
         self.assertIn("c=pyunit", wire)
         self.assertIn("r=0", wire)
@@ -340,6 +346,15 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(parsed.summary, "compact reply added")
         self.assertEqual(parsed.verification, ("unit tests pass",))
         self.assertEqual(parsed.risks, ("none",))
+
+    def test_reply_decode_expands_path_aliases(self) -> None:
+        parsed = parse_reply_wire('tr1 "path aliases" f=@t/reply.py,@x/test_codec.py,@g/tests.yml')
+
+        self.assertEqual(
+            parsed.files,
+            ("tokensquash/reply.py", "tests/test_codec.py", ".github/workflows/tests.yml"),
+        )
+        self.assertEqual(parsed.to_wire(), 'tr1 "path aliases" f=@t/reply.py,@x/test_codec.py,@g/tests.yml')
 
     def test_reply_decode_accepts_default_status_and_field_codes(self) -> None:
         parsed = parse_reply_wire('tr1 "compact reply added" v=t c=pyunit r=0')

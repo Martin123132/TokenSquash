@@ -43,7 +43,7 @@ python -m tokensquash reply encode --summary "added compact reply codec" --file 
 Output:
 
 ```text
-tr1 "added compact reply codec" f=tokensquash/reply.py,tokensquash/cli.py v=t c=pyunit r=0
+tr1 "added compact reply codec" f=@t/reply.py,@t/cli.py v=t c=pyunit r=0
 ```
 
 Decode it back:
@@ -70,6 +70,9 @@ text used as the benchmark baseline:
 Reply wire omits the default `done` status. Common field values use compact
 codes, for example `v=t` decodes to `unit tests pass`, `c=pyunit` decodes to
 `python -m unittest discover -s tests`, and `r=0` decodes to `none`.
+Common file prefixes are aliased inside `f=`, including `@t/` for
+`tokensquash/`, `@x/` for `tests/`, `@e/` for `examples/`, `@b/` for
+`benchmarks/`, `@g/` for `.github/workflows/`, and `@s/` for `src/`.
 `reply mine` scans a reply corpus for repeated commands, verification phrases,
 risks, next steps, warnings, and path patterns that may deserve the next compact
 code.
@@ -188,6 +191,7 @@ python -m unittest discover -s tests
 - Compact coding-agent intent format: `ts1`.
 - Compact coding-agent reply format: `tr1`.
 - Common reply field-code shortcuts for repeated verification, command, and risk values.
+- Built-in reply file-prefix aliases for common project paths.
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
