@@ -22,7 +22,13 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
-from tokensquash.sidecar import decode_semantic, evaluate_sidecar_turns, parse_semantic_json, translate_with_ollama
+from tokensquash.sidecar import (
+    compare_sidecar_evaluations,
+    decode_semantic,
+    evaluate_sidecar_turns,
+    parse_semantic_json,
+    translate_with_ollama,
+)
 from tokensquash.turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
@@ -705,6 +711,128 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "evaluation.json").exists())
             self.assertTrue((out_dir / "rows.jsonl").exists())
             self.assertIn("outputs", payload)
+
+    def test_compare_sidecar_evaluations_reports_improvement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base.json"
+            target = Path(tmp) / "target.json"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.evaluate.v1",
+                        "status": "warn",
+                        "source": "base-turns.jsonl",
+                        "mode": "both",
+                        "model": "tiny-local",
+                        "counter": "chars",
+                        "summary": {
+                            "item_count": 2,
+                            "success_count": 2,
+                            "failure_count": 1,
+                            "warning_count": 2,
+                            "original_tokens": 100,
+                            "semantic_tokens": 90,
+                            "saved_tokens": 10,
+                            "saved_pct": 10.0,
+                            "win_items": 1,
+                            "loss_items": 1,
+                            "tie_items": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.evaluate.v1",
+                        "status": "pass",
+                        "source": "target-turns.jsonl",
+                        "mode": "both",
+                        "model": "tiny-local",
+                        "counter": "chars",
+                        "summary": {
+                            "item_count": 2,
+                            "success_count": 2,
+                            "failure_count": 0,
+                            "warning_count": 1,
+                            "original_tokens": 100,
+                            "semantic_tokens": 84,
+                            "saved_tokens": 16,
+                            "saved_pct": 16.0,
+                            "win_items": 2,
+                            "loss_items": 0,
+                            "tie_items": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = compare_sidecar_evaluations(base, target)
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.evaluate.compare.v1")
+        self.assertEqual(report["status"], "improved")
+        self.assertEqual(report["delta"]["saved_tokens"], 6)
+        self.assertEqual(report["delta"]["saved_pct"], 6.0)
+        self.assertEqual(report["delta"]["failure_count"], -1)
+        self.assertEqual(report["delta"]["warning_count"], -1)
+        self.assertIn("Target saves more tokens than base.", report["notes"])
+
+    def test_sidecar_compare_evaluations_cli_writes_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "base.json"
+            target = Path(tmp) / "target.json"
+            out = Path(tmp) / "compare.md"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.evaluate.v1",
+                        "status": "pass",
+                        "summary": {
+                            "item_count": 1,
+                            "success_count": 1,
+                            "failure_count": 0,
+                            "warning_count": 0,
+                            "original_tokens": 50,
+                            "semantic_tokens": 45,
+                            "saved_tokens": 5,
+                            "saved_pct": 10.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.evaluate.v1",
+                        "status": "pass",
+                        "summary": {
+                            "item_count": 1,
+                            "success_count": 1,
+                            "failure_count": 0,
+                            "warning_count": 0,
+                            "original_tokens": 50,
+                            "semantic_tokens": 40,
+                            "saved_tokens": 10,
+                            "saved_pct": 20.0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["sidecar", "compare-evaluations", str(base), str(target), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("TokenSquash Sidecar Evaluation Compare", output)
+            self.assertIn("Status: `improved`", output)
+            self.assertTrue(out.exists())
+            self.assertIn("Saved percent delta: `10.0%`", out.read_text(encoding="utf-8"))
 
     def test_reply_wire_round_trip(self) -> None:
         reply = encode_reply(

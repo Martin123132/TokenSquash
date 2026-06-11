@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -276,6 +277,25 @@ def evaluate_sidecar_turns(
     }
 
 
+def compare_sidecar_evaluations(base_path: Path | str, target_path: Path | str) -> dict[str, Any]:
+    """Compare two saved sidecar evaluation reports."""
+
+    base = _load_sidecar_evaluation(base_path)
+    target = _load_sidecar_evaluation(target_path)
+    base_summary = base.get("summary", {})
+    target_summary = target.get("summary", {})
+    delta = _sidecar_summary_delta(base_summary, target_summary)
+    status = _sidecar_comparison_status(delta)
+    return {
+        "schema_version": "tokensquash.sidecar.evaluate.compare.v1",
+        "status": status,
+        "base": _sidecar_report_brief(base, base_path),
+        "target": _sidecar_report_brief(target, target_path),
+        "delta": delta,
+        "notes": _sidecar_comparison_notes(delta),
+    }
+
+
 def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
@@ -428,6 +448,54 @@ def format_sidecar_evaluation_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_sidecar_evaluation_compare_markdown(report: dict[str, Any]) -> str:
+    base = report.get("base", {})
+    target = report.get("target", {})
+    delta = report.get("delta", {})
+    lines = [
+        "# TokenSquash Sidecar Evaluation Compare",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Base: `{base.get('path')}`",
+        f"- Target: `{target.get('path')}`",
+        f"- Saved tokens delta: `{delta.get('saved_tokens', 0)}`",
+        f"- Saved percent delta: `{delta.get('saved_pct', 0.0)}%`",
+        f"- Warning delta: `{delta.get('warning_count', 0)}`",
+        f"- Failure delta: `{delta.get('failure_count', 0)}`",
+        "",
+        "## Summary Delta",
+        "",
+        "| Metric | Base | Target | Delta |",
+        "|---|---:|---:|---:|",
+    ]
+    for key in (
+        "item_count",
+        "success_count",
+        "failure_count",
+        "warning_count",
+        "original_tokens",
+        "semantic_tokens",
+        "saved_tokens",
+        "saved_pct",
+        "win_items",
+        "loss_items",
+        "tie_items",
+    ):
+        lines.append(
+            "| "
+            f"{key} | "
+            f"{base.get('summary', {}).get(key, 0)} | "
+            f"{target.get('summary', {}).get(key, 0)} | "
+            f"{delta.get(key, 0)} |"
+        )
+    notes = report.get("notes", [])
+    if notes:
+        lines.extend(["", "## Notes", ""])
+        for note in notes:
+            lines.append(f"- {note}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_sidecar_request_markdown(report: dict[str, Any]) -> str:
     payload = report.get("payload", {})
     lines = [
@@ -476,6 +544,106 @@ def format_sidecar_translation_markdown(report: dict[str, Any]) -> str:
 def _validate_mode(mode: str) -> None:
     if mode not in VALID_MODES:
         raise ValueError(f"sidecar mode must be one of: {', '.join(VALID_MODES)}")
+
+
+def _load_sidecar_evaluation(path: Path | str) -> dict[str, Any]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError("sidecar evaluation report must be a JSON object")
+    if payload.get("schema_version") != "tokensquash.sidecar.evaluate.v1":
+        raise ValueError(f"not a sidecar evaluation report: {source}")
+    return payload
+
+
+def _sidecar_report_brief(report: dict[str, Any], path: Path | str) -> dict[str, Any]:
+    return {
+        "path": str(Path(path)),
+        "status": report.get("status"),
+        "source": report.get("source"),
+        "mode": report.get("mode"),
+        "model": report.get("model"),
+        "counter": report.get("counter"),
+        "summary": report.get("summary", {}),
+    }
+
+
+def _sidecar_summary_delta(base: dict[str, Any], target: dict[str, Any]) -> dict[str, Any]:
+    fields = (
+        "turn_count",
+        "attempted_items",
+        "item_count",
+        "success_count",
+        "failure_count",
+        "warning_count",
+        "original_tokens",
+        "semantic_tokens",
+        "saved_tokens",
+        "saved_pct",
+        "win_items",
+        "loss_items",
+        "tie_items",
+        "prompt_items",
+        "reply_items",
+    )
+    delta: dict[str, Any] = {}
+    for field in fields:
+        delta[field] = _numeric(target.get(field, 0)) - _numeric(base.get(field, 0))
+        if isinstance(delta[field], float):
+            delta[field] = round(delta[field], 4)
+    delta["quality_signal_delta"] = int(delta.get("failure_count", 0)) + int(delta.get("warning_count", 0))
+    return delta
+
+
+def _sidecar_comparison_status(delta: dict[str, Any]) -> str:
+    savings_delta = float(delta.get("saved_pct", 0.0))
+    token_delta = int(delta.get("saved_tokens", 0))
+    quality_delta = int(delta.get("quality_signal_delta", 0))
+    savings_better = savings_delta > 0 or token_delta > 0
+    savings_worse = savings_delta < 0 or token_delta < 0
+    quality_better = quality_delta < 0
+    quality_worse = quality_delta > 0
+
+    if (savings_better and not quality_worse) or (quality_better and not savings_worse):
+        return "improved"
+    if (savings_worse and not quality_better) or (quality_worse and not savings_better):
+        return "regressed"
+    if (savings_better and quality_worse) or (savings_worse and quality_better):
+        return "mixed"
+    return "same"
+
+
+def _sidecar_comparison_notes(delta: dict[str, Any]) -> list[str]:
+    notes = []
+    saved_tokens = int(delta.get("saved_tokens", 0))
+    saved_pct = float(delta.get("saved_pct", 0.0))
+    quality_delta = int(delta.get("quality_signal_delta", 0))
+    if saved_tokens > 0 or saved_pct > 0:
+        notes.append("Target saves more tokens than base.")
+    elif saved_tokens < 0 or saved_pct < 0:
+        notes.append("Target saves fewer tokens than base.")
+    else:
+        notes.append("Target token savings are unchanged.")
+
+    if quality_delta < 0:
+        notes.append("Target has fewer warning/failure signals.")
+    elif quality_delta > 0:
+        notes.append("Target has more warning/failure signals.")
+    else:
+        notes.append("Target warning/failure signals are unchanged.")
+    return notes
+
+
+def _numeric(value: Any) -> int | float:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int | float):
+        return value
+    try:
+        text = str(value)
+        return float(text) if "." in text else int(text)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _sidecar_turn_items(record: dict[str, Any], part: str) -> list[tuple[str, str]]:

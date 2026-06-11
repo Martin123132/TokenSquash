@@ -312,6 +312,13 @@ then increase it once the local model behavior looks sensible:
 python -m tokensquash sidecar evaluate private-turns\real.redacted-turns.jsonl --mode both --limit 10 --model llama3.2:3b --counter chars --out-dir private-turns\sidecar-eval --json
 ```
 
+Compare two saved sidecar evaluation reports after changing the semantic prompt,
+schema, or local model:
+
+```powershell
+python -m tokensquash sidecar compare-evaluations private-turns\sidecar-before\evaluation.json private-turns\sidecar-after\evaluation.json
+```
+
 The sidecar command asks the local model for strict JSON only. For prompt mode it
 uses fields such as `op`, `query`, `paths`, `constraints`, `verify`, and
 `returns`. For reply mode it uses `status`, `summary`, `files`, `verification`,
@@ -324,7 +331,9 @@ and prompt exchanges. For this reason, evaluate sidecar usefulness by running
 round-trip checks and comparing both token savings and whether the decoded text
 still preserves meaning. `sidecar evaluate` writes a batch report with total
 savings, warning/failure counts, and best/worst examples when `--out-dir` is
-set.
+set. `sidecar compare-evaluations` reports before/after token deltas alongside
+warning and failure deltas, so increased savings do not hide worse meaning-risk
+signals.
 
 ## Install For Local Development
 
@@ -348,7 +357,7 @@ python -m unittest discover -s tests
 - Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - One-command turn evaluation report packs for real-corpus measurement.
-- Experimental local-AI sidecar round-trip and corpus evaluation.
+- Experimental local-AI sidecar round-trip, corpus evaluation, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No API keys or model dependency for the deterministic core codec; the optional

@@ -30,9 +30,11 @@ from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
     build_sidecar_request,
+    compare_sidecar_evaluations,
     decode_semantic,
     evaluate_sidecar_turns,
     format_sidecar_decode_markdown,
+    format_sidecar_evaluation_compare_markdown,
     format_sidecar_evaluation_markdown,
     format_sidecar_request_markdown,
     format_sidecar_translation_markdown,
@@ -167,6 +169,15 @@ def main(argv: list[str] | None = None) -> int:
     sidecar_evaluate.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
     sidecar_evaluate.add_argument("--out-dir", type=Path, help="Write sidecar evaluation JSON files to this directory.")
     sidecar_evaluate.add_argument("--json", action="store_true", help="Print sidecar evaluation JSON.")
+
+    sidecar_compare_evaluations = sidecar_sub.add_parser(
+        "compare-evaluations",
+        help="Compare two saved sidecar evaluation JSON reports.",
+    )
+    sidecar_compare_evaluations.add_argument("base", type=Path, help="Base sidecar evaluation JSON.")
+    sidecar_compare_evaluations.add_argument("target", type=Path, help="Target sidecar evaluation JSON.")
+    sidecar_compare_evaluations.add_argument("--out", type=Path, help="Write comparison output to this file.")
+    sidecar_compare_evaluations.add_argument("--json", action="store_true", help="Print comparison JSON.")
 
     corpus = sub.add_parser("corpus", help="Inspect and prepare prompt corpora.")
     corpus_sub = corpus.add_subparsers(dest="corpus_command", required=True)
@@ -543,6 +554,18 @@ def main(argv: list[str] | None = None) -> int:
                 output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_evaluation_markdown(report)
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.sidecar_command == "compare-evaluations":
+                report = compare_sidecar_evaluations(args.base, args.target)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_sidecar_evaluation_compare_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0
 
         if args.command == "corpus":
             if args.corpus_command == "stats":
