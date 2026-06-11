@@ -12,6 +12,8 @@ from .metrics import count_tokens
 DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "llama3.2:3b"
 VALID_MODES = ("prompt", "reply")
+STATUS_CODES = {"done": "d", "partial": "p", "blocked": "b", "failed": "f"}
+STATUS_FROM_CODES = {value: key for key, value in STATUS_CODES.items()}
 
 
 def build_sidecar_request(
@@ -69,8 +71,9 @@ def translate_with_ollama(
         ollama_payload = json.loads(response.read().decode("utf-8"))
 
     response_text = str(ollama_payload.get("response", "")).strip()
-    semantic = parse_semantic_json(response_text)
-    semantic_wire = json.dumps(semantic, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    semantic = _normalize_semantic_payload(parse_semantic_json(response_text), mode, source_text=text)
+    semantic_compact = compact_semantic_payload(semantic, mode=mode)
+    semantic_wire = json.dumps(semantic_compact, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
     original_tokens = count_tokens(text, counter)
     semantic_tokens = count_tokens(semantic_wire, counter)
     saved_tokens = original_tokens - semantic_tokens
@@ -90,6 +93,7 @@ def translate_with_ollama(
             "saved_pct": _pct(saved_tokens, original_tokens),
         },
         "semantic": semantic,
+        "semantic_compact": semantic_compact,
         "semantic_wire": semantic_wire,
         "raw_response": response_text,
     }
@@ -102,10 +106,11 @@ def decode_semantic(semantic: dict[str, Any], *, mode: str) -> dict[str, Any]:
     if not isinstance(semantic, dict):
         raise ValueError("semantic payload must be a JSON object")
 
+    semantic = _normalize_semantic_payload(semantic, mode)
     warnings: list[str] = []
     kind = semantic.get("kind")
     if kind is None:
-        warnings.append("semantic.kind is missing; defaulting to requested mode")
+        pass
     elif kind != mode:
         warnings.append(f"semantic.kind '{kind}' does not match requested mode '{mode}'")
 
@@ -123,6 +128,20 @@ def decode_semantic(semantic: dict[str, Any], *, mode: str) -> dict[str, Any]:
         "text": text,
         "warnings": warnings,
     }
+
+
+def compact_semantic_payload(
+    semantic: dict[str, Any],
+    *,
+    mode: str,
+    source_text: str | None = None,
+) -> dict[str, Any]:
+    """Convert normalized semantic JSON into the compact measured wire shape."""
+
+    normalized = _normalize_semantic_payload(semantic, mode, source_text=source_text)
+    if mode == "prompt":
+        return _compact_prompt_semantic(normalized)
+    return _compact_reply_semantic(normalized)
 
 
 def roundtrip_with_ollama(
@@ -300,20 +319,28 @@ def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
         schema = (
-            '{"kind":"prompt","op":"fix|add|review|explain|test|docs|refactor|other",'
-            '"query":"short preserved task meaning","paths":[],"constraints":[],"verify":[],"returns":[]}'
+            '{"o":"fix|add|review|explain|test|docs|refactor|other",'
+            '"q":"<=5 words","p":["paths"],"c":["constraints"],"v":["verify"],"r":["returns"]}'
         )
+        legend = "prompt keys: o operation, q task gist, p paths, c constraints, v verification, r return wants."
     else:
         schema = (
-            '{"kind":"reply","status":"done|partial|blocked|failed","summary":"short preserved result",'
-            '"files":[],"verification":[],"commands":[],"risks":[],"next_steps":[]}'
+            '{"s":"d|p|b|f","m":"<=6 words","f":["files"],"v":["verification"],'
+            '"c":["commands"],"r":["risks"],"n":["next steps"]}'
         )
+        legend = "reply keys: s status (d done, p partial, b blocked, f failed), m result gist, f files, v verification, c commands, r risks, n next steps."
     return "\n".join(
         [
             "You are a TokenSquash local semantic translator.",
             "Return ONLY valid compact JSON. Do not use markdown. Do not explain.",
-            "Preserve meaning. Do not invent facts. Use [] for absent lists.",
-            f"Use this JSON shape: {schema}",
+            "Use ONLY the short keys shown below. Do not use long key names.",
+            "The mode is already known; do not include a kind key.",
+            "Preserve meaning, but do not copy whole sentences.",
+            "Keep q/m very short. Move paths, commands, tests, risks, and returns into their fields.",
+            "Only include exact file paths; never use placeholders like files, code, test, or path.",
+            "Omit empty optional arrays instead of writing []. Do not invent facts.",
+            legend,
+            f"Use this compact JSON shape: {schema}",
             "",
             "English:",
             text.strip(),
@@ -678,6 +705,146 @@ def _numeric(value: Any) -> int | float:
         return float(text) if "." in text else int(text)
     except (TypeError, ValueError):
         return 0
+
+
+def _normalize_semantic_payload(
+    payload: dict[str, Any],
+    mode: str,
+    *,
+    source_text: str | None = None,
+) -> dict[str, Any]:
+    _validate_mode(mode)
+    if mode == "prompt":
+        return _normalize_prompt_semantic(payload, source_text=source_text)
+    return _normalize_reply_semantic(payload, source_text=source_text)
+
+
+def _normalize_prompt_semantic(payload: dict[str, Any], *, source_text: str | None = None) -> dict[str, Any]:
+    paths = _semantic_list(_semantic_value(payload, "paths", "p", default=[]))
+    return {
+        "kind": _normalize_kind(_semantic_value(payload, "kind", "k")),
+        "op": str(_semantic_value(payload, "op", "o", default="other")).strip() or "other",
+        "query": str(_semantic_value(payload, "query", "q", default="")).strip(),
+        "paths": _source_anchored_items(paths, source_text),
+        "constraints": _semantic_list(_semantic_value(payload, "constraints", "c", default=[])),
+        "verify": _semantic_list(_semantic_value(payload, "verify", "v", default=[])),
+        "returns": _semantic_list(_semantic_value(payload, "returns", "r", default=[])),
+    }
+
+
+def _normalize_reply_semantic(payload: dict[str, Any], *, source_text: str | None = None) -> dict[str, Any]:
+    status = str(_semantic_value(payload, "status", "s", default="done")).strip()
+    status = STATUS_FROM_CODES.get(status, status)
+    files = _semantic_list(_semantic_value(payload, "files", "f", default=[]))
+    next_steps = _semantic_list(_semantic_value(payload, "next_steps", "n", default=[]))
+    return {
+        "kind": _normalize_kind(_semantic_value(payload, "kind", "k")),
+        "status": status or "done",
+        "summary": str(_semantic_value(payload, "summary", "m", default="")).strip(),
+        "files": _source_anchored_items(files, source_text),
+        "verification": _semantic_list(_semantic_value(payload, "verification", "v", default=[])),
+        "commands": _semantic_list(_semantic_value(payload, "commands", "c", default=[])),
+        "risks": _semantic_list(_semantic_value(payload, "risks", "r", default=[])),
+        "next_steps": _source_anchored_items(next_steps, source_text),
+    }
+
+
+def _semantic_value(payload: dict[str, Any], long_key: str, short_key: str, default: Any = None) -> Any:
+    if long_key in payload:
+        return payload[long_key]
+    if short_key in payload:
+        return payload[short_key]
+    return default
+
+
+def _semantic_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _normalize_kind(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text == "p":
+        return "prompt"
+    if text == "r":
+        return "reply"
+    if text in VALID_MODES:
+        return text
+    return None
+
+
+def _source_anchored_items(items: list[str], source_text: str | None) -> list[str]:
+    if source_text is None:
+        return items
+    return [item for item in items if _source_contains_item(source_text, item)]
+
+
+def _source_contains_item(source_text: str, item: str) -> bool:
+    clean_item = item.strip().strip("`'\"")
+    if not clean_item:
+        return False
+    source_variants = _path_text_variants(source_text)
+    item_variants = _path_text_variants(clean_item)
+    return any(item_variant in source_variant for source_variant in source_variants for item_variant in item_variants)
+
+
+def _path_text_variants(text: str) -> set[str]:
+    lowered = text.lower()
+    return {lowered, lowered.replace("\\", "/"), lowered.replace("/", "\\")}
+
+
+def _compact_prompt_semantic(semantic: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {
+        "o": semantic.get("op") or "other",
+    }
+    _compact_optional_text(compact, "q", semantic.get("query"))
+    _compact_optional_list(compact, "p", semantic.get("paths"))
+    _compact_optional_list(compact, "c", semantic.get("constraints"))
+    _compact_optional_list(compact, "v", semantic.get("verify"))
+    _compact_optional_list(compact, "r", semantic.get("returns"))
+    return compact
+
+
+def _compact_reply_semantic(semantic: dict[str, Any]) -> dict[str, Any]:
+    status = str(semantic.get("status") or "done").strip()
+    compact: dict[str, Any] = {
+        "s": STATUS_CODES.get(status, status),
+    }
+    _compact_optional_text(compact, "m", semantic.get("summary"))
+    _compact_optional_list(compact, "f", semantic.get("files"))
+    _compact_optional_list(compact, "v", semantic.get("verification"))
+    _compact_optional_list(compact, "c", semantic.get("commands"))
+    _compact_optional_list(compact, "r", semantic.get("risks"))
+    _compact_optional_list(compact, "n", semantic.get("next_steps"))
+    return compact
+
+
+def _compact_optional_text(payload: dict[str, Any], key: str, value: Any) -> None:
+    text = str(value or "").strip()
+    if text:
+        payload[key] = text
+
+
+def _compact_optional_list(payload: dict[str, Any], key: str, value: Any) -> None:
+    items = [_compact_list_item(item) for item in _semantic_list(value)]
+    items = [item for item in items if item]
+    if items:
+        payload[key] = items
+
+
+def _compact_list_item(item: str) -> str:
+    text = item.strip()
+    lowered = text.lower()
+    for prefix in ("verified with ", "verified: "):
+        if lowered.startswith(prefix):
+            return text[len(prefix) :].strip()
+    return text
 
 
 def _sidecar_turn_items(record: dict[str, Any], part: str) -> list[tuple[str, str]]:

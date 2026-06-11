@@ -23,6 +23,7 @@ from tokensquash.metrics import (
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 from tokensquash.sidecar import (
+    compact_semantic_payload,
     compare_sidecar_evaluations,
     decode_semantic,
     evaluate_sidecar_turns,
@@ -376,7 +377,9 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertFalse(payload["payload"]["stream"])
         self.assertEqual(payload["payload"]["format"], "json")
         self.assertIn("fix the login bug", payload["payload"]["prompt"])
-        self.assertIn('"kind":"prompt"', payload["payload"]["prompt"])
+        self.assertIn('"o":"fix|add|review|explain|test|docs|refactor|other"', payload["payload"]["prompt"])
+        self.assertIn("Use ONLY the short keys", payload["payload"]["prompt"])
+        self.assertIn("do not include a kind key", payload["payload"]["prompt"])
 
     def test_parse_semantic_json_accepts_fenced_model_output(self) -> None:
         payload = parse_semantic_json('```json\n{"kind":"reply","status":"done","summary":"fixed login"}\n```')
@@ -424,8 +427,99 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["backend"], "ollama")
         self.assertEqual(report["model"], "tiny-local")
         self.assertEqual(report["semantic"]["summary"], "fixed login")
+        self.assertEqual(report["semantic_compact"]["m"], "fixed login")
+        self.assertNotIn("summary", report["semantic_wire"])
+        self.assertNotIn('"k"', report["semantic_wire"])
         self.assertIn("semantic_tokens", report["summary"])
         self.assertTrue(mocked_urlopen.called)
+
+    def test_compact_semantic_payload_uses_short_keys(self) -> None:
+        compact = compact_semantic_payload(
+            {
+                "kind": "reply",
+                "status": "done",
+                "summary": "fixed login",
+                "files": ["src/auth.py"],
+                "verification": ["Verified with pytest"],
+                "commands": [],
+                "risks": [],
+                "next_steps": [],
+            },
+            mode="reply",
+        )
+
+        self.assertEqual(compact, {"s": "d", "m": "fixed login", "f": ["src/auth.py"], "v": ["pytest"]})
+
+    def test_translate_with_ollama_drops_unanchored_paths(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "o": "review",
+                                "q": "checkout flow",
+                                "p": ["src/checkout.py", "/invented-checkout-notes.txt"],
+                                "r": ["risks"],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+            report = translate_with_ollama(
+                "review checkout flow in src/checkout.py and return risks",
+                mode="prompt",
+                model="tiny-local",
+                counter="chars",
+            )
+
+        self.assertEqual(report["semantic"]["paths"], ["src/checkout.py"])
+        self.assertEqual(report["semantic_compact"]["p"], ["src/checkout.py"])
+        self.assertNotIn("invented-checkout", report["semantic_wire"])
+
+    def test_translate_with_ollama_drops_unanchored_reply_next_steps(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "s": "d",
+                                "m": "fixed login",
+                                "f": ["src/auth.py", "src/ghost.py"],
+                                "v": ["Verified with pytest"],
+                                "n": ["Review code"],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+            report = translate_with_ollama(
+                "Done. I fixed login in src/auth.py. Verified with pytest.",
+                mode="reply",
+                model="tiny-local",
+                counter="chars",
+            )
+
+        self.assertEqual(report["semantic"]["files"], ["src/auth.py"])
+        self.assertEqual(report["semantic"]["next_steps"], [])
+        self.assertEqual(report["semantic_compact"]["v"], ["pytest"])
+        self.assertNotIn("Review code", report["semantic_wire"])
+        self.assertNotIn("src/ghost.py", report["semantic_wire"])
 
     def test_sidecar_decode_prompt_is_deterministic(self) -> None:
         report = decode_semantic(
@@ -472,7 +566,7 @@ class TokenSquashCodecTests(unittest.TestCase):
 
     def test_sidecar_decode_cli_json(self) -> None:
         stdout = StringIO()
-        semantic = '{"kind":"prompt","op":"fix","query":"login bug"}'
+        semantic = '{"k":"p","o":"fix","q":"login bug"}'
 
         with redirect_stdout(stdout):
             code = cli_main(["sidecar", "decode", "prompt", semantic, "--json"])
@@ -482,6 +576,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(payload["schema_version"], "tokensquash.sidecar.decode.v1")
         self.assertEqual(payload["mode"], "prompt")
         self.assertIn("Fix", payload["text"])
+        self.assertEqual(payload["semantic"]["kind"], "prompt")
 
     def test_sidecar_roundtrip_cli_json(self) -> None:
         class FakeResponse:
@@ -606,27 +701,21 @@ class TokenSquashCodecTests(unittest.TestCase):
                 return json.dumps({"response": json.dumps(self.semantic)}).encode("utf-8")
 
         def fake_urlopen(request, timeout):
-            body = request.data.decode("utf-8")
-            if '\\"kind\\":\\"prompt\\"' in body:
+            body = json.loads(request.data.decode("utf-8"))
+            if "prompt keys:" in body["prompt"]:
                 semantic = {
-                    "kind": "prompt",
-                    "op": "fix",
-                    "query": "login bug",
-                    "paths": ["src/auth.py"],
-                    "constraints": [],
-                    "verify": ["tests"],
-                    "returns": ["summary"],
+                    "o": "fix",
+                    "q": "login bug",
+                    "p": ["src/auth.py"],
+                    "v": ["tests"],
+                    "r": ["summary"],
                 }
             else:
                 semantic = {
-                    "kind": "reply",
-                    "status": "done",
-                    "summary": "fixed login",
-                    "files": ["src/auth.py"],
-                    "verification": ["tests pass"],
-                    "commands": [],
-                    "risks": [],
-                    "next_steps": [],
+                    "s": "d",
+                    "m": "fixed login",
+                    "f": ["src/auth.py"],
+                    "v": ["tests pass"],
                 }
             return FakeResponse(semantic)
 

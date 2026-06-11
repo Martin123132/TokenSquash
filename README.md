@@ -296,7 +296,7 @@ python -m tokensquash sidecar translate reply "Done. I fixed login in src/auth.p
 Decode a semantic payload back into readable English (for inspection and debugging):
 
 ```powershell
-python -m tokensquash sidecar decode reply '{"kind":"reply","status":"done","summary":"fixed login","files":["src/auth.py"]}'
+python -m tokensquash sidecar decode reply '{"s":"d","m":"fixed login","f":["src/auth.py"]}'
 ```
 
 Run a full round-trip check: translate then decode so you can inspect meaning loss:
@@ -330,14 +330,21 @@ schema, or local model:
 python -m tokensquash sidecar compare-evaluations private-turns\sidecar-before\evaluation.json private-turns\sidecar-after\evaluation.json
 ```
 
-The sidecar command asks the local model for strict JSON only. For prompt mode it
-uses fields such as `op`, `query`, `paths`, `constraints`, `verify`, and
-`returns`. For reply mode it uses `status`, `summary`, `files`, `verification`,
-`commands`, `risks`, and `next_steps`.
+The sidecar command asks the local model for strict compact JSON only. The
+measured wire uses short keys to avoid spending tokens on field names, and it
+omits a kind field because the command already carries prompt/reply mode. Prompt
+mode uses `o`, `q`, `p`, `c`, `v`, and `r` for operation, task gist, paths,
+constraints, verification, and return wants. Reply mode uses `s`, `m`, `f`,
+`v`, `c`, `r`, and `n` for status, result gist, files, verification, commands,
+risks, and next steps. Older payloads that include `k` still decode, and reports
+normalize all fields back into readable names for inspection. During live
+translation, path/file fields and reply next steps are kept only when they are
+anchored in the original text, which helps catch local-model invention without
+changing the deterministic codec.
 
 This is intentionally experimental. A local model can add latency and may
 misread intent, so sidecar output should be treated as a proposal, not source of
-truth. TokenSquash’s deterministic codec remains the canonical format for reply
+truth. TokenSquash's deterministic codec remains the canonical format for reply
 and prompt exchanges. For this reason, evaluate sidecar usefulness by running
 round-trip checks and comparing both token savings and whether the decoded text
 still preserves meaning. `sidecar evaluate` writes a batch report with total
