@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from .corpus import redact_text, scan_privacy
 from .metrics import benchmark_prompts, benchmark_replies
+from .mining import mine_reply_patterns
 
 
 PROMPT_KEYS = ("prompt", "input", "request", "user", "human", "text")
@@ -466,6 +467,63 @@ def diagnose_turn_corpus(
         "validation": validation,
         "benchmark_summary": benchmark.get("summary"),
     }
+
+
+def mine_turn_patterns(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    min_count: int = 2,
+    limit: int = 10,
+    guess_reply_fields: bool = True,
+) -> dict[str, Any]:
+    """Mine paired turns for repeated reply patterns worth compacting."""
+
+    started = time.time()
+    validation = validate_turn_corpus(path)
+    if validation["status"] == "fail":
+        return {
+            "schema_version": "tokensquash.turns.mine.v1",
+            "status": "fail",
+            "source_type": "turns",
+            "source": str(Path(path)),
+            "counter": counter,
+            "min_count": max(1, int(min_count)),
+            "limit": max(1, int(limit)),
+            "summary": {
+                "turn_count": validation.get("summary", {}).get("turn_count", 0),
+                "record_count": 0,
+                "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+                "estimated_new_saved_tokens": 0,
+                "elapsed_seconds": round(time.time() - started, 4),
+            },
+            "top_candidates": [],
+            "existing_codes": [],
+            "path_patterns": [],
+            "fields": {},
+            "validation": validation,
+        }
+
+    records = load_turn_records(path)
+    replies = [_reply_record_from_turn(item, guess_reply_fields=guess_reply_fields) for item in records]
+    report = mine_reply_patterns(
+        replies,
+        counter=counter,
+        min_count=min_count,
+        limit=limit,
+        source=str(Path(path)),
+        source_type="turns",
+    )
+    report["schema_version"] = "tokensquash.turns.mine.v1"
+    if validation["status"] == "warn" and report["status"] == "pass":
+        report["status"] = "warn"
+    report["summary"] = {
+        **report.get("summary", {}),
+        "turn_count": len(records),
+        "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+    }
+    report["validation"] = validation
+    return report
 
 
 def format_turn_validation_markdown(report: dict[str, Any]) -> str:

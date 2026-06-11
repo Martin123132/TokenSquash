@@ -3,6 +3,7 @@
 from .codec import Intent, decode_intent, encode_intent, parse_wire
 from .corpus import corpus_stats, load_prompt_records, redact_corpus, validate_corpus
 from .metrics import benchmark_prompts, benchmark_replies, compare_benchmarks, count_tokens, load_reply_records
+from .mining import mine_reply_patterns
 from .reply import AgentReply, decode_reply, encode_reply, parse_reply_wire
 from .turns import (
     append_turn_record,
@@ -10,6 +11,7 @@ from .turns import (
     diagnose_turn_corpus,
     load_turn_records,
     measure_turn_corpus,
+    mine_turn_patterns,
     redact_turn_corpus,
     split_turn_corpus,
     turn_stats,
@@ -35,6 +37,8 @@ __all__ = [
     "load_reply_records",
     "load_turn_records",
     "measure_turn_corpus",
+    "mine_reply_patterns",
+    "mine_turn_patterns",
     "parse_wire",
     "parse_reply_wire",
     "redact_corpus",

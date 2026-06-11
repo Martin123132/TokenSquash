@@ -23,6 +23,7 @@ from .metrics import (
     load_reply_records,
     load_prompts,
 )
+from .mining import format_pattern_mine_markdown, mine_reply_patterns
 from .reply import decode_reply, encode_reply, parse_reply_wire
 from .turns import (
     append_turn_record,
@@ -37,6 +38,7 @@ from .turns import (
     format_turn_validation_markdown,
     load_turn_records,
     measure_turn_corpus,
+    mine_turn_patterns,
     redact_turn_corpus,
     split_turn_corpus,
     turn_stats,
@@ -154,6 +156,15 @@ def main(argv: list[str] | None = None) -> int:
     turns_diagnose.add_argument("--out", type=Path, help="Write diagnostic output to this file.")
     turns_diagnose.add_argument("--json", action="store_true", help="Print diagnostic JSON.")
 
+    turns_mine = turns_sub.add_parser("mine", help="Mine repeated turn reply patterns worth compacting.")
+    turns_mine.add_argument("corpus", type=Path)
+    turns_mine.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_mine.add_argument("--min-count", type=int, default=2, help="Minimum occurrences before reporting a pattern.")
+    turns_mine.add_argument("--limit", type=int, default=10, help="Rows to show per mining section.")
+    turns_mine.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_mine.add_argument("--out", type=Path, help="Write mining output to this file.")
+    turns_mine.add_argument("--json", action="store_true", help="Print mining JSON.")
+
     reply = sub.add_parser("reply", help="Encode and decode compact agent replies.")
     reply_sub = reply.add_subparsers(dest="reply_command", required=True)
 
@@ -178,6 +189,14 @@ def main(argv: list[str] | None = None) -> int:
     reply_bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
     reply_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     reply_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
+
+    reply_mine = reply_sub.add_parser("mine", help="Mine repeated reply values worth compacting.")
+    reply_mine.add_argument("corpus", type=Path, help="JSONL or JSON reply corpus.")
+    reply_mine.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    reply_mine.add_argument("--min-count", type=int, default=2, help="Minimum occurrences before reporting a pattern.")
+    reply_mine.add_argument("--limit", type=int, default=10, help="Rows to show per mining section.")
+    reply_mine.add_argument("--out", type=Path, help="Write mining output to this file.")
+    reply_mine.add_argument("--json", action="store_true", help="Print mining JSON.")
 
     args = parser.parse_args(argv)
 
@@ -363,6 +382,24 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.turns_command == "mine":
+                report = mine_turn_patterns(
+                    args.corpus,
+                    counter=args.counter,
+                    min_count=args.min_count,
+                    limit=args.limit,
+                    guess_reply_fields=not args.no_guess,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_pattern_mine_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "empty"} else 1
 
         if args.command == "reply":
             if args.reply_command == "encode":
@@ -400,6 +437,26 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(report, indent=2) + "\n"
                     if args.json
                     else format_reply_benchmark_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "empty"} else 1
+            if args.reply_command == "mine":
+                records = load_reply_records(args.corpus)
+                report = mine_reply_patterns(
+                    records,
+                    counter=args.counter,
+                    min_count=args.min_count,
+                    limit=args.limit,
+                    source=str(args.corpus),
+                    source_type="reply",
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_pattern_mine_markdown(report)
                 )
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)

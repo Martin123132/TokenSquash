@@ -25,12 +25,15 @@ jobs:
           python -m tokensquash reply decode "tr1 d compact reply added f=tokensquash/reply.py v=unit tests pass r=none"
       - name: Run reply benchmark
         run: python -m tokensquash reply bench examples/agent-replies.jsonl
+      - name: Run reply pattern mine
+        run: python -m tokensquash reply mine examples/agent-replies.jsonl
       - name: Run turn corpus workflow
         run: |
           python -m tokensquash turns add --out /tmp/tokensquash-real.jsonl --prompt "fix login" --reply "Done. I fixed login and ran tests." --verify "unit tests pass"
           python -m tokensquash turns validate examples/real-turns.template.jsonl
           python -m tokensquash turns measure examples/real-turns.template.jsonl --target 0
           python -m tokensquash turns diagnose examples/real-turns.template.jsonl
+          python -m tokensquash turns mine examples/real-turns.template.jsonl
           python -m tokensquash turns bench examples/real-turns.template.jsonl
           python -m tokensquash turns split examples/real-turns.template.jsonl --prompts-out /tmp/tokensquash-prompts.jsonl --replies-out /tmp/tokensquash-replies.jsonl
       - name: Validate messy corpus
@@ -57,7 +60,11 @@ jobs:
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer reply benchmark
         run: python -m tokensquash reply bench examples/agent-replies.jsonl --counter tiktoken:cl100k_base
+      - name: Run exact tokenizer reply mine
+        run: python -m tokensquash reply mine examples/agent-replies.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer turn benchmark
         run: python -m tokensquash turns bench examples/real-turns.template.jsonl --counter tiktoken:cl100k_base --target 0
       - name: Run exact tokenizer turn diagnose
         run: python -m tokensquash turns diagnose examples/real-turns.template.jsonl --counter tiktoken:cl100k_base
+      - name: Run exact tokenizer turn mine
+        run: python -m tokensquash turns mine examples/real-turns.template.jsonl --counter tiktoken:cl100k_base

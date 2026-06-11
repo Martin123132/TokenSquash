@@ -15,6 +15,7 @@ from tokensquash.metrics import (
     load_prompts,
     load_reply_records,
 )
+from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 from tokensquash.turns import (
     append_turn_record,
@@ -22,6 +23,7 @@ from tokensquash.turns import (
     diagnose_turn_corpus,
     load_turn_records,
     measure_turn_corpus,
+    mine_turn_patterns,
     redact_turn_corpus,
     split_turn_corpus,
     validate_turn_corpus,
@@ -114,6 +116,35 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["status"], "pass")
         self.assertGreater(report["summary"]["saved_tokens"], 0)
         self.assertGreater(report["summary"]["saved_pct"], 0.5)
+
+    def test_mine_reply_patterns_reports_repeated_uncoded_values(self) -> None:
+        records = [
+            {
+                "id": "a",
+                "summary": "checked search flow",
+                "verification": ["integration tests pass"],
+                "commands": ["npm test"],
+                "risks": ["staging database not seeded"],
+                "text": "Done. I checked search and ran npm test. Risk: staging database not seeded.",
+            },
+            {
+                "id": "b",
+                "summary": "checked checkout flow",
+                "verification": ["integration tests pass"],
+                "commands": ["npm test"],
+                "risks": ["staging database not seeded"],
+                "text": "Done. I checked checkout and ran npm test. Risk: staging database not seeded.",
+            },
+        ]
+
+        report = mine_reply_patterns(records, min_count=2)
+        candidates = {(item["field"], item["value"]): item for item in report["top_candidates"]}
+
+        self.assertEqual(report["schema_version"], "tokensquash.patterns.mine.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertIn(("commands", "npm test"), candidates)
+        self.assertGreater(candidates[("commands", "npm test")]["estimated_new_saved_tokens"], 0)
+        self.assertIn(("risks", "staging database not seeded"), candidates)
 
     def test_load_jsonl_prompts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -485,6 +516,24 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "fail")
             self.assertEqual(report["rows"], [])
             self.assertIsNone(report["benchmark_summary"])
+
+    def test_mine_turn_patterns_uses_guessed_reply_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"check search","reply":"Done. I checked search and ran `npm test`. Risk: staging database not seeded."}\n'
+                '{"id":"b","prompt":"check checkout","reply":"Done. I checked checkout and ran `npm test`. Risk: staging database not seeded."}\n',
+                encoding="utf-8",
+            )
+
+            report = mine_turn_patterns(path, min_count=2)
+            candidates = {(item["field"], item["value"]): item for item in report["top_candidates"]}
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.mine.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["turn_count"], 2)
+            self.assertIn(("commands", "npm test"), candidates)
+            self.assertGreater(candidates[("commands", "npm test")]["estimated_new_saved_tokens"], 0)
 
 
 if __name__ == "__main__":
