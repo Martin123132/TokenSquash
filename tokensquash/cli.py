@@ -30,8 +30,13 @@ from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
     build_sidecar_request,
+    decode_semantic,
+    format_sidecar_decode_markdown,
     format_sidecar_request_markdown,
     format_sidecar_translation_markdown,
+    format_sidecar_roundtrip_markdown,
+    parse_semantic_json,
+    roundtrip_with_ollama,
     translate_with_ollama,
 )
 from .turns import (
@@ -115,6 +120,26 @@ def main(argv: list[str] | None = None) -> int:
     sidecar_translate.add_argument("--dry-run", action="store_true", help="Print the Ollama request without sending it.")
     sidecar_translate.add_argument("--out", type=Path, help="Write sidecar output to this file.")
     sidecar_translate.add_argument("--json", action="store_true", help="Print sidecar JSON.")
+
+    sidecar_decode = sidecar_sub.add_parser("decode", help="Decode semantic JSON into readable English.")
+    sidecar_decode.add_argument("mode", choices=("prompt", "reply"), help="Decode a user prompt or assistant reply payload.")
+    sidecar_decode.add_argument("semantic", nargs="*", help="Semantic JSON payload to decode.")
+    sidecar_decode.add_argument("--semantic-file", type=Path, help="File containing semantic JSON to decode.")
+    sidecar_decode.add_argument("--json", action="store_true", help="Print decoded JSON.")
+
+    sidecar_roundtrip = sidecar_sub.add_parser(
+        "roundtrip",
+        help="Translate and decode English to evaluate semantic round-trip quality.",
+    )
+    sidecar_roundtrip.add_argument("mode", choices=("prompt", "reply"), help="Translate a user prompt or assistant reply.")
+    sidecar_roundtrip.add_argument("text", nargs="*", help="English text to translate and decode.")
+    sidecar_roundtrip.add_argument("--text-file", type=Path, help="File containing English text to translate.")
+    sidecar_roundtrip.add_argument("--model", default=DEFAULT_OLLAMA_MODEL, help="Ollama model name.")
+    sidecar_roundtrip.add_argument("--endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    sidecar_roundtrip.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    sidecar_roundtrip.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
+    sidecar_roundtrip.add_argument("--out", type=Path, help="Write sidecar output to this file.")
+    sidecar_roundtrip.add_argument("--json", action="store_true", help="Print sidecar JSON.")
 
     corpus = sub.add_parser("corpus", help="Inspect and prepare prompt corpora.")
     corpus_sub = corpus.add_subparsers(dest="corpus_command", required=True)
@@ -446,6 +471,29 @@ def main(argv: list[str] | None = None) -> int:
                         if args.json
                         else format_sidecar_translation_markdown(report)
                     )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0
+            if args.sidecar_command == "decode":
+                semantic_text = _read_json_argument(args.semantic, args.semantic_file, "semantic")
+                semantic = parse_semantic_json(semantic_text)
+                report = decode_semantic(semantic, mode=args.mode)
+                output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_decode_markdown(report)
+                print(output, end="")
+                return 0
+            if args.sidecar_command == "roundtrip":
+                text = _read_text_argument(args.text, args.text_file, "sidecar text")
+                report = roundtrip_with_ollama(
+                    text,
+                    mode=args.mode,
+                    model=args.model,
+                    endpoint=args.endpoint,
+                    counter=args.counter,
+                    timeout_seconds=args.timeout,
+                )
+                output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_roundtrip_markdown(report)
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)
                     args.out.write_text(output, encoding="utf-8")
@@ -878,6 +926,18 @@ def _read_required_text(path: Path | None, label: str) -> str:
 def _read_text_argument(parts: list[str], path: Path | None, label: str) -> str:
     if parts and path is not None:
         raise ValueError(f"{label} must be provided as inline text or --text-file, not both")
+    if path is not None:
+        text = path.read_text(encoding="utf-8-sig")
+    else:
+        text = " ".join(parts)
+    if not text.strip():
+        raise ValueError(f"{label} must not be empty")
+    return text
+
+
+def _read_json_argument(parts: list[str], path: Path | None, label: str) -> str:
+    if parts and path is not None:
+        raise ValueError(f"{label} must be provided as inline text or --{label}-file, not both")
     if path is not None:
         text = path.read_text(encoding="utf-8-sig")
     else:

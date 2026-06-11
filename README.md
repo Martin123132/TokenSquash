@@ -293,14 +293,29 @@ Call a local Ollama server and measure the returned semantic JSON:
 python -m tokensquash sidecar translate reply "Done. I fixed login in src/auth.py and tests pass." --model llama3.2:3b --counter chars --json
 ```
 
+Decode a semantic payload back into readable English (for inspection and debugging):
+
+```powershell
+python -m tokensquash sidecar decode reply '{"kind":"reply","status":"done","summary":"fixed login","files":["src/auth.py"]}'
+```
+
+Run a full round-trip check: translate then decode so you can inspect meaning loss:
+
+```powershell
+python -m tokensquash sidecar roundtrip reply "Done. I fixed login in src/auth.py and tests pass." --model llama3.2:3b --counter chars --json
+```
+
 The sidecar command asks the local model for strict JSON only. For prompt mode it
 uses fields such as `op`, `query`, `paths`, `constraints`, `verify`, and
 `returns`. For reply mode it uses `status`, `summary`, `files`, `verification`,
 `commands`, `risks`, and `next_steps`.
 
 This is intentionally experimental. A local model can add latency and may
-misread intent, so any sidecar result should be validated by round-trip quality
-and measured token savings before it is treated as useful.
+misread intent, so sidecar output should be treated as a proposal, not source of
+truth. TokenSquash’s deterministic codec remains the canonical format for reply
+and prompt exchanges. For this reason, evaluate sidecar usefulness by running
+round-trip checks and comparing both token savings and whether the decoded text
+still preserves meaning.
 
 ## Install For Local Development
 

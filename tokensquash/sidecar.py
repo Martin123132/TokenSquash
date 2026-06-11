@@ -93,6 +93,81 @@ def translate_with_ollama(
     }
 
 
+def decode_semantic(semantic: dict[str, Any], *, mode: str) -> dict[str, Any]:
+    """Decode semantic JSON back into human-readable English."""
+
+    _validate_mode(mode)
+    if not isinstance(semantic, dict):
+        raise ValueError("semantic payload must be a JSON object")
+
+    warnings: list[str] = []
+    kind = semantic.get("kind")
+    if kind is None:
+        warnings.append("semantic.kind is missing; defaulting to requested mode")
+    elif kind != mode:
+        warnings.append(f"semantic.kind '{kind}' does not match requested mode '{mode}'")
+
+    if mode == "prompt":
+        text = _decode_prompt_semantic(semantic, warnings=warnings)
+    else:
+        text = _decode_reply_semantic(semantic, warnings=warnings)
+
+    return {
+        "schema_version": "tokensquash.sidecar.decode.v1",
+        "status": "warn" if warnings else "pass",
+        "mode": mode,
+        "kind": kind,
+        "semantic": semantic,
+        "text": text,
+        "warnings": warnings,
+    }
+
+
+def roundtrip_with_ollama(
+    text: str,
+    *,
+    mode: str,
+    model: str = DEFAULT_OLLAMA_MODEL,
+    endpoint: str = DEFAULT_OLLAMA_ENDPOINT,
+    counter: str = "heuristic",
+    timeout_seconds: float = 60.0,
+) -> dict[str, Any]:
+    """Translate then decode the semantic payload and report token deltas."""
+
+    translation = translate_with_ollama(
+        text,
+        mode=mode,
+        model=model,
+        endpoint=endpoint,
+        counter=counter,
+        timeout_seconds=timeout_seconds,
+    )
+    decoded = decode_semantic(translation["semantic"], mode=mode)
+    warnings = decoded.get("warnings", [])
+
+    summary = translation["summary"]
+    report_status = translation["status"]
+    if warnings:
+        report_status = "warn"
+
+    return {
+        "schema_version": "tokensquash.sidecar.roundtrip.v1",
+        "status": report_status,
+        "backend": "ollama",
+        "model": model,
+        "mode": mode,
+        "endpoint": endpoint.rstrip("/"),
+        "counter": counter,
+        "original_text": text,
+        "semantic": translation["semantic"],
+        "semantic_wire": translation["semantic_wire"],
+        "decoded_text": decoded["text"],
+        "summary": summary,
+        "warnings": warnings,
+        "raw_response": translation["raw_response"],
+    }
+
+
 def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
@@ -137,6 +212,73 @@ def parse_semantic_json(text: str) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("local semantic response must be a JSON object")
     return payload
+
+
+def format_sidecar_decode_markdown(report: dict[str, Any]) -> str:
+    warnings = report.get("warnings", [])
+    payload = json.dumps(report.get("semantic", {}), ensure_ascii=True, indent=2)
+    lines = [
+        "# TokenSquash Sidecar Decode",
+        "",
+        f"- Mode: `{report.get('mode')}`",
+        f"- Kind: `{report.get('kind')}`",
+        f"- Status: `{report.get('status')}`",
+        "",
+        "## English",
+        "",
+        str(report.get("text", "")),
+        "",
+        "## Semantic",
+        "",
+        "```json",
+        payload,
+        "```",
+    ]
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        for warning in warnings:
+            lines.append(f"- {warning}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_sidecar_roundtrip_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    semantic = json.dumps(report.get("semantic", {}), ensure_ascii=True, indent=2)
+    warnings = report.get("warnings", [])
+    lines = [
+        "# TokenSquash Sidecar Roundtrip",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Backend: `{report.get('backend')}`",
+        f"- Model: `{report.get('model')}`",
+        f"- Mode: `{report.get('mode')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Original tokens: `{summary.get('original_tokens', 0)}`",
+        f"- Semantic tokens: `{summary.get('semantic_tokens', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        "",
+        "## Original",
+        "",
+        "```text",
+        str(report.get("original_text", "")),
+        "```",
+        "",
+        "## Semantic",
+        "",
+        "```json",
+        semantic,
+        "```",
+        "",
+        "## Decoded",
+        "",
+        str(report.get("decoded_text", "")),
+    ]
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        for warning in warnings:
+            lines.append(f"- {warning}")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def format_sidecar_request_markdown(report: dict[str, Any]) -> str:
@@ -187,6 +329,117 @@ def format_sidecar_translation_markdown(report: dict[str, Any]) -> str:
 def _validate_mode(mode: str) -> None:
     if mode not in VALID_MODES:
         raise ValueError(f"sidecar mode must be one of: {', '.join(VALID_MODES)}")
+
+
+def _coerce_semantic_text(
+    value: Any,
+    field: str,
+    *,
+    warnings: list[str],
+    required: bool = False,
+    default: str = "",
+) -> str:
+    if value is None:
+        if required:
+            warnings.append(f"semantic.{field} is missing")
+        return default
+
+    if isinstance(value, str):
+        text = value.strip()
+        if required and not text:
+            warnings.append(f"semantic.{field} is empty")
+        return text
+
+    warnings.append(f"semantic.{field} should be a string")
+    return str(value).strip()
+
+
+def _coerce_semantic_list(value: Any, field: str, warnings: list[str]) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, tuple):
+        value = list(value)
+    if isinstance(value, list):
+        out = [str(item).strip() for item in value if str(item).strip()]
+        if not out:
+            return []
+        return out
+    warnings.append(f"semantic.{field} should be a list")
+    text = str(value).strip()
+    return [text] if text else []
+
+
+def _decode_prompt_semantic(semantic: dict[str, Any], *, warnings: list[str]) -> str:
+    op = _coerce_semantic_text(
+        semantic.get("op"),
+        "op",
+        required=True,
+        warnings=warnings,
+        default="handle",
+    )
+    query = _coerce_semantic_text(
+        semantic.get("query"),
+        "query",
+        required=True,
+        warnings=warnings,
+        default="a request",
+    )
+    paths = _coerce_semantic_list(semantic.get("paths"), "paths", warnings)
+    constraints = _coerce_semantic_list(semantic.get("constraints"), "constraints", warnings)
+    verify = _coerce_semantic_list(semantic.get("verify"), "verify", warnings)
+    returns = _coerce_semantic_list(semantic.get("returns"), "returns", warnings)
+
+    pieces = [f"{op.capitalize()} {query}."]
+    if paths:
+        pieces.append("Paths: " + ", ".join(paths) + ".")
+    if constraints:
+        pieces.append("Constraints: " + ", ".join(constraints) + ".")
+    if verify:
+        pieces.append("Verify: " + ", ".join(verify) + ".")
+    if returns:
+        pieces.append("Return: " + ", ".join(returns) + ".")
+    return " ".join(piece for piece in pieces if piece.strip())
+
+
+def _decode_reply_semantic(semantic: dict[str, Any], *, warnings: list[str]) -> str:
+    status = _coerce_semantic_text(
+        semantic.get("status"),
+        "status",
+        required=True,
+        warnings=warnings,
+        default="done",
+    )
+    summary = _coerce_semantic_text(
+        semantic.get("summary"),
+        "summary",
+        required=True,
+        warnings=warnings,
+        default="completed",
+    )
+    files = _coerce_semantic_list(semantic.get("files"), "files", warnings)
+    verification = _coerce_semantic_list(semantic.get("verification"), "verification", warnings)
+    commands = _coerce_semantic_list(semantic.get("commands"), "commands", warnings)
+    risks = _coerce_semantic_list(semantic.get("risks"), "risks", warnings)
+    next_steps = _coerce_semantic_list(semantic.get("next_steps"), "next_steps", warnings)
+
+    status_label = {
+        "done": "Done",
+        "partial": "Partially done",
+        "blocked": "Blocked",
+        "failed": "Failed",
+    }.get(status.lower(), status.title() if status else "Done")
+    pieces = [f"{status_label}: {summary}."]
+    if files:
+        pieces.append("Files: " + ", ".join(files) + ".")
+    if verification:
+        pieces.append("Verification: " + ", ".join(verification) + ".")
+    if commands:
+        pieces.append("Commands: " + ", ".join(commands) + ".")
+    if risks:
+        pieces.append("Risks: " + ", ".join(risks) + ".")
+    if next_steps:
+        pieces.append("Next: " + ", ".join(next_steps) + ".")
+    return " ".join(piece for piece in pieces if piece.strip())
 
 
 def _pct(part: int | float, whole: int | float) -> float:

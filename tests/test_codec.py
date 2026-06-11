@@ -22,7 +22,7 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
-from tokensquash.sidecar import parse_semantic_json, translate_with_ollama
+from tokensquash.sidecar import decode_semantic, parse_semantic_json, translate_with_ollama
 from tokensquash.turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
@@ -420,6 +420,170 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["semantic"]["summary"], "fixed login")
         self.assertIn("semantic_tokens", report["summary"])
         self.assertTrue(mocked_urlopen.called)
+
+    def test_sidecar_decode_prompt_is_deterministic(self) -> None:
+        report = decode_semantic(
+            {
+                "kind": "prompt",
+                "op": "fix",
+                "query": "login bug",
+                "paths": ["src/auth.py"],
+                "constraints": ["small_diff"],
+                "verify": ["tests"],
+                "returns": ["summary", "files"],
+            },
+            mode="prompt",
+        )
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.decode.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertIn("Fix", report["text"])
+        self.assertIn("login bug", report["text"])
+        self.assertIn("src/auth.py", report["text"])
+        self.assertFalse(report["warnings"])
+
+    def test_sidecar_decode_reply_is_deterministic(self) -> None:
+        report = decode_semantic(
+            {
+                "kind": "reply",
+                "status": "done",
+                "summary": "fixed login",
+                "files": ["src/auth.py"],
+                "verification": ["tests pass"],
+                "commands": ["pytest"],
+                "risks": ["none"],
+                "next_steps": ["review auth"],
+            },
+            mode="reply",
+        )
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.decode.v1")
+        self.assertEqual(report["mode"], "reply")
+        self.assertIn("Done: fixed login.", report["text"])
+        self.assertIn("src/auth.py", report["text"])
+        self.assertIn("Commands", report["text"])
+        self.assertFalse(report["warnings"])
+
+    def test_sidecar_decode_cli_json(self) -> None:
+        stdout = StringIO()
+        semantic = '{"kind":"prompt","op":"fix","query":"login bug"}'
+
+        with redirect_stdout(stdout):
+            code = cli_main(["sidecar", "decode", "prompt", semantic, "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["schema_version"], "tokensquash.sidecar.decode.v1")
+        self.assertEqual(payload["mode"], "prompt")
+        self.assertIn("Fix", payload["text"])
+
+    def test_sidecar_roundtrip_cli_json(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "kind": "reply",
+                                "status": "done",
+                                "summary": "fixed login",
+                                "files": ["src/auth.py"],
+                                "verification": ["tests pass"],
+                                "commands": ["pytest"],
+                                "risks": ["none"],
+                                "next_steps": [],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        stdout = StringIO()
+        with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()) as mocked_urlopen:
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "sidecar",
+                        "roundtrip",
+                        "reply",
+                        "Done.",
+                        "I",
+                        "fixed",
+                        "login",
+                        "in",
+                        "src/auth.py",
+                        "--model",
+                        "tiny-local",
+                        "--json",
+                    ]
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["schema_version"], "tokensquash.sidecar.roundtrip.v1")
+        self.assertEqual(payload["mode"], "reply")
+        self.assertIn("semantic", payload)
+        self.assertIn("decoded_text", payload)
+        self.assertIn("semantic_tokens", payload["summary"])
+        self.assertTrue(mocked_urlopen.called)
+
+    def test_sidecar_roundtrip_markdown_output(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "kind": "reply",
+                                "status": "done",
+                                "summary": "fixed login",
+                                "files": ["src/auth.py"],
+                                "verification": ["tests pass"],
+                                "commands": ["pytest"],
+                                "risks": ["none"],
+                                "next_steps": [],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        stdout = StringIO()
+        with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "sidecar",
+                        "roundtrip",
+                        "reply",
+                        "Done.",
+                        "I",
+                        "fixed",
+                        "login",
+                        "in",
+                        "src/auth.py",
+                    ]
+                )
+
+        output = stdout.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("TokenSquash Sidecar Roundtrip", output)
+        self.assertIn("## Original", output)
+        self.assertIn("## Semantic", output)
+        self.assertIn("## Decoded", output)
+        self.assertIn("Saved percent", output)
+        self.assertIn("Done: fixed login.", output)
+        self.assertIn("Files: src/auth.py.", output)
 
     def test_reply_wire_round_trip(self) -> None:
         reply = encode_reply(
