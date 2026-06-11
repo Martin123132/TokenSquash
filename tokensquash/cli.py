@@ -31,10 +31,12 @@ from .turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     diagnose_turn_corpus,
+    evaluate_turn_corpus,
     format_turn_alias_impact_markdown,
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
     format_turn_diagnose_markdown,
+    format_turn_evaluate_markdown,
     format_turn_measure_markdown,
     format_turn_split_markdown,
     format_turn_stats_markdown,
@@ -155,6 +157,21 @@ def main(argv: list[str] | None = None) -> int:
     turns_measure.add_argument("--aliases", type=Path, help="Session alias JSON for prompt/reply aliases.")
     turns_measure.add_argument("--out", type=Path, help="Write measure output to this file.")
     turns_measure.add_argument("--json", action="store_true", help="Print measure JSON.")
+
+    turns_evaluate = turns_sub.add_parser("evaluate", help="Run the full turn measurement and alias-impact workflow.")
+    turns_evaluate.add_argument("corpus", type=Path)
+    turns_evaluate.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_evaluate.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_evaluate.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_evaluate.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_evaluate.add_argument("--min-count", type=int, default=2, help="Minimum alias/pattern occurrences before selection.")
+    turns_evaluate.add_argument("--limit", type=int, default=10, help="Rows to show per diagnostic or mining section.")
+    turns_evaluate.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
+    turns_evaluate.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to select.")
+    turns_evaluate.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per alias.")
+    turns_evaluate.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    turns_evaluate.add_argument("--out-dir", type=Path, help="Write a JSON report pack to this directory.")
+    turns_evaluate.add_argument("--json", action="store_true", help="Print evaluation JSON.")
 
     turns_diagnose = turns_sub.add_parser("diagnose", help="Show turn-level wins, losses, and pass-throughs.")
     turns_diagnose.add_argument("corpus", type=Path)
@@ -421,6 +438,28 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.turns_command == "evaluate":
+                report = evaluate_turn_corpus(
+                    args.corpus,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                    min_count=args.min_count,
+                    limit=args.limit,
+                    max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
+                    min_saved_tokens=args.min_saved_tokens,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                    out_dir=args.out_dir,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_evaluate_markdown(report)
+                )
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "miss", "empty"} else 1
             if args.turns_command == "diagnose":
                 report = diagnose_turn_corpus(
                     args.corpus,

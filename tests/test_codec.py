@@ -23,6 +23,7 @@ from tokensquash.turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     diagnose_turn_corpus,
+    evaluate_turn_corpus,
     learn_turn_aliases,
     load_turn_records,
     measure_turn_corpus,
@@ -863,6 +864,47 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["selected_path_prefix_count"], 0)
             self.assertEqual(report["summary"]["alias_setup_tokens"], 0)
             self.assertIsNone(report["summary"]["break_even_corpora"])
+
+    def test_evaluate_turn_corpus_writes_report_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            out_dir = Path(tmp) / "eval"
+            path.write_text(
+                '{"id":"a","prompt":"review packages/mobile/src/screens/login.tsx and summarize files","reply":"Done."}\n'
+                '{"id":"b","prompt":"review packages/mobile/src/screens/checkout.tsx and summarize files","reply":"Done."}\n',
+                encoding="utf-8",
+            )
+
+            report = evaluate_turn_corpus(
+                path,
+                counter="chars",
+                target_savings_pct=0.0,
+                max_path_prefixes=1,
+                max_field_values=0,
+                out_dir=out_dir,
+            )
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.evaluate.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["turn_count"], 2)
+            self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
+            self.assertGreater(report["summary"]["alias_saved_tokens_delta"], 0)
+            for key in ("evaluation", "validation", "measure", "mine", "alias_impact", "bench", "alias_table"):
+                self.assertIn(key, report["outputs"])
+                self.assertTrue(Path(report["outputs"][key]).exists())
+
+    def test_evaluate_turn_corpus_reports_validation_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad-turns.jsonl"
+            out_dir = Path(tmp) / "eval"
+            path.write_text('{"id":"t1","prompt":"missing reply"}\n', encoding="utf-8")
+
+            report = evaluate_turn_corpus(path, out_dir=out_dir)
+
+            self.assertEqual(report["status"], "fail")
+            self.assertIsNone(report["measure"])
+            self.assertTrue((out_dir / "evaluation.json").exists())
+            self.assertTrue((out_dir / "validation.json").exists())
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
-from .aliases import AliasTable, learn_reply_aliases
+from .aliases import AliasTable, learn_reply_aliases, write_alias_table
 from .corpus import redact_text, scan_privacy
 from .metrics import benchmark_prompts, benchmark_replies, count_tokens
 from .mining import mine_reply_patterns
@@ -729,6 +729,196 @@ def benchmark_turn_alias_impact(
         "aliased": aliased,
         "validation": validation,
     }
+
+
+def evaluate_turn_corpus(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+    min_count: int = 2,
+    limit: int = 10,
+    max_path_prefixes: int = 8,
+    max_field_values: int = 8,
+    min_saved_tokens: int = 1,
+    base_aliases: AliasTable | dict[str, Any] | None = None,
+    out_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Run the full local turn-corpus measurement workflow."""
+
+    started = time.time()
+    source = str(Path(path))
+    validation = validate_turn_corpus(path)
+    outputs: dict[str, str] = {}
+    report: dict[str, Any] = {
+        "schema_version": "tokensquash.turns.evaluate.v1",
+        "status": "fail" if validation["status"] == "fail" else "pass",
+        "path": source,
+        "counter": counter,
+        "adaptive": adaptive,
+        "target_savings_pct": target_savings_pct,
+        "summary": {
+            "turn_count": validation.get("summary", {}).get("turn_count", 0),
+            "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+            "saved_pct": 0.0,
+            "prompt_saved_pct": 0.0,
+            "reply_saved_pct": 0.0,
+            "selected_path_prefix_count": 0,
+            "selected_field_value_count": 0,
+            "alias_saved_tokens_delta": 0,
+            "alias_saved_pct_delta": 0.0,
+            "break_even_corpora": None,
+            "elapsed_seconds": 0.0,
+        },
+        "outputs": outputs,
+        "validation": validation,
+        "stats": None,
+        "measure": None,
+        "diagnose": None,
+        "mine": None,
+        "aliases": None,
+        "alias_impact": None,
+        "bench": None,
+    }
+    if validation["status"] == "fail":
+        report["summary"]["elapsed_seconds"] = round(time.time() - started, 4)
+        if out_dir is not None:
+            _write_turn_evaluation_outputs(Path(out_dir), report)
+        return report
+
+    stats = turn_stats(path)
+    measure = measure_turn_corpus(
+        path,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        guess_reply_fields=guess_reply_fields,
+        aliases=base_aliases,
+    )
+    diagnose = diagnose_turn_corpus(
+        path,
+        counter=counter,
+        adaptive=adaptive,
+        guess_reply_fields=guess_reply_fields,
+        aliases=base_aliases,
+        limit=limit,
+    )
+    mine = mine_turn_patterns(
+        path,
+        counter=counter,
+        min_count=min_count,
+        limit=limit,
+        guess_reply_fields=guess_reply_fields,
+        aliases=base_aliases,
+    )
+    aliases = learn_turn_aliases(
+        path,
+        counter=counter,
+        min_count=min_count,
+        max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
+        min_saved_tokens=min_saved_tokens,
+        guess_reply_fields=guess_reply_fields,
+        base_aliases=base_aliases,
+    )
+    alias_impact = benchmark_turn_alias_impact(
+        path,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        guess_reply_fields=guess_reply_fields,
+        min_count=min_count,
+        max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
+        min_saved_tokens=min_saved_tokens,
+        base_aliases=base_aliases,
+    )
+    bench = benchmark_turns(
+        load_turn_records(path),
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        source=source,
+        guess_reply_fields=guess_reply_fields,
+        aliases=AliasTable.from_dict(aliases),
+    )
+
+    measure_summary = measure.get("summary", {})
+    alias_summary = aliases.get("summary", {})
+    impact_summary = alias_impact.get("summary", {})
+    status = "warn" if validation["status"] == "warn" else "pass"
+    if measure.get("status") == "miss":
+        status = "miss"
+    if alias_impact.get("status") == "regressed":
+        status = "regressed"
+
+    report.update(
+        {
+            "status": status,
+            "summary": {
+                "turn_count": measure_summary.get("turn_count", stats.get("summary", {}).get("turn_count", 0)),
+                "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+                "saved_pct": measure_summary.get("saved_pct", 0.0),
+                "prompt_saved_pct": measure_summary.get("prompt_saved_pct", 0.0),
+                "reply_saved_pct": measure_summary.get("reply_saved_pct", 0.0),
+                "selected_path_prefix_count": alias_summary.get("selected_path_prefix_count", 0),
+                "selected_field_value_count": alias_summary.get("selected_field_value_count", 0),
+                "alias_saved_tokens_delta": impact_summary.get("saved_tokens_delta", 0),
+                "alias_saved_pct_delta": impact_summary.get("saved_pct_delta", 0.0),
+                "break_even_corpora": impact_summary.get("break_even_corpora"),
+                "elapsed_seconds": round(time.time() - started, 4),
+            },
+            "stats": stats,
+            "measure": measure,
+            "diagnose": diagnose,
+            "mine": mine,
+            "aliases": aliases,
+            "alias_impact": alias_impact,
+            "bench": bench,
+        }
+    )
+    if out_dir is not None:
+        _write_turn_evaluation_outputs(Path(out_dir), report)
+    return report
+
+
+def format_turn_evaluate_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    break_even = summary.get("break_even_corpora")
+    break_even_text = "n/a" if break_even is None else str(break_even)
+    lines = [
+        "# TokenSquash Turn Evaluation",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Adaptive: `{report.get('adaptive')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Prompt saved percent: `{summary.get('prompt_saved_pct', 0.0)}%`",
+        f"- Reply saved percent: `{summary.get('reply_saved_pct', 0.0)}%`",
+        f"- Selected path aliases: `{summary.get('selected_path_prefix_count', 0)}`",
+        f"- Selected field aliases: `{summary.get('selected_field_value_count', 0)}`",
+        f"- Alias saved token delta: `{summary.get('alias_saved_tokens_delta', 0)}`",
+        f"- Alias saved percent delta: `{summary.get('alias_saved_pct_delta', 0.0)}%`",
+        f"- Break-even corpora: `{break_even_text}`",
+    ]
+    outputs = report.get("outputs") or {}
+    if outputs:
+        lines.extend(["", "## Outputs", ""])
+        for name, path in sorted(outputs.items()):
+            lines.append(f"- `{name}`: `{path}`")
+    validation = report.get("validation") or {}
+    if validation.get("status") == "warn":
+        lines.append("")
+        lines.append("Validation warnings or privacy findings are present; review before sharing this corpus.")
+    if report.get("status") == "fail":
+        lines.append("")
+        lines.append("Validation failed; fix the corpus before benchmarking.")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def format_turn_validation_markdown(report: dict[str, Any]) -> str:
@@ -1530,6 +1720,45 @@ def _append_diagnostic_table(lines: list[str], title: str, rows: list[dict[str, 
 
 def _side_summary(side: dict[str, Any]) -> str:
     return f"{side.get('mode')} raw {side.get('wire_saved_tokens')} saved {side.get('saved_tokens')}"
+
+
+def _write_turn_evaluation_outputs(target: Path, report: dict[str, Any]) -> None:
+    target.mkdir(parents=True, exist_ok=True)
+    outputs = report.setdefault("outputs", {})
+    components = (
+        ("validation", "validation.json"),
+        ("stats", "stats.json"),
+        ("measure", "measure.json"),
+        ("diagnose", "diagnose.json"),
+        ("mine", "mine.json"),
+        ("alias_impact", "alias-impact.json"),
+        ("bench", "bench.json"),
+    )
+    for key, filename in components:
+        payload = report.get(key)
+        if payload is None:
+            continue
+        output_path = target / filename
+        _write_json_report(output_path, payload)
+        outputs[key] = str(output_path)
+
+    alias_report = report.get("aliases")
+    if alias_report is not None:
+        alias_report_path = target / "aliases-report.json"
+        _write_json_report(alias_report_path, alias_report)
+        outputs["aliases_report"] = str(alias_report_path)
+        alias_table_path = target / "aliases.json"
+        write_alias_table(alias_table_path, alias_report)
+        outputs["alias_table"] = str(alias_table_path)
+
+    evaluation_path = target / "evaluation.json"
+    outputs["evaluation"] = str(evaluation_path)
+    _write_json_report(evaluation_path, report)
+
+
+def _write_json_report(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def _markdown_cell(value: str) -> str:

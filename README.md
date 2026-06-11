@@ -182,6 +182,7 @@ python -m tokensquash turns validate private-turns\real.jsonl
 python -m tokensquash turns stats private-turns\real.jsonl
 python -m tokensquash turns redact private-turns\real.jsonl --out private-turns\real.redacted-turns.jsonl
 python -m tokensquash turns split private-turns\real.redacted-turns.jsonl --prompts-out prompts\real.prompts.jsonl --replies-out prompts\real.replies.jsonl
+python -m tokensquash turns evaluate private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\eval-real
 python -m tokensquash turns measure private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --target 0
 python -m tokensquash turns diagnose private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns mine private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
@@ -191,13 +192,15 @@ python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --coun
 python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --aliases aliases\session.json --counter tiktoken:cl100k_base
 ```
 
-`turns measure` validates the corpus, summarizes it, and reports combined
-savings plus prompt-side and reply-side savings. `turns diagnose` shows the
-largest wins, raw wire losses, and adaptive pass-through rows so the next codec
-change has a target. `turns mine` reports repeated reply field values plus
-prompt/reply path patterns with estimated token impact. `turns aliases` learns a session
-dictionary from prompt paths plus reply-side files, commands, risks, next steps,
-and warnings.
+`turns evaluate` runs the measurement workflow in one pass and can write a
+local report pack with validation, stats, measure, diagnose, mine, aliases,
+alias-impact, and benchmark JSON files. `turns measure` validates the corpus,
+summarizes it, and reports combined savings plus prompt-side and reply-side
+savings. `turns diagnose` shows the largest wins, raw wire losses, and adaptive
+pass-through rows so the next codec change has a target. `turns mine` reports
+repeated reply field values plus prompt/reply path patterns with estimated token
+impact. `turns aliases` learns a session dictionary from prompt paths plus
+reply-side files, commands, risks, next steps, and warnings.
 `turns alias-impact` learns aliases and compares turn benchmarks with and
 without them, including alias setup tokens and break-even corpus count. `turns
 bench` returns the full benchmark payload for saving as JSON.
@@ -226,6 +229,7 @@ python -m unittest discover -s tests
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
 - Local paired-turn workflow for validating, redacting, splitting, and benchmarking private prompt/reply exports.
 - Alias-impact reports for learned session dictionaries.
+- One-command turn evaluation report packs for real-corpus measurement.
 - Pattern mining for repeated reply values and path patterns.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No network calls, no API keys, no model dependency.
