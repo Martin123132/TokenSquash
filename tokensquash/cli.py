@@ -39,10 +39,12 @@ from .turns import (
     format_turn_capture_markdown,
     format_turn_diagnose_markdown,
     format_turn_evaluate_markdown,
+    format_turn_import_markdown,
     format_turn_measure_markdown,
     format_turn_split_markdown,
     format_turn_stats_markdown,
     format_turn_validation_markdown,
+    import_turn_corpus,
     learn_turn_aliases,
     load_turn_records,
     measure_turn_corpus,
@@ -153,6 +155,16 @@ def main(argv: list[str] | None = None) -> int:
     turns_capture.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     turns_capture.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
     turns_capture.add_argument("--json", action="store_true")
+
+    turns_import = turns_sub.add_parser("import", help="Import a JSON/JSONL turn corpus into private raw/redacted storage.")
+    turns_import.add_argument("corpus", type=Path)
+    turns_import.add_argument("--raw-out", type=Path, default=Path("private-turns/real.jsonl"))
+    turns_import.add_argument("--redacted-out", type=Path, default=Path("private-turns/real.redacted-turns.jsonl"))
+    turns_import.add_argument("--evaluate", action="store_true", help="Run a turn evaluation report pack after import.")
+    turns_import.add_argument("--eval-out-dir", type=Path, default=Path("private-turns/eval-real"))
+    turns_import.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_import.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_import.add_argument("--json", action="store_true")
 
     turns_split = turns_sub.add_parser("split", help="Split turns into prompt and reply corpora.")
     turns_split.add_argument("corpus", type=Path)
@@ -434,6 +446,21 @@ def main(argv: list[str] | None = None) -> int:
                     print(json.dumps(report, indent=2))
                 else:
                     print(format_turn_capture_markdown(report), end="")
+                return 0 if report["status"] in {"written", "pass", "warn", "miss", "empty"} else 1
+            if args.turns_command == "import":
+                report = import_turn_corpus(
+                    args.corpus,
+                    raw_output_path=args.raw_out,
+                    redacted_output_path=args.redacted_out,
+                    evaluate=args.evaluate,
+                    evaluation_output_dir=args.eval_out_dir,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                )
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(format_turn_import_markdown(report), end="")
                 return 0 if report["status"] in {"written", "pass", "warn", "miss", "empty"} else 1
             if args.turns_command == "split":
                 report = split_turn_corpus(

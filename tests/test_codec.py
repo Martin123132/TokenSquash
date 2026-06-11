@@ -28,6 +28,7 @@ from tokensquash.turns import (
     capture_turn_record,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
+    import_turn_corpus,
     learn_turn_aliases,
     load_turn_records,
     measure_turn_corpus,
@@ -744,6 +745,127 @@ class TokenSquashCodecTests(unittest.TestCase):
                     redacted_output_path=redacted,
                     item_id="same",
                 )
+
+    def test_import_turn_corpus_writes_raw_and_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.jsonl"
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            rows = [
+                {
+                    "id": "seed-1",
+                    "prompt": "fix login for dev@example.com",
+                    "reply": "Done. api_key=secret123",
+                    "verification": ["unit tests pass"],
+                },
+                {
+                    "prompt": "review src/checkout.py",
+                    "assistant": {
+                        "status": "done",
+                        "summary": "Reviewed checkout.",
+                        "files": ["src/checkout.py"],
+                        "commands": ["python -m unittest discover -s tests"],
+                    },
+                },
+            ]
+            source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            report = import_turn_corpus(source, raw_output_path=raw, redacted_output_path=redacted)
+            records = load_turn_records(raw)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.import.v1")
+            self.assertEqual(report["status"], "written")
+            self.assertEqual(report["imported_turns"], 2)
+            self.assertEqual(report["imported_ids"], ["seed-1", "turn-0002"])
+            self.assertEqual(report["turns"], 2)
+            self.assertEqual(len(records), 2)
+            self.assertEqual(records[1]["reply_text"], "Reviewed checkout.")
+            self.assertIn("dev@example.com", raw.read_text(encoding="utf-8"))
+            redacted_text = redacted.read_text(encoding="utf-8")
+            self.assertIn("[REDACTED_EMAIL]", redacted_text)
+            self.assertIn("[REDACTED_SECRET]", redacted_text)
+
+    def test_import_turn_corpus_allocates_ids_after_existing_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.jsonl"
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            append_turn_record(raw, prompt="existing turn", reply="Done.")
+            rows = [
+                {"prompt": "first imported turn", "reply": "Done."},
+                {"prompt": "second imported turn", "reply": "Done."},
+            ]
+            source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            report = import_turn_corpus(source, raw_output_path=raw, redacted_output_path=redacted)
+
+            self.assertEqual(report["imported_ids"], ["turn-0002", "turn-0003"])
+            self.assertEqual(report["first_id"], "turn-0002")
+            self.assertEqual(report["last_id"], "turn-0003")
+            self.assertEqual(report["turns"], 3)
+
+    def test_import_turn_corpus_rejects_duplicate_id_before_append(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.jsonl"
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            append_turn_record(raw, prompt="existing turn", reply="Done.", item_id="same")
+            rows = [
+                {"prompt": "would otherwise import", "reply": "Done."},
+                {"id": "same", "prompt": "duplicate import", "reply": "Done."},
+            ]
+            source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "turn id already exists"):
+                import_turn_corpus(source, raw_output_path=raw, redacted_output_path=redacted)
+
+            self.assertEqual(len(load_turn_records(raw)), 1)
+            self.assertFalse(redacted.exists())
+
+    def test_turns_import_cli_evaluates_report_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source.jsonl"
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            eval_dir = Path(tmp) / "private-turns" / "eval-real"
+            rows = [
+                {
+                    "prompt": "review packages/mobile/src/screens/login.tsx and summarize files",
+                    "reply": "Done. I reviewed packages/mobile/src/screens/login.tsx.",
+                }
+            ]
+            source.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "import",
+                        str(source),
+                        "--raw-out",
+                        str(raw),
+                        "--redacted-out",
+                        str(redacted),
+                        "--evaluate",
+                        "--eval-out-dir",
+                        str(eval_dir),
+                        "--counter",
+                        "chars",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.import.v1")
+            self.assertEqual(payload["imported_turns"], 1)
+            self.assertTrue(payload["evaluated"])
+            self.assertIn("saved_pct", payload["summary"])
+            self.assertTrue(raw.exists())
+            self.assertTrue(redacted.exists())
+            self.assertTrue((eval_dir / "evaluation.json").exists())
+            self.assertTrue((eval_dir / "aliases.json").exists())
 
     def test_turn_benchmark_combines_prompt_and_reply(self) -> None:
         records = [

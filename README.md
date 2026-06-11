@@ -180,6 +180,15 @@ For longer turns, put the text in files and use `--prompt-file` and
 `--reply-file`. `turns add` remains available as the low-level append-only
 command when you do not want redaction or evaluation side effects.
 
+Import an existing JSON or JSONL export in bulk with the same private raw plus
+redacted workflow. This appends each imported turn to `private-turns\real.jsonl`,
+regenerates `private-turns\real.redacted-turns.jsonl`, and can run evaluation
+against the redacted corpus:
+
+```powershell
+python -m tokensquash turns import exports\turns.jsonl --evaluate --counter tiktoken:cl100k_base
+```
+
 ```powershell
 python -m tokensquash turns validate private-turns\real.jsonl
 python -m tokensquash turns stats private-turns\real.jsonl
@@ -197,9 +206,11 @@ python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --alia
 
 `turns capture` is the safest way to build a real local corpus incrementally:
 it stores the raw turn privately, rebuilds the redacted corpus, and runs
-`turns evaluate` when `--evaluate` is set. `turns evaluate` runs the measurement
-workflow in one pass and can write a local report pack with validation, stats,
-measure, diagnose, mine, aliases, alias-impact, and benchmark JSON files.
+`turns evaluate` when `--evaluate` is set. `turns import` does the same
+raw/redacted/evaluate workflow for a prepared JSON or JSONL turn corpus.
+`turns evaluate` runs the measurement workflow in one pass and can write a local
+report pack with validation, stats, measure, diagnose, mine, aliases,
+alias-impact, and benchmark JSON files.
 `turns measure` validates the corpus, summarizes it, and reports combined
 savings plus prompt-side and reply-side savings. `turns diagnose` shows the
 largest wins, raw wire losses, and adaptive pass-through rows so the next codec
@@ -235,6 +246,7 @@ python -m unittest discover -s tests
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
 - Local paired-turn workflow for validating, redacting, splitting, and benchmarking private prompt/reply exports.
 - Safe one-command turn capture with raw private storage and regenerated redacted corpora.
+- Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - One-command turn evaluation report packs for real-corpus measurement.
 - Pattern mining for repeated reply values and path patterns.

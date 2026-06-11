@@ -287,6 +287,100 @@ def capture_turn_record(
     }
 
 
+def import_turn_corpus(
+    input_path: Path | str,
+    *,
+    raw_output_path: Path | str = Path("private-turns/real.jsonl"),
+    redacted_output_path: Path | str = Path("private-turns/real.redacted-turns.jsonl"),
+    evaluate: bool = False,
+    evaluation_output_dir: Path | str = Path("private-turns/eval-real"),
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+) -> dict[str, Any]:
+    """Import a JSON/JSONL turn corpus into the private raw/redacted workflow."""
+
+    started = time.time()
+    source = Path(input_path)
+    raw_target = Path(raw_output_path)
+    if raw_target.suffix.lower() == ".json":
+        raise ValueError("turns import writes raw storage as JSONL; use a .jsonl raw output path")
+    payloads = _load_turn_payloads(source)
+    records = [_normalize_turn(payload, index) for index, payload in enumerate(payloads, start=1)]
+    planned_ids = _planned_import_ids(payloads, raw_target)
+    import_rows = []
+    for record, planned_id in zip(records, planned_ids):
+        fields = dict(record.get("reply_fields") or {})
+        prompt_text = _clean_text(str(record.get("prompt", "")))
+        reply_text = _clean_text(str(record.get("reply_text") or fields.get("summary") or ""))
+        if not prompt_text:
+            raise ValueError(f"turn import row {record.get('line')} must include prompt text")
+        if not reply_text:
+            raise ValueError(f"turn import row {record.get('line')} must include reply text or summary")
+        import_rows.append((record, planned_id, fields, prompt_text, reply_text))
+
+    add_reports = []
+    for _record, planned_id, fields, prompt_text, reply_text in import_rows:
+        add_reports.append(
+            append_turn_record(
+                raw_target,
+                prompt=prompt_text,
+                reply=reply_text,
+                item_id=planned_id,
+                status=_optional_text(fields.get("status")),
+                summary=_optional_text(fields.get("summary")),
+                files=_coerce_import_items(fields.get("files")),
+                verification=_coerce_import_items(fields.get("verification")),
+                commands=_coerce_import_items(fields.get("commands")),
+                risks=_coerce_import_items(fields.get("risks")),
+                next_steps=_coerce_import_items(fields.get("next_steps")),
+            )
+        )
+
+    if not payloads and not raw_target.exists():
+        raw_target.parent.mkdir(parents=True, exist_ok=True)
+        raw_target.write_text("", encoding="utf-8")
+    redaction_report = redact_turn_corpus(raw_target, redacted_output_path)
+    evaluation_report = None
+    if evaluate:
+        evaluation_report = evaluate_turn_corpus(
+            redacted_output_path,
+            counter=counter,
+            target_savings_pct=target_savings_pct,
+            out_dir=evaluation_output_dir,
+        )
+
+    evaluation_summary = (evaluation_report or {}).get("summary", {})
+    imported_ids = [str(item.get("id")) for item in add_reports]
+    total_turns = add_reports[-1].get("turns", 0) if add_reports else len(_load_raw_payloads(raw_target))
+    return {
+        "schema_version": "tokensquash.turns.import.v1",
+        "status": "written" if evaluation_report is None else evaluation_report.get("status", "written"),
+        "input": str(source),
+        "raw_output": str(raw_target),
+        "redacted_output": str(Path(redacted_output_path)),
+        "evaluation_output_dir": str(Path(evaluation_output_dir)) if evaluate else None,
+        "imported_turns": len(add_reports),
+        "turns": total_turns,
+        "first_id": imported_ids[0] if imported_ids else None,
+        "last_id": imported_ids[-1] if imported_ids else None,
+        "imported_ids": imported_ids,
+        "redaction_count": redaction_report.get("redaction_count", 0),
+        "evaluated": evaluate,
+        "summary": {
+            "imported_turns": len(add_reports),
+            "turn_count": total_turns,
+            "redaction_count": redaction_report.get("redaction_count", 0),
+            "saved_pct": evaluation_summary.get("saved_pct", 0.0),
+            "alias_saved_tokens_delta": evaluation_summary.get("alias_saved_tokens_delta", 0),
+            "break_even_corpora": evaluation_summary.get("break_even_corpora"),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "imports": add_reports,
+        "redaction": redaction_report,
+        "evaluation": evaluation_report,
+    }
+
+
 def split_turn_corpus(
     input_path: Path | str,
     prompts_output: Path | str,
@@ -1262,6 +1356,36 @@ def format_turn_capture_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_turn_import_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Turn Import",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Input: `{report.get('input')}`",
+        f"- Imported turns: `{report.get('imported_turns', 0)}`",
+        f"- Total turns: `{report.get('turns', 0)}`",
+        f"- First ID: `{report.get('first_id')}`",
+        f"- Last ID: `{report.get('last_id')}`",
+        f"- Raw output: `{report.get('raw_output')}`",
+        f"- Redacted output: `{report.get('redacted_output')}`",
+        f"- Redactions: `{report.get('redaction_count', 0)}`",
+        f"- Evaluated: `{report.get('evaluated')}`",
+    ]
+    if report.get("evaluated"):
+        break_even = summary.get("break_even_corpora")
+        break_even_text = "n/a" if break_even is None else str(break_even)
+        lines.extend(
+            [
+                f"- Evaluation output: `{report.get('evaluation_output_dir')}`",
+                f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+                f"- Alias saved token delta: `{summary.get('alias_saved_tokens_delta', 0)}`",
+                f"- Break-even corpora: `{break_even_text}`",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _load_turn_payloads(path: Path | str) -> list[dict[str, Any]]:
     source = Path(path)
     if not source.exists():
@@ -1545,6 +1669,39 @@ def _append_optional_list(record: dict[str, Any], key: str, values: Iterable[str
     items = _unique(_clean_text(str(value)) for value in values)
     if items:
         record[key] = items
+
+
+def _planned_import_ids(payloads: list[dict[str, Any]], raw_target: Path) -> list[str]:
+    existing = _load_raw_payloads(raw_target) if raw_target.exists() else []
+    seen_ids = {str(item.get("id")) for item in existing if item.get("id") is not None}
+    planned = []
+    total_count = len(existing)
+    for payload in payloads:
+        explicit_id = payload.get("id")
+        planned_id = str(explicit_id) if explicit_id is not None else f"turn-{total_count + 1:04d}"
+        if planned_id in seen_ids:
+            raise ValueError(f"turn id already exists: {planned_id}")
+        seen_ids.add(planned_id)
+        planned.append(planned_id)
+        total_count += 1
+    return planned
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = _clean_text(str(value))
+    return text or None
+
+
+def _coerce_import_items(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [_clean_text(value)] if value.strip() else []
+    if isinstance(value, Iterable):
+        return _unique(_clean_text(str(item)) for item in value)
+    return [_clean_text(str(value))]
 
 
 def _next_turn_id(records: list[dict[str, Any]]) -> str:
