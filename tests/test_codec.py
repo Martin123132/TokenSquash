@@ -712,6 +712,78 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "rows.jsonl").exists())
             self.assertIn("outputs", payload)
 
+    def test_sidecar_experiment_cli_writes_evidence_pack(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "kind": "reply",
+                                "status": "done",
+                                "summary": "fixed login",
+                                "files": ["src/auth.py"],
+                                "verification": ["tests pass"],
+                                "commands": [],
+                                "risks": [],
+                                "next_steps": [],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "turns.jsonl"
+            out_root = Path(tmp) / "experiments"
+            run_dir = out_root / "run-001"
+            corpus.write_text(
+                '{"id":"turn-1","prompt":"fix login","reply":"Done. I fixed login in src/auth.py."}\n',
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+                with redirect_stdout(stdout):
+                    code = cli_main(
+                        [
+                            "sidecar",
+                            "experiment",
+                            str(corpus),
+                            "--name",
+                            "llama baseline",
+                            "--run-id",
+                            "run-001",
+                            "--out-root",
+                            str(out_root),
+                            "--mode",
+                            "reply",
+                            "--limit",
+                            "1",
+                            "--counter",
+                            "chars",
+                            "--json",
+                        ]
+                    )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.sidecar.experiment.v1")
+            self.assertEqual(payload["name"], "llama baseline")
+            self.assertEqual(payload["run_id"], "run-001")
+            self.assertEqual(payload["output_dir"], str(run_dir))
+            self.assertEqual(payload["summary"]["item_count"], 1)
+            self.assertTrue((run_dir / "evaluation.json").exists())
+            self.assertTrue((run_dir / "rows.jsonl").exists())
+            self.assertTrue((run_dir / "summary.md").exists())
+            self.assertTrue((run_dir / "run.json").exists())
+            self.assertIn("TokenSquash Sidecar Experiment", (run_dir / "summary.md").read_text(encoding="utf-8"))
+
     def test_compare_sidecar_evaluations_reports_improvement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp) / "base.json"

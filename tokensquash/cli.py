@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from .aliases import format_alias_report_markdown, learn_reply_aliases, load_alias_table, write_alias_table
@@ -36,6 +37,7 @@ from .sidecar import (
     format_sidecar_decode_markdown,
     format_sidecar_evaluation_compare_markdown,
     format_sidecar_evaluation_markdown,
+    format_sidecar_experiment_markdown,
     format_sidecar_request_markdown,
     format_sidecar_translation_markdown,
     format_sidecar_roundtrip_markdown,
@@ -169,6 +171,38 @@ def main(argv: list[str] | None = None) -> int:
     sidecar_evaluate.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
     sidecar_evaluate.add_argument("--out-dir", type=Path, help="Write sidecar evaluation JSON files to this directory.")
     sidecar_evaluate.add_argument("--json", action="store_true", help="Print sidecar evaluation JSON.")
+
+    sidecar_experiment = sidecar_sub.add_parser(
+        "experiment",
+        help="Run a named sidecar corpus experiment and write a repeatable evidence pack.",
+    )
+    sidecar_experiment.add_argument(
+        "corpus",
+        nargs="?",
+        type=Path,
+        default=Path("private-turns/real.redacted-turns.jsonl"),
+        help="Redacted turn corpus to evaluate.",
+    )
+    sidecar_experiment.add_argument("--name", default="sidecar", help="Human-friendly experiment name.")
+    sidecar_experiment.add_argument("--run-id", help="Stable run id for repeatable or scripted output paths.")
+    sidecar_experiment.add_argument(
+        "--out-root",
+        type=Path,
+        default=Path("private-turns/sidecar-experiments"),
+        help="Directory that will contain this experiment run folder.",
+    )
+    sidecar_experiment.add_argument(
+        "--mode",
+        choices=("prompt", "reply", "both"),
+        default="both",
+        help="Evaluate prompts, replies, or both.",
+    )
+    sidecar_experiment.add_argument("--limit", type=int, default=0, help="Maximum prompt/reply items to evaluate; 0 means all.")
+    sidecar_experiment.add_argument("--model", default=DEFAULT_OLLAMA_MODEL, help="Ollama model name.")
+    sidecar_experiment.add_argument("--endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    sidecar_experiment.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    sidecar_experiment.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
+    sidecar_experiment.add_argument("--json", action="store_true", help="Print experiment JSON.")
 
     sidecar_compare_evaluations = sidecar_sub.add_parser(
         "compare-evaluations",
@@ -552,6 +586,35 @@ def main(argv: list[str] | None = None) -> int:
                 if args.out_dir:
                     _write_sidecar_evaluation_outputs(args.out_dir, report)
                 output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_evaluation_markdown(report)
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.sidecar_command == "experiment":
+                records = load_turn_records(args.corpus)
+                evaluation = evaluate_sidecar_turns(
+                    records,
+                    source=str(args.corpus),
+                    part=args.mode,
+                    limit=args.limit,
+                    model=args.model,
+                    endpoint=args.endpoint,
+                    counter=args.counter,
+                    timeout_seconds=args.timeout,
+                )
+                run_id = args.run_id or _sidecar_experiment_run_id(args.name)
+                output_dir = args.out_root / run_id
+                report = _write_sidecar_experiment_outputs(
+                    output_dir,
+                    evaluation,
+                    name=args.name,
+                    run_id=run_id,
+                    source=str(args.corpus),
+                    mode=args.mode,
+                    model=args.model,
+                    endpoint=args.endpoint,
+                    counter=args.counter,
+                    limit=args.limit,
+                )
+                output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_experiment_markdown(report)
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
             if args.sidecar_command == "compare-evaluations":
@@ -1027,6 +1090,66 @@ def _write_sidecar_evaluation_outputs(out_dir: Path, report: dict) -> None:
         encoding="utf-8",
     )
     evaluation_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_sidecar_experiment_outputs(
+    out_dir: Path,
+    evaluation: dict,
+    *,
+    name: str,
+    run_id: str,
+    source: str,
+    mode: str,
+    model: str,
+    endpoint: str,
+    counter: str,
+    limit: int,
+) -> dict:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_sidecar_evaluation_outputs(out_dir, evaluation)
+    outputs = dict(evaluation.get("outputs", {}))
+    run_path = out_dir / "run.json"
+    summary_path = out_dir / "summary.md"
+    outputs["run"] = str(run_path)
+    outputs["summary"] = str(summary_path)
+    report = {
+        "schema_version": "tokensquash.sidecar.experiment.v1",
+        "status": evaluation.get("status"),
+        "name": name,
+        "run_id": run_id,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "source": source,
+        "mode": mode,
+        "model": model,
+        "endpoint": endpoint.rstrip("/"),
+        "counter": counter,
+        "limit": limit,
+        "output_dir": str(out_dir),
+        "summary": evaluation.get("summary", {}),
+        "outputs": outputs,
+    }
+    summary_path.write_text(format_sidecar_experiment_markdown(report), encoding="utf-8")
+    run_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+def _sidecar_experiment_run_id(name: str) -> str:
+    stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    slug = _slugify_sidecar_experiment_name(name)
+    return f"{stamp}-{slug}" if slug else stamp
+
+
+def _slugify_sidecar_experiment_name(name: str) -> str:
+    pieces = []
+    previous_dash = False
+    for char in name.strip().lower():
+        if char.isalnum():
+            pieces.append(char)
+            previous_dash = False
+        elif char in {" ", "-", "_"} and not previous_dash:
+            pieces.append("-")
+            previous_dash = True
+    return "".join(pieces).strip("-")
 
 
 def _read_capture_stdin(args: argparse.Namespace) -> tuple[str, str]:

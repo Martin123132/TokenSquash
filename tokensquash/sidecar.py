@@ -496,6 +496,40 @@ def format_sidecar_evaluation_compare_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_sidecar_experiment_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    outputs = report.get("outputs", {})
+    lines = [
+        "# TokenSquash Sidecar Experiment",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Name: `{report.get('name')}`",
+        f"- Run ID: `{report.get('run_id')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Mode: `{report.get('mode')}`",
+        f"- Model: `{report.get('model')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Output: `{report.get('output_dir')}`",
+        "",
+        "## Summary",
+        "",
+        f"- Evaluated items: `{summary.get('item_count', 0)}`",
+        f"- Failures: `{summary.get('failure_count', 0)}`",
+        f"- Warnings: `{summary.get('warning_count', 0)}`",
+        f"- Original tokens: `{summary.get('original_tokens', 0)}`",
+        f"- Semantic tokens: `{summary.get('semantic_tokens', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        "",
+        "## Outputs",
+        "",
+    ]
+    for key in ("run", "summary", "evaluation", "rows"):
+        if key in outputs:
+            lines.append(f"- {key}: `{outputs[key]}`")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_sidecar_request_markdown(report: dict[str, Any]) -> str:
     payload = report.get("payload", {})
     lines = [
