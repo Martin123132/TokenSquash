@@ -217,6 +217,76 @@ def append_turn_record(
     }
 
 
+def capture_turn_record(
+    *,
+    prompt: str,
+    reply: str,
+    raw_output_path: Path | str = Path("private-turns/real.jsonl"),
+    redacted_output_path: Path | str = Path("private-turns/real.redacted-turns.jsonl"),
+    item_id: str | None = None,
+    status: str | None = None,
+    summary: str | None = None,
+    files: Iterable[str] = (),
+    verification: Iterable[str] = (),
+    commands: Iterable[str] = (),
+    risks: Iterable[str] = (),
+    next_steps: Iterable[str] = (),
+    evaluate: bool = False,
+    evaluation_output_dir: Path | str = Path("private-turns/eval-real"),
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+) -> dict[str, Any]:
+    """Append one raw turn, regenerate its redacted corpus, and optionally evaluate it."""
+
+    started = time.time()
+    add_report = append_turn_record(
+        raw_output_path,
+        prompt=prompt,
+        reply=reply,
+        item_id=item_id,
+        status=status,
+        summary=summary,
+        files=files,
+        verification=verification,
+        commands=commands,
+        risks=risks,
+        next_steps=next_steps,
+    )
+    redaction_report = redact_turn_corpus(raw_output_path, redacted_output_path)
+    evaluation_report = None
+    if evaluate:
+        evaluation_report = evaluate_turn_corpus(
+            redacted_output_path,
+            counter=counter,
+            target_savings_pct=target_savings_pct,
+            out_dir=evaluation_output_dir,
+        )
+
+    evaluation_summary = (evaluation_report or {}).get("summary", {})
+    return {
+        "schema_version": "tokensquash.turns.capture.v1",
+        "status": "written" if evaluation_report is None else evaluation_report.get("status", "written"),
+        "raw_output": str(Path(raw_output_path)),
+        "redacted_output": str(Path(redacted_output_path)),
+        "evaluation_output_dir": str(Path(evaluation_output_dir)) if evaluate else None,
+        "id": add_report.get("id"),
+        "turns": add_report.get("turns", 0),
+        "redaction_count": redaction_report.get("redaction_count", 0),
+        "evaluated": evaluate,
+        "summary": {
+            "turn_count": add_report.get("turns", 0),
+            "redaction_count": redaction_report.get("redaction_count", 0),
+            "saved_pct": evaluation_summary.get("saved_pct", 0.0),
+            "alias_saved_tokens_delta": evaluation_summary.get("alias_saved_tokens_delta", 0),
+            "break_even_corpora": evaluation_summary.get("break_even_corpora"),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "add": add_report,
+        "redaction": redaction_report,
+        "evaluation": evaluation_report,
+    }
+
+
 def split_turn_corpus(
     input_path: Path | str,
     prompts_output: Path | str,
@@ -1163,6 +1233,33 @@ def format_turn_add_markdown(report: dict[str, Any]) -> str:
             "",
         ]
     )
+
+
+def format_turn_capture_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Turn Capture",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- ID: `{report.get('id')}`",
+        f"- Turns: `{report.get('turns', 0)}`",
+        f"- Raw output: `{report.get('raw_output')}`",
+        f"- Redacted output: `{report.get('redacted_output')}`",
+        f"- Redactions: `{report.get('redaction_count', 0)}`",
+        f"- Evaluated: `{report.get('evaluated')}`",
+    ]
+    if report.get("evaluated"):
+        break_even = summary.get("break_even_corpora")
+        break_even_text = "n/a" if break_even is None else str(break_even)
+        lines.extend(
+            [
+                f"- Evaluation output: `{report.get('evaluation_output_dir')}`",
+                f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+                f"- Alias saved token delta: `{summary.get('alias_saved_tokens_delta', 0)}`",
+                f"- Break-even corpora: `{break_even_text}`",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _load_turn_payloads(path: Path | str) -> list[dict[str, Any]]:

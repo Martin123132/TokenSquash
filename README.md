@@ -167,15 +167,18 @@ For paired prompt/reply exports, use a local JSONL turn corpus:
 
 Keep real files under `turns/` or `private-turns/`; both are ignored by Git.
 
-Append one turn without hand-editing JSON:
+Capture one real turn without hand-editing JSON. This appends the raw turn to
+`private-turns\real.jsonl`, regenerates
+`private-turns\real.redacted-turns.jsonl`, and can optionally write a fresh
+evaluation pack:
 
 ```powershell
-python -m tokensquash turns add --prompt "fix the login bug, keep the diff small, run tests" --reply "Done. I fixed the login bug in src/auth.py and verified it with python -m unittest discover -s tests. Risks: none." --changed-file src/auth.py --verify "unit tests pass" --command "python -m unittest discover -s tests" --risk none
+python -m tokensquash turns capture --prompt "fix the login bug, keep the diff small, run tests" --reply "Done. I fixed the login bug in src/auth.py and verified it with python -m unittest discover -s tests. Risks: none." --changed-file src/auth.py --verify "unit tests pass" --command "python -m unittest discover -s tests" --risk none --evaluate --counter tiktoken:cl100k_base
 ```
 
-By default, `turns add` writes to `private-turns\real.jsonl`.
 For longer turns, put the text in files and use `--prompt-file` and
-`--reply-file`.
+`--reply-file`. `turns add` remains available as the low-level append-only
+command when you do not want redaction or evaluation side effects.
 
 ```powershell
 python -m tokensquash turns validate private-turns\real.jsonl
@@ -192,15 +195,18 @@ python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --coun
 python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --aliases aliases\session.json --counter tiktoken:cl100k_base
 ```
 
-`turns evaluate` runs the measurement workflow in one pass and can write a
-local report pack with validation, stats, measure, diagnose, mine, aliases,
-alias-impact, and benchmark JSON files. `turns measure` validates the corpus,
-summarizes it, and reports combined savings plus prompt-side and reply-side
-savings. `turns diagnose` shows the largest wins, raw wire losses, and adaptive
-pass-through rows so the next codec change has a target. `turns mine` reports
-repeated reply field values plus prompt/reply path patterns with estimated token
-impact. `turns aliases` learns a session dictionary from prompt paths plus
-reply-side files, commands, risks, next steps, and warnings.
+`turns capture` is the safest way to build a real local corpus incrementally:
+it stores the raw turn privately, rebuilds the redacted corpus, and runs
+`turns evaluate` when `--evaluate` is set. `turns evaluate` runs the measurement
+workflow in one pass and can write a local report pack with validation, stats,
+measure, diagnose, mine, aliases, alias-impact, and benchmark JSON files.
+`turns measure` validates the corpus, summarizes it, and reports combined
+savings plus prompt-side and reply-side savings. `turns diagnose` shows the
+largest wins, raw wire losses, and adaptive pass-through rows so the next codec
+change has a target. `turns mine` reports repeated reply field values plus
+prompt/reply path patterns with estimated token impact. `turns aliases` learns a
+session dictionary from prompt paths plus reply-side files, commands, risks,
+next steps, and warnings.
 `turns alias-impact` learns aliases and compares turn benchmarks with and
 without them, including alias setup tokens and break-even corpus count. `turns
 bench` returns the full benchmark payload for saving as JSON.
@@ -228,6 +234,7 @@ python -m unittest discover -s tests
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
 - Local paired-turn workflow for validating, redacting, splitting, and benchmarking private prompt/reply exports.
+- Safe one-command turn capture with raw private storage and regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - One-command turn evaluation report packs for real-corpus measurement.
 - Pattern mining for repeated reply values and path patterns.

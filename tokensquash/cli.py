@@ -30,11 +30,13 @@ from .turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
     benchmark_turns,
+    capture_turn_record,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
     format_turn_alias_impact_markdown,
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
+    format_turn_capture_markdown,
     format_turn_diagnose_markdown,
     format_turn_evaluate_markdown,
     format_turn_measure_markdown,
@@ -130,6 +132,27 @@ def main(argv: list[str] | None = None) -> int:
     turns_add.add_argument("--risk", dest="risks", action="append", default=[], help="Risk or caveat.")
     turns_add.add_argument("--next", dest="next_steps", action="append", default=[], help="Suggested next step.")
     turns_add.add_argument("--json", action="store_true")
+
+    turns_capture = turns_sub.add_parser("capture", help="Capture one raw turn, regenerate redacted data, and optionally evaluate.")
+    turns_capture.add_argument("--raw-out", type=Path, default=Path("private-turns/real.jsonl"))
+    turns_capture.add_argument("--redacted-out", type=Path, default=Path("private-turns/real.redacted-turns.jsonl"))
+    turns_capture.add_argument("--id", dest="item_id", help="Optional stable turn id.")
+    turns_capture.add_argument("--prompt", help="Human prompt text.")
+    turns_capture.add_argument("--prompt-file", type=Path, help="File containing human prompt text.")
+    turns_capture.add_argument("--reply", help="Assistant reply text.")
+    turns_capture.add_argument("--reply-file", type=Path, help="File containing assistant reply text.")
+    turns_capture.add_argument("--status", choices=("done", "partial", "blocked", "failed"), help="Optional reply status.")
+    turns_capture.add_argument("--summary", help="Optional reply summary.")
+    turns_capture.add_argument("--changed-file", dest="files", action="append", default=[], help="Changed or relevant file.")
+    turns_capture.add_argument("--verify", dest="verification", action="append", default=[], help="Verification result.")
+    turns_capture.add_argument("--command", dest="commands", action="append", default=[], help="Command that was run.")
+    turns_capture.add_argument("--risk", dest="risks", action="append", default=[], help="Risk or caveat.")
+    turns_capture.add_argument("--next", dest="next_steps", action="append", default=[], help="Suggested next step.")
+    turns_capture.add_argument("--evaluate", action="store_true", help="Run a turn evaluation report pack after capture.")
+    turns_capture.add_argument("--eval-out-dir", type=Path, default=Path("private-turns/eval-real"))
+    turns_capture.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_capture.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_capture.add_argument("--json", action="store_true")
 
     turns_split = turns_sub.add_parser("split", help="Split turns into prompt and reply corpora.")
     turns_split.add_argument("corpus", type=Path)
@@ -386,6 +409,32 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(format_turn_add_markdown(report), end="")
                 return 0
+            if args.turns_command == "capture":
+                prompt_text = args.prompt if args.prompt is not None else _read_required_text(args.prompt_file, "prompt")
+                reply_text = args.reply if args.reply is not None else _read_required_text(args.reply_file, "reply")
+                report = capture_turn_record(
+                    prompt=prompt_text,
+                    reply=reply_text,
+                    raw_output_path=args.raw_out,
+                    redacted_output_path=args.redacted_out,
+                    item_id=args.item_id,
+                    status=args.status,
+                    summary=args.summary,
+                    files=args.files,
+                    verification=args.verification,
+                    commands=args.commands,
+                    risks=args.risks,
+                    next_steps=args.next_steps,
+                    evaluate=args.evaluate,
+                    evaluation_output_dir=args.eval_out_dir,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                )
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(format_turn_capture_markdown(report), end="")
+                return 0 if report["status"] in {"written", "pass", "warn", "miss", "empty"} else 1
             if args.turns_command == "split":
                 report = split_turn_corpus(
                     args.corpus,

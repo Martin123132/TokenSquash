@@ -3,9 +3,12 @@ from __future__ import annotations
 import tempfile
 import unittest
 import json
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
+from tokensquash.cli import main as cli_main
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
 from tokensquash.metrics import (
@@ -22,6 +25,7 @@ from tokensquash.turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
     benchmark_turns,
+    capture_turn_record,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
     learn_turn_aliases,
@@ -629,6 +633,117 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(second["id"], "turn-0002")
             self.assertEqual(len(records), 2)
             self.assertEqual(records[0]["reply_fields"]["verification"], ["unit tests pass"])
+
+    def test_capture_turn_record_writes_raw_and_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+
+            report = capture_turn_record(
+                prompt="fix login for dev@example.com",
+                reply="Done. api_key=secret123",
+                raw_output_path=raw,
+                redacted_output_path=redacted,
+                verification=["unit tests pass"],
+            )
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.capture.v1")
+            self.assertEqual(report["status"], "written")
+            self.assertEqual(report["id"], "turn-0001")
+            self.assertEqual(report["turns"], 1)
+            self.assertGreaterEqual(report["redaction_count"], 2)
+            self.assertIn("dev@example.com", raw.read_text(encoding="utf-8"))
+            redacted_text = redacted.read_text(encoding="utf-8")
+            self.assertIn("[REDACTED_EMAIL]", redacted_text)
+            self.assertIn("[REDACTED_SECRET]", redacted_text)
+
+    def test_capture_turn_record_can_evaluate_report_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prompt_file = Path(tmp) / "prompt.txt"
+            reply_file = Path(tmp) / "reply.txt"
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            eval_dir = Path(tmp) / "private-turns" / "eval-real"
+            prompt_file.write_text("review packages/mobile/src/screens/login.tsx and summarize files", encoding="utf-8")
+            reply_file.write_text("Done.", encoding="utf-8")
+
+            report = capture_turn_record(
+                prompt=prompt_file.read_text(encoding="utf-8"),
+                reply=reply_file.read_text(encoding="utf-8"),
+                raw_output_path=raw,
+                redacted_output_path=redacted,
+                evaluate=True,
+                evaluation_output_dir=eval_dir,
+                counter="chars",
+            )
+
+            self.assertEqual(report["status"], "pass")
+            self.assertTrue(report["evaluated"])
+            self.assertIsNotNone(report["evaluation"])
+            self.assertTrue((eval_dir / "evaluation.json").exists())
+            self.assertTrue((eval_dir / "aliases.json").exists())
+
+    def test_turns_capture_cli_accepts_prompt_and_reply_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prompt_file = Path(tmp) / "prompt.txt"
+            reply_file = Path(tmp) / "reply.txt"
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            eval_dir = Path(tmp) / "private-turns" / "eval-real"
+            prompt_file.write_text("review packages/mobile/src/screens/login.tsx and summarize files", encoding="utf-8")
+            reply_file.write_text("Done.", encoding="utf-8")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "capture",
+                        "--prompt-file",
+                        str(prompt_file),
+                        "--reply-file",
+                        str(reply_file),
+                        "--raw-out",
+                        str(raw),
+                        "--redacted-out",
+                        str(redacted),
+                        "--evaluate",
+                        "--eval-out-dir",
+                        str(eval_dir),
+                        "--counter",
+                        "chars",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.capture.v1")
+            self.assertTrue(raw.exists())
+            self.assertTrue(redacted.exists())
+            self.assertTrue((eval_dir / "evaluation.json").exists())
+
+    def test_capture_turn_record_rejects_duplicate_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+
+            capture_turn_record(
+                prompt="fix login",
+                reply="Done.",
+                raw_output_path=raw,
+                redacted_output_path=redacted,
+                item_id="same",
+            )
+
+            with self.assertRaisesRegex(ValueError, "turn id already exists"):
+                capture_turn_record(
+                    prompt="fix checkout",
+                    reply="Done.",
+                    raw_output_path=raw,
+                    redacted_output_path=redacted,
+                    item_id="same",
+                )
 
     def test_turn_benchmark_combines_prompt_and_reply(self) -> None:
         records = [
