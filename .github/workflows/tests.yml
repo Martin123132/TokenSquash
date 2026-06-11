@@ -27,6 +27,10 @@ jobs:
         run: python -m tokensquash reply bench examples/agent-replies.jsonl
       - name: Run reply pattern mine
         run: python -m tokensquash reply mine examples/agent-replies.jsonl
+      - name: Run reply alias learner
+        run: |
+          python -m tokensquash reply aliases examples/agent-replies.jsonl --out /tmp/tokensquash-aliases.json
+          python -m tokensquash reply bench examples/agent-replies.jsonl --aliases /tmp/tokensquash-aliases.json
       - name: Run turn corpus workflow
         run: |
           python -m tokensquash turns add --out /tmp/tokensquash-real.jsonl --prompt "fix login" --reply "Done. I fixed login and ran tests." --verify "unit tests pass"
@@ -34,6 +38,7 @@ jobs:
           python -m tokensquash turns measure examples/real-turns.template.jsonl --target 0
           python -m tokensquash turns diagnose examples/real-turns.template.jsonl
           python -m tokensquash turns mine examples/real-turns.template.jsonl
+          python -m tokensquash turns aliases examples/real-turns.template.jsonl --out /tmp/tokensquash-turn-aliases.json
           python -m tokensquash turns bench examples/real-turns.template.jsonl
           python -m tokensquash turns split examples/real-turns.template.jsonl --prompts-out /tmp/tokensquash-prompts.jsonl --replies-out /tmp/tokensquash-replies.jsonl
       - name: Validate messy corpus

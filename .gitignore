@@ -13,5 +13,7 @@ prompts/
 private-prompts/
 turns/
 private-turns/
+aliases/
+private-aliases/
 *.redacted.jsonl
 *.redacted-turns.jsonl

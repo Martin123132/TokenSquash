@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .aliases import format_alias_report_markdown, learn_reply_aliases, load_alias_table, write_alias_table
 from .codec import decode_intent, encode_intent, parse_wire
 from .corpus import (
     corpus_stats,
@@ -36,6 +37,7 @@ from .turns import (
     format_turn_split_markdown,
     format_turn_stats_markdown,
     format_turn_validation_markdown,
+    learn_turn_aliases,
     load_turn_records,
     measure_turn_corpus,
     mine_turn_patterns,
@@ -135,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     turns_bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     turns_bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
     turns_bench.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_bench.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
     turns_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     turns_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
@@ -144,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     turns_measure.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     turns_measure.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
     turns_measure.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_measure.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
     turns_measure.add_argument("--out", type=Path, help="Write measure output to this file.")
     turns_measure.add_argument("--json", action="store_true", help="Print measure JSON.")
 
@@ -153,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     turns_diagnose.add_argument("--limit", type=int, default=5, help="Rows to show per diagnostic section.")
     turns_diagnose.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
     turns_diagnose.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_diagnose.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
     turns_diagnose.add_argument("--out", type=Path, help="Write diagnostic output to this file.")
     turns_diagnose.add_argument("--json", action="store_true", help="Print diagnostic JSON.")
 
@@ -162,8 +167,20 @@ def main(argv: list[str] | None = None) -> int:
     turns_mine.add_argument("--min-count", type=int, default=2, help="Minimum occurrences before reporting a pattern.")
     turns_mine.add_argument("--limit", type=int, default=10, help="Rows to show per mining section.")
     turns_mine.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_mine.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
     turns_mine.add_argument("--out", type=Path, help="Write mining output to this file.")
     turns_mine.add_argument("--json", action="store_true", help="Print mining JSON.")
+
+    turns_aliases = turns_sub.add_parser("aliases", help="Learn a session alias table from turn reply file paths.")
+    turns_aliases.add_argument("corpus", type=Path)
+    turns_aliases.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_aliases.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
+    turns_aliases.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
+    turns_aliases.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per prefix.")
+    turns_aliases.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_aliases.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    turns_aliases.add_argument("--out", type=Path, help="Write learned alias JSON to this file.")
+    turns_aliases.add_argument("--json", action="store_true", help="Print learned alias JSON.")
 
     reply = sub.add_parser("reply", help="Encode and decode compact agent replies.")
     reply_sub = reply.add_subparsers(dest="reply_command", required=True)
@@ -176,10 +193,12 @@ def main(argv: list[str] | None = None) -> int:
     reply_encode.add_argument("--command", dest="commands", action="append", default=[], help="Command that was run.")
     reply_encode.add_argument("--risk", dest="risks", action="append", default=[], help="Risk or caveat.")
     reply_encode.add_argument("--next", dest="next_steps", action="append", default=[], help="Suggested next step.")
+    reply_encode.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
     reply_encode.add_argument("--json", action="store_true", help="Print full reply JSON.")
 
     reply_decode = reply_sub.add_parser("decode", help="Decode reply wire text into readable result text.")
     reply_decode.add_argument("wire", nargs="+", help="TokenSquash reply wire string or reply JSON.")
+    reply_decode.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
     reply_decode.add_argument("--json", action="store_true", help="Print parsed reply JSON.")
 
     reply_bench = reply_sub.add_parser("bench", help="Benchmark a structured reply corpus against reply wire format.")
@@ -187,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     reply_bench.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     reply_bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     reply_bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    reply_bench.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
     reply_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     reply_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
@@ -195,8 +215,19 @@ def main(argv: list[str] | None = None) -> int:
     reply_mine.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     reply_mine.add_argument("--min-count", type=int, default=2, help="Minimum occurrences before reporting a pattern.")
     reply_mine.add_argument("--limit", type=int, default=10, help="Rows to show per mining section.")
+    reply_mine.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
     reply_mine.add_argument("--out", type=Path, help="Write mining output to this file.")
     reply_mine.add_argument("--json", action="store_true", help="Print mining JSON.")
+
+    reply_aliases = reply_sub.add_parser("aliases", help="Learn a session alias table from repeated reply file paths.")
+    reply_aliases.add_argument("corpus", type=Path, help="JSONL or JSON reply corpus.")
+    reply_aliases.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    reply_aliases.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
+    reply_aliases.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
+    reply_aliases.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per prefix.")
+    reply_aliases.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    reply_aliases.add_argument("--out", type=Path, help="Write learned alias JSON to this file.")
+    reply_aliases.add_argument("--json", action="store_true", help="Print learned alias JSON.")
 
     args = parser.parse_args(argv)
 
@@ -335,6 +366,7 @@ def main(argv: list[str] | None = None) -> int:
                     adaptive=not args.no_adaptive,
                     source=str(args.corpus),
                     guess_reply_fields=not args.no_guess,
+                    aliases=_load_optional_aliases(args.aliases),
                 )
                 output = (
                     json.dumps(report, indent=2) + "\n"
@@ -353,6 +385,7 @@ def main(argv: list[str] | None = None) -> int:
                     target_savings_pct=args.target,
                     adaptive=not args.no_adaptive,
                     guess_reply_fields=not args.no_guess,
+                    aliases=_load_optional_aliases(args.aliases),
                 )
                 output = (
                     json.dumps(report, indent=2) + "\n"
@@ -370,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
                     counter=args.counter,
                     adaptive=not args.no_adaptive,
                     guess_reply_fields=not args.no_guess,
+                    aliases=_load_optional_aliases(args.aliases),
                     limit=args.limit,
                 )
                 output = (
@@ -389,6 +423,7 @@ def main(argv: list[str] | None = None) -> int:
                     min_count=args.min_count,
                     limit=args.limit,
                     guess_reply_fields=not args.no_guess,
+                    aliases=_load_optional_aliases(args.aliases),
                 )
                 output = (
                     json.dumps(report, indent=2) + "\n"
@@ -398,6 +433,25 @@ def main(argv: list[str] | None = None) -> int:
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)
                     args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.turns_command == "aliases":
+                report = learn_turn_aliases(
+                    args.corpus,
+                    counter=args.counter,
+                    min_count=args.min_count,
+                    max_path_prefixes=args.max_prefixes,
+                    min_saved_tokens=args.min_saved_tokens,
+                    guess_reply_fields=not args.no_guess,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_alias_report_markdown(report)
+                )
+                if args.out:
+                    write_alias_table(args.out, report)
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
 
@@ -412,17 +466,19 @@ def main(argv: list[str] | None = None) -> int:
                     risks=args.risks,
                     next_steps=args.next_steps,
                 )
+                aliases = _load_optional_aliases(args.aliases)
                 if args.json:
-                    print(json.dumps(result.to_dict(), indent=2))
+                    print(json.dumps(result.to_dict(aliases=aliases), indent=2))
                 else:
-                    print(result.to_wire())
+                    print(result.to_wire(aliases=aliases))
                 return 0
             if args.reply_command == "decode":
-                result = parse_reply_wire(" ".join(args.wire))
+                aliases = _load_optional_aliases(args.aliases)
+                result = parse_reply_wire(" ".join(args.wire), aliases=aliases)
                 if args.json:
-                    print(json.dumps(result.to_dict(), indent=2))
+                    print(json.dumps(result.to_dict(aliases=aliases), indent=2))
                 else:
-                    print(decode_reply(result))
+                    print(decode_reply(result, aliases=aliases))
                 return 0
             if args.reply_command == "bench":
                 records = load_reply_records(args.corpus)
@@ -432,6 +488,7 @@ def main(argv: list[str] | None = None) -> int:
                     target_savings_pct=args.target,
                     adaptive=not args.no_adaptive,
                     source=str(args.corpus),
+                    aliases=_load_optional_aliases(args.aliases),
                 )
                 output = (
                     json.dumps(report, indent=2) + "\n"
@@ -452,6 +509,7 @@ def main(argv: list[str] | None = None) -> int:
                     limit=args.limit,
                     source=str(args.corpus),
                     source_type="reply",
+                    aliases=_load_optional_aliases(args.aliases),
                 )
                 output = (
                     json.dumps(report, indent=2) + "\n"
@@ -463,6 +521,26 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "empty"} else 1
+            if args.reply_command == "aliases":
+                records = load_reply_records(args.corpus)
+                report = learn_reply_aliases(
+                    records,
+                    counter=args.counter,
+                    min_count=args.min_count,
+                    max_path_prefixes=args.max_prefixes,
+                    min_saved_tokens=args.min_saved_tokens,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                    source=str(args.corpus),
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_alias_report_markdown(report)
+                )
+                if args.out:
+                    write_alias_table(args.out, report)
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "empty"} else 1
     except Exception as exc:
         print(f"tokensquash: error: {exc}", file=sys.stderr)
         return 2
@@ -471,7 +549,11 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
+def _load_optional_aliases(path: Path | None):
+    return load_alias_table(path) if path else None
+
+
 def _read_required_text(path: Path | None, label: str) -> str:
     if path is None:
         raise ValueError(f"{label} must be provided with --{label} or --{label}-file")
-    return path.read_text(encoding="utf-8")
+    return path.read_text(encoding="utf-8-sig")

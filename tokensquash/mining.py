@@ -5,8 +5,9 @@ import time
 from collections import defaultdict
 from typing import Any, Iterable
 
+from .aliases import AliasTable, coerce_alias_table
 from .metrics import count_tokens
-from .reply import FIELD_VALUE_CODES, PATH_PREFIX_CODES, reply_from_dict
+from .reply import FIELD_VALUE_CODES, reply_from_dict
 
 
 MINE_FIELDS = ("verification", "commands", "risks", "next_steps", "warnings")
@@ -26,22 +27,24 @@ def mine_reply_patterns(
     limit: int = 10,
     source: str | None = None,
     source_type: str = "reply",
+    aliases: AliasTable | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Find repeated reply values that may deserve compact field codes."""
 
     started = time.time()
+    alias_table = coerce_alias_table(aliases)
     rows = list(records)
     min_count = max(1, int(min_count))
     limit = max(1, int(limit))
-    field_occurrences = _collect_field_occurrences(rows)
-    path_occurrences = _collect_path_occurrences(rows)
+    field_occurrences = _collect_field_occurrences(rows, alias_table)
+    path_occurrences = _collect_path_occurrences(rows, alias_table)
     field_candidates = [
         _field_candidate(field, value, occurrences, counter)
         for (field, value), occurrences in field_occurrences.items()
         if len(occurrences) >= min_count
     ]
     path_candidates = [
-        _path_candidate(pattern_type, value, occurrences, counter)
+        _path_candidate(pattern_type, value, occurrences, counter, alias_table)
         for (pattern_type, value), occurrences in path_occurrences.items()
         if len(occurrences) >= min_count
     ]
@@ -98,10 +101,13 @@ def format_pattern_mine_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _collect_field_occurrences(rows: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
+def _collect_field_occurrences(
+    rows: list[dict[str, Any]],
+    aliases: AliasTable,
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
     occurrences: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for index, row in enumerate(rows, start=1):
-        reply = reply_from_dict(row)
+        reply = reply_from_dict(row, aliases=aliases)
         sample = {"id": str(row.get("id", f"row-{index:04d}")), "index": index}
         for field in MINE_FIELDS:
             for value in getattr(reply, field):
@@ -111,10 +117,13 @@ def _collect_field_occurrences(rows: list[dict[str, Any]]) -> dict[tuple[str, st
     return occurrences
 
 
-def _collect_path_occurrences(rows: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
+def _collect_path_occurrences(
+    rows: list[dict[str, Any]],
+    aliases: AliasTable,
+) -> dict[tuple[str, str], list[dict[str, Any]]]:
     occurrences: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for index, row in enumerate(rows, start=1):
-        reply = reply_from_dict(row)
+        reply = reply_from_dict(row, aliases=aliases)
         sample = {"id": str(row.get("id", f"row-{index:04d}")), "index": index}
         values = set(_normalize_path(value) for value in reply.files)
         for key in ("text", "reply", "human"):
@@ -163,10 +172,11 @@ def _path_candidate(
     value: str,
     occurrences: list[dict[str, Any]],
     counter: str,
+    aliases: AliasTable,
 ) -> dict[str, Any]:
-    existing_code = _existing_path_code(pattern_type, value)
+    existing_code = _existing_path_code(pattern_type, value, aliases)
     suggested_code = existing_code or _suggest_path_code(pattern_type, value)
-    encoded_value = _current_path_wire_value(value)
+    encoded_value = _current_path_wire_value(value, aliases)
     gross_saved = _estimated_saved_tokens(encoded_value, suggested_code, len(occurrences), counter)
     return {
         "kind": "path_pattern",
@@ -221,17 +231,14 @@ def _suggest_path_code(pattern_type: str, value: str) -> str:
     return f"{prefix}{stem[:4]}"
 
 
-def _existing_path_code(pattern_type: str, value: str) -> str | None:
+def _existing_path_code(pattern_type: str, value: str, aliases: AliasTable) -> str | None:
     if pattern_type == "path_prefix":
-        return PATH_PREFIX_CODES.get(value)
+        return aliases.path_code_for_prefix(value)
     return None
 
 
-def _current_path_wire_value(value: str) -> str:
-    for prefix, code in sorted(PATH_PREFIX_CODES.items(), key=lambda item: len(item[0]), reverse=True):
-        if value.startswith(prefix):
-            return code + value[len(prefix):]
-    return value
+def _current_path_wire_value(value: str, aliases: AliasTable) -> str:
+    return aliases.encode_path(value)
 
 
 def _path_prefix(path: str) -> str:

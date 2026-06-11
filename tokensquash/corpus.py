@@ -28,7 +28,7 @@ def load_prompt_records(path: Path | str) -> list[dict[str, Any]]:
     source = Path(path)
     if not source.exists():
         raise FileNotFoundError(f"prompt corpus not found: {source}")
-    text = source.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8-sig")
     if source.suffix.lower() == ".jsonl":
         return _load_jsonl_records(text)
     return _load_text_records(text)
@@ -47,7 +47,7 @@ def validate_corpus(path: Path | str) -> dict[str, Any]:
     if not source.exists():
         errors.append({"line": None, "code": "missing_file", "message": f"Corpus not found: {source}"})
     else:
-        raw_text = source.read_text(encoding="utf-8")
+        raw_text = source.read_text(encoding="utf-8-sig")
         if source.suffix.lower() == ".jsonl":
             records, errors, warnings = _validate_jsonl(raw_text)
         else:
@@ -160,7 +160,7 @@ def redact_corpus(input_path: Path | str, output_path: Path | str) -> dict[str, 
     if not source.exists():
         raise FileNotFoundError(f"prompt corpus not found: {source}")
     target.parent.mkdir(parents=True, exist_ok=True)
-    text = source.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8-sig")
     counts: dict[str, int] = {}
 
     if source.suffix.lower() == ".jsonl":

@@ -7,6 +7,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from .aliases import AliasTable, DEFAULT_ALIAS_TABLE, PATH_PREFIX_CODES, coerce_alias_table
+
 
 REPLY_WIRE_VERSION = "tr1"
 
@@ -73,18 +75,7 @@ for field_name, values in FIELD_VALUE_CODES.items():
         decoded.setdefault(code, value)
     FIELD_VALUE_NAMES[field_name] = decoded
 
-PATH_PREFIX_CODES = {
-    "tokensquash/": "@t/",
-    "tests/": "@x/",
-    "examples/": "@e/",
-    "benchmarks/": "@b/",
-    ".github/workflows/": "@g/",
-    "src/": "@s/",
-}
-PATH_PREFIX_NAMES = {
-    code: prefix
-    for prefix, code in sorted(PATH_PREFIX_CODES.items(), key=lambda item: len(item[1]), reverse=True)
-}
+PATH_PREFIX_NAMES = DEFAULT_ALIAS_TABLE.path_prefix_names()
 
 _SPACE_RE = re.compile(r"\s+")
 _KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*=")
@@ -104,21 +95,22 @@ class AgentReply:
     version: str = REPLY_WIRE_VERSION
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
-    def to_wire(self) -> str:
+    def to_wire(self, aliases: AliasTable | dict[str, Any] | None = None) -> str:
+        alias_table = coerce_alias_table(aliases)
         parts = [self.version]
         if self.status != "done" or _looks_like_status_token(self.summary):
             parts.append(_wire_atom(_encode_code(self.status, STATUS_CODES)))
         if self.summary:
             parts.append(_wire_value(self.summary))
-        parts.extend(_field_parts("files", self.files))
-        parts.extend(_field_parts("verification", self.verification))
-        parts.extend(_field_parts("commands", self.commands))
-        parts.extend(_field_parts("risks", self.risks))
-        parts.extend(_field_parts("next_steps", self.next_steps))
-        parts.extend(_field_parts("warnings", self.warnings))
+        parts.extend(_field_parts("files", self.files, alias_table))
+        parts.extend(_field_parts("verification", self.verification, alias_table))
+        parts.extend(_field_parts("commands", self.commands, alias_table))
+        parts.extend(_field_parts("risks", self.risks, alias_table))
+        parts.extend(_field_parts("next_steps", self.next_steps, alias_table))
+        parts.extend(_field_parts("warnings", self.warnings, alias_table))
         return " ".join(parts)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, aliases: AliasTable | dict[str, Any] | None = None) -> dict[str, Any]:
         return {
             "schema_version": "tokensquash.reply.v1",
             "wire_version": self.version,
@@ -130,7 +122,7 @@ class AgentReply:
             "risks": list(self.risks),
             "next_steps": list(self.next_steps),
             "warnings": list(self.warnings),
-            "wire": self.to_wire(),
+            "wire": self.to_wire(aliases=aliases),
         }
 
 
@@ -164,15 +156,16 @@ def encode_reply(
     )
 
 
-def parse_reply_wire(wire: str) -> AgentReply:
+def parse_reply_wire(wire: str, aliases: AliasTable | dict[str, Any] | None = None) -> AgentReply:
     """Parse a TokenSquash reply wire string into an AgentReply."""
 
+    alias_table = coerce_alias_table(aliases)
     text = wire.strip()
     if not text:
         raise ValueError("reply wire text must not be empty")
     if text.startswith("{"):
         payload = json.loads(text)
-        return reply_from_dict(payload)
+        return reply_from_dict(payload, aliases=alias_table)
 
     parts = shlex.split(text, posix=True)
     if not parts or parts[0] != REPLY_WIRE_VERSION:
@@ -214,20 +207,21 @@ def parse_reply_wire(wire: str) -> AgentReply:
     return AgentReply(
         status=_normalize_status(status),
         summary=_clean_text(" ".join(summary_parts)),
-        files=_split_field_values("files", values["files"]),
-        verification=_split_field_values("verification", values["verification"]),
-        commands=_split_field_values("commands", values["commands"]),
-        risks=_split_field_values("risks", values["risks"]),
-        next_steps=_split_field_values("next_steps", values["next_steps"]),
-        warnings=_split_field_values("warnings", values["warnings"]),
+        files=_split_field_values("files", values["files"], alias_table),
+        verification=_split_field_values("verification", values["verification"], alias_table),
+        commands=_split_field_values("commands", values["commands"], alias_table),
+        risks=_split_field_values("risks", values["risks"], alias_table),
+        next_steps=_split_field_values("next_steps", values["next_steps"], alias_table),
+        warnings=_split_field_values("warnings", values["warnings"], alias_table),
     )
 
 
-def reply_from_dict(payload: dict[str, Any]) -> AgentReply:
+def reply_from_dict(payload: dict[str, Any], aliases: AliasTable | dict[str, Any] | None = None) -> AgentReply:
     """Build an AgentReply from a JSON-like object."""
 
+    alias_table = coerce_alias_table(aliases)
     if "wire" in payload and not payload.get("summary") and not payload.get("status"):
-        return parse_reply_wire(str(payload["wire"]))
+        return parse_reply_wire(str(payload["wire"]), aliases=alias_table)
     return encode_reply(
         str(payload.get("summary", "") or ""),
         status=str(payload.get("status", "done") or "done"),
@@ -240,15 +234,15 @@ def reply_from_dict(payload: dict[str, Any]) -> AgentReply:
     )
 
 
-def decode_reply(value: AgentReply | str | dict[str, Any]) -> str:
+def decode_reply(value: AgentReply | str | dict[str, Any], aliases: AliasTable | dict[str, Any] | None = None) -> str:
     """Decode a compact reply into readable result text."""
 
     if isinstance(value, AgentReply):
         reply = value
     elif isinstance(value, str):
-        reply = parse_reply_wire(value)
+        reply = parse_reply_wire(value, aliases=aliases)
     elif isinstance(value, dict):
-        reply = reply_from_dict(value)
+        reply = reply_from_dict(value, aliases=aliases)
     else:
         raise TypeError("decode_reply expects AgentReply, wire string, or dict")
 
@@ -270,47 +264,39 @@ def decode_reply(value: AgentReply | str | dict[str, Any]) -> str:
     return " ".join(lines)
 
 
-def _field_parts(name: str, values: tuple[str, ...]) -> list[str]:
+def _field_parts(name: str, values: tuple[str, ...], aliases: AliasTable) -> list[str]:
     key = FIELD_CODES[name]
-    clean_values = [_encode_field_value(name, value) for value in values if value]
+    clean_values = [_encode_field_value(name, value, aliases) for value in values if value]
     if len(clean_values) > 1 and all("," not in value for value in clean_values):
         return [f"{key}={','.join(_wire_value(value) for value in clean_values)}"]
     return [f"{key}={_wire_value(value)}" for value in clean_values]
 
 
-def _split_field_values(name: str, values: Iterable[str]) -> tuple[str, ...]:
+def _split_field_values(name: str, values: Iterable[str], aliases: AliasTable) -> tuple[str, ...]:
     items = []
     for value in values:
-        items.extend(_decode_field_value(name, part.strip()) for part in value.split(","))
+        items.extend(_decode_field_value(name, part.strip(), aliases) for part in value.split(","))
     return _unique(items)
 
 
-def _encode_field_value(name: str, value: str) -> str:
+def _encode_field_value(name: str, value: str, aliases: AliasTable) -> str:
     if name == "files":
-        return _encode_path_alias(value)
+        return _encode_path_alias(value, aliases)
     return FIELD_VALUE_CODES.get(name, {}).get(value.lower().strip(" .;:"), value)
 
 
-def _decode_field_value(name: str, value: str) -> str:
+def _decode_field_value(name: str, value: str, aliases: AliasTable) -> str:
     if name == "files":
-        return _decode_path_alias(value)
+        return _decode_path_alias(value, aliases)
     return FIELD_VALUE_NAMES.get(name, {}).get(value, value)
 
 
-def _encode_path_alias(value: str) -> str:
-    normalized = value.replace("\\", "/")
-    for prefix, code in sorted(PATH_PREFIX_CODES.items(), key=lambda item: len(item[0]), reverse=True):
-        if normalized.startswith(prefix):
-            return code + normalized[len(prefix):]
-    return normalized
+def _encode_path_alias(value: str, aliases: AliasTable) -> str:
+    return aliases.encode_path(value)
 
 
-def _decode_path_alias(value: str) -> str:
-    normalized = value.replace("\\", "/")
-    for code, prefix in PATH_PREFIX_NAMES.items():
-        if normalized.startswith(code):
-            return prefix + normalized[len(code):]
-    return normalized
+def _decode_path_alias(value: str, aliases: AliasTable) -> str:
+    return aliases.decode_path(value)
 
 
 def _wire_value(value: str) -> str:

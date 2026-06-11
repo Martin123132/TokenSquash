@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
+from .aliases import AliasTable, coerce_alias_table
 from .codec import encode_intent
 from .corpus import load_prompt_records
 from .reply import decode_reply, reply_from_dict
@@ -164,7 +165,7 @@ def load_reply_records(path: Path | str) -> list[dict[str, Any]]:
     """Load structured reply records from JSON or JSONL."""
 
     source = Path(path)
-    text = source.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8-sig")
     if source.suffix.lower() == ".json":
         payload = json.loads(text)
         if not isinstance(payload, list):
@@ -196,10 +197,13 @@ def benchmark_replies(
     target_savings_pct: float = 0.5,
     adaptive: bool = True,
     source: str | None = None,
+    aliases: AliasTable | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Benchmark human-readable agent replies against TokenSquash reply wire."""
 
     started = time.time()
+    alias_table = coerce_alias_table(aliases)
+    include_alias_summary = aliases is not None
     rows = []
     totals = {
         "original_tokens": 0,
@@ -217,11 +221,11 @@ def benchmark_replies(
     }
 
     for index, record in enumerate(records, start=1):
-        reply = reply_from_dict(record)
+        reply = reply_from_dict(record, aliases=alias_table)
         original = _reply_original_text(record, reply)
         if not original:
             continue
-        wire = reply.to_wire()
+        wire = reply.to_wire(aliases=alias_table)
         original_tokens = count_tokens(original, counter)
         wire_tokens = count_tokens(wire, counter)
         mode = "compact"
@@ -276,7 +280,7 @@ def benchmark_replies(
     if total_original <= 0:
         status = "empty"
 
-    return {
+    report = {
         "schema_version": "tokensquash.reply.bench.v1",
         "status": status,
         "counter": counter,
@@ -303,6 +307,9 @@ def benchmark_replies(
         },
         "rows": rows,
     }
+    if include_alias_summary:
+        report["aliases"] = alias_table.to_summary()
+    return report
 
 
 def compare_benchmarks(base: Path | str, target: Path | str) -> dict[str, Any]:
@@ -387,6 +394,7 @@ def format_benchmark_compare_markdown(report: dict[str, Any]) -> str:
 
 def format_reply_benchmark_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
+    aliases = report.get("aliases")
     lines = [
         "# TokenSquash Reply Benchmark",
         "",
@@ -405,12 +413,19 @@ def format_reply_benchmark_markdown(report: dict[str, Any]) -> str:
         f"- Raw wire wins/losses/ties: `{summary.get('wire_wins', 0)}/{summary.get('wire_losses', 0)}/{summary.get('wire_ties', 0)}`",
         f"- Adaptive wins/losses/ties: `{summary.get('wins', 0)}/{summary.get('losses', 0)}/{summary.get('ties', 0)}`",
         f"- Pass-through rows: `{summary.get('passthroughs', 0)}`",
-        "",
-        "## Rows",
-        "",
-        "| # | Mode | Original | Wire | Squashed | Saved |",
-        "|---:|---|---:|---:|---:|---:|",
     ]
+    if aliases:
+        lines.append(f"- Custom path aliases: `{aliases.get('custom_path_prefix_count', 0)}`")
+        lines.append(f"- Total path aliases: `{aliases.get('path_prefix_count', 0)}`")
+    lines.extend(
+        [
+            "",
+            "## Rows",
+            "",
+            "| # | Mode | Original | Wire | Squashed | Saved |",
+            "|---:|---|---:|---:|---:|---:|",
+        ]
+    )
     for row in report.get("rows", []):
         lines.append(
             f"| {row.get('index')} | {row.get('mode')} | {row.get('original_tokens')} | "
@@ -437,7 +452,7 @@ def _pct(part: int | float, whole: int | float) -> float:
 
 def _load_benchmark_report(path: Path | str) -> dict[str, Any]:
     source = Path(path)
-    payload = json.loads(source.read_text(encoding="utf-8"))
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict) or payload.get("schema_version") not in _BENCHMARK_SCHEMAS:
         raise ValueError(f"Not a TokenSquash benchmark report: {source}")
     return payload

@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
+from .aliases import AliasTable, learn_reply_aliases
 from .corpus import redact_text, scan_privacy
 from .metrics import benchmark_prompts, benchmark_replies
 from .mining import mine_reply_patterns
@@ -61,7 +62,7 @@ def validate_turn_corpus(path: Path | str) -> dict[str, Any]:
     if not source.exists():
         errors.append({"line": None, "code": "missing_file", "message": f"Turn corpus not found: {source}"})
     else:
-        raw_text = source.read_text(encoding="utf-8")
+        raw_text = source.read_text(encoding="utf-8-sig")
         payloads, errors, warnings = _validate_turn_payloads(raw_text, source.suffix.lower())
         records = [_normalize_turn(payload, index + 1) for index, payload in enumerate(payloads)]
 
@@ -253,6 +254,7 @@ def benchmark_turns(
     adaptive: bool = True,
     source: str | None = None,
     guess_reply_fields: bool = True,
+    aliases: AliasTable | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Benchmark prompt and reply savings for paired turns."""
 
@@ -272,6 +274,7 @@ def benchmark_turns(
         target_savings_pct=target_savings_pct,
         adaptive=adaptive,
         source=source,
+        aliases=aliases,
     )
     prompt_summary = prompt_report["summary"]
     reply_summary = reply_report["summary"]
@@ -317,6 +320,7 @@ def measure_turn_corpus(
     target_savings_pct: float = 0.5,
     adaptive: bool = True,
     guess_reply_fields: bool = True,
+    aliases: AliasTable | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Validate, summarize, and benchmark a paired turn corpus."""
 
@@ -350,6 +354,7 @@ def measure_turn_corpus(
         adaptive=adaptive,
         source=str(path),
         guess_reply_fields=guess_reply_fields,
+        aliases=aliases,
     )
     validation_status = validation["status"]
     benchmark_status = benchmark["status"]
@@ -392,6 +397,7 @@ def diagnose_turn_corpus(
     counter: str = "heuristic",
     adaptive: bool = True,
     guess_reply_fields: bool = True,
+    aliases: AliasTable | dict[str, Any] | None = None,
     limit: int = 5,
 ) -> dict[str, Any]:
     """Diagnose which paired turns save tokens, lose raw wire tokens, or pass through."""
@@ -428,6 +434,7 @@ def diagnose_turn_corpus(
         adaptive=adaptive,
         source=str(path),
         guess_reply_fields=guess_reply_fields,
+        aliases=aliases,
     )
     prompt_rows = {int(row.get("index", 0)): row for row in benchmark.get("prompt_report", {}).get("rows", [])}
     reply_rows = {int(row.get("index", 0)): row for row in benchmark.get("reply_report", {}).get("rows", [])}
@@ -476,6 +483,7 @@ def mine_turn_patterns(
     min_count: int = 2,
     limit: int = 10,
     guess_reply_fields: bool = True,
+    aliases: AliasTable | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Mine paired turns for repeated reply patterns worth compacting."""
 
@@ -513,8 +521,70 @@ def mine_turn_patterns(
         limit=limit,
         source=str(Path(path)),
         source_type="turns",
+        aliases=aliases,
     )
     report["schema_version"] = "tokensquash.turns.mine.v1"
+    if validation["status"] == "warn" and report["status"] == "pass":
+        report["status"] = "warn"
+    report["summary"] = {
+        **report.get("summary", {}),
+        "turn_count": len(records),
+        "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+    }
+    report["validation"] = validation
+    return report
+
+
+def learn_turn_aliases(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    min_count: int = 2,
+    max_path_prefixes: int = 8,
+    min_saved_tokens: int = 1,
+    guess_reply_fields: bool = True,
+    base_aliases: AliasTable | dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Learn reply-side session aliases from a paired turn corpus."""
+
+    validation = validate_turn_corpus(path)
+    if validation["status"] == "fail":
+        return {
+            "schema_version": "tokensquash.aliases.v1",
+            "status": "fail",
+            "source_type": "turns",
+            "source": str(Path(path)),
+            "counter": counter,
+            "min_count": max(1, int(min_count)),
+            "max_path_prefixes": max(0, int(max_path_prefixes)),
+            "min_saved_tokens": max(0, int(min_saved_tokens)),
+            "include_builtins": True,
+            "path_prefixes": {},
+            "summary": {
+                "turn_count": validation.get("summary", {}).get("turn_count", 0),
+                "record_count": 0,
+                "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+                "path_count": 0,
+                "candidate_prefix_count": 0,
+                "selected_path_prefix_count": 0,
+                "estimated_saved_tokens": 0,
+            },
+            "selected_path_prefixes": [],
+            "validation": validation,
+        }
+
+    records = load_turn_records(path)
+    replies = [_reply_record_from_turn(item, guess_reply_fields=guess_reply_fields) for item in records]
+    report = learn_reply_aliases(
+        replies,
+        counter=counter,
+        min_count=min_count,
+        max_path_prefixes=max_path_prefixes,
+        min_saved_tokens=min_saved_tokens,
+        base_aliases=base_aliases,
+        source=str(Path(path)),
+    )
+    report["source_type"] = "turns"
     if validation["status"] == "warn" and report["status"] == "pass":
         report["status"] = "warn"
     report["summary"] = {
@@ -705,7 +775,7 @@ def _load_turn_payloads(path: Path | str) -> list[dict[str, Any]]:
 
 
 def _load_raw_payloads(source: Path) -> list[dict[str, Any]]:
-    text = source.read_text(encoding="utf-8")
+    text = source.read_text(encoding="utf-8-sig")
     payloads, errors, _warnings = _validate_turn_payloads(text, source.suffix.lower())
     if errors:
         first = errors[0]

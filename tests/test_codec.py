@@ -5,6 +5,7 @@ import unittest
 import json
 from pathlib import Path
 
+from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
 from tokensquash.metrics import (
@@ -21,6 +22,7 @@ from tokensquash.turns import (
     append_turn_record,
     benchmark_turns,
     diagnose_turn_corpus,
+    learn_turn_aliases,
     load_turn_records,
     measure_turn_corpus,
     mine_turn_patterns,
@@ -356,6 +358,114 @@ class TokenSquashCodecTests(unittest.TestCase):
         )
         self.assertEqual(parsed.to_wire(), 'tr1 "path aliases" f=@t/reply.py,@x/test_codec.py,@g/tests.yml')
 
+    def test_reply_supports_session_path_aliases(self) -> None:
+        aliases = AliasTable({"packages/mobile/src/": "@0/"})
+        reply = encode_reply(
+            "updated mobile login",
+            files=["packages/mobile/src/screens/login.tsx"],
+        )
+
+        wire = reply.to_wire(aliases=aliases)
+        parsed = parse_reply_wire(wire, aliases=aliases)
+
+        self.assertIn("f=@0/screens/login.tsx", wire)
+        self.assertEqual(parsed.files, ("packages/mobile/src/screens/login.tsx",))
+        self.assertEqual(parsed.to_wire(aliases=aliases), wire)
+
+    def test_reply_benchmark_uses_session_aliases(self) -> None:
+        records = [
+            {
+                "summary": "updated mobile login",
+                "files": ["packages/mobile/src/screens/login.tsx"],
+                "text": "Done. I updated packages/mobile/src/screens/login.tsx.",
+            },
+            {
+                "summary": "updated mobile checkout",
+                "files": ["packages/mobile/src/screens/checkout.tsx"],
+                "text": "Done. I updated packages/mobile/src/screens/checkout.tsx.",
+            },
+        ]
+        aliases = AliasTable({"packages/mobile/src/": "@0/"})
+
+        base = benchmark_replies(records, counter="chars", target_savings_pct=0.0)
+        custom = benchmark_replies(records, counter="chars", target_savings_pct=0.0, aliases=aliases)
+
+        self.assertLess(custom["summary"]["wire_tokens"], base["summary"]["wire_tokens"])
+        self.assertEqual(custom["aliases"]["custom_path_prefix_count"], 1)
+
+    def test_learn_reply_aliases_selects_repeated_project_prefix(self) -> None:
+        records = [
+            {
+                "id": "a",
+                "summary": "updated login screen",
+                "files": ["apps/customer-portal/src/screens/login.tsx"],
+                "text": "Done. I updated the customer portal login screen.",
+            },
+            {
+                "id": "b",
+                "summary": "updated checkout screen",
+                "files": ["apps/customer-portal/src/screens/checkout.tsx"],
+                "text": "Done. I updated the customer portal checkout screen.",
+            },
+        ]
+
+        report = learn_reply_aliases(records, counter="chars", min_count=2, max_path_prefixes=1)
+        aliases = AliasTable.from_dict(report)
+        prefix = next(iter(report["path_prefixes"]))
+
+        self.assertEqual(report["schema_version"], "tokensquash.aliases.v1")
+        self.assertTrue(prefix.startswith("apps/customer-portal/src/"))
+        self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
+        self.assertTrue(aliases.encode_path("apps/customer-portal/src/screens/login.tsx").startswith("@0/"))
+
+    def test_learn_reply_aliases_preserves_base_aliases(self) -> None:
+        records = [
+            {
+                "id": "a",
+                "summary": "updated inventory view",
+                "files": ["packages/admin/src/views/inventory.tsx"],
+                "text": "Done. I updated inventory.",
+            },
+            {
+                "id": "b",
+                "summary": "updated orders view",
+                "files": ["packages/admin/src/views/orders.tsx"],
+                "text": "Done. I updated orders.",
+            },
+        ]
+
+        report = learn_reply_aliases(
+            records,
+            counter="chars",
+            min_count=2,
+            max_path_prefixes=1,
+            base_aliases=AliasTable({"packages/base/src/": "@0/"}),
+        )
+
+        self.assertEqual(report["path_prefixes"]["packages/base/src/"], "@0/")
+        self.assertIn("@1/", report["path_prefixes"].values())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "learned-aliases.json"
+            write_alias_table(path, report)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+
+            self.assertNotIn("source", payload)
+            self.assertEqual(payload["path_prefixes"]["packages/base/src/"], "@0/")
+
+    def test_alias_table_can_be_loaded_from_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "aliases.json"
+            write_alias_table(path, AliasTable({"packages/api/src/": "@0/"}))
+            bom_path = Path(tmp) / "aliases-bom.json"
+            bom_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8-sig")
+
+            aliases = load_alias_table(path)
+            bom_aliases = load_alias_table(bom_path)
+
+            self.assertEqual(aliases.encode_path("packages/api/src/routes/user.py"), "@0/routes/user.py")
+            self.assertEqual(bom_aliases.encode_path("packages/api/src/routes/user.py"), "@0/routes/user.py")
+
     def test_reply_decode_accepts_default_status_and_field_codes(self) -> None:
         parsed = parse_reply_wire('tr1 "compact reply added" v=t c=pyunit r=0')
 
@@ -549,6 +659,23 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["turn_count"], 2)
             self.assertIn(("commands", "npm test"), candidates)
             self.assertGreater(candidates[("commands", "npm test")]["estimated_new_saved_tokens"], 0)
+
+    def test_learn_turn_aliases_uses_guessed_reply_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"update login","reply":"Done. I changed packages/mobile/src/screens/login.tsx."}\n'
+                '{"id":"b","prompt":"update checkout","reply":"Done. I changed packages/mobile/src/screens/checkout.tsx."}\n',
+                encoding="utf-8",
+            )
+
+            report = learn_turn_aliases(path, counter="chars", min_count=2, max_path_prefixes=1)
+            aliases = AliasTable.from_dict(report)
+
+            self.assertEqual(report["schema_version"], "tokensquash.aliases.v1")
+            self.assertEqual(report["summary"]["turn_count"], 2)
+            self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
+            self.assertTrue(aliases.encode_path("packages/mobile/src/screens/login.tsx").startswith("@0/"))
 
 
 if __name__ == "__main__":

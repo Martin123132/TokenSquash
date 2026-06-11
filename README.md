@@ -58,6 +58,8 @@ Benchmark structured reply records:
 python -m tokensquash reply bench examples\agent-replies.jsonl
 python -m tokensquash reply bench examples\agent-replies.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash reply mine examples\agent-replies.jsonl --counter tiktoken:cl100k_base
+python -m tokensquash reply aliases examples\agent-replies.jsonl --counter tiktoken:cl100k_base --out aliases\session.json
+python -m tokensquash reply bench examples\agent-replies.jsonl --aliases aliases\session.json
 ```
 
 Reply JSONL rows can include structured fields plus the original human reply
@@ -76,6 +78,17 @@ Common file prefixes are aliased inside `f=`, including `@t/` for
 `reply mine` scans a reply corpus for repeated commands, verification phrases,
 risks, next steps, warnings, and path patterns that may deserve the next compact
 code.
+
+Session alias tables let the sidecar learn project-specific file prefixes
+without changing the `tr1` spec for everyone. A table is shared out-of-band by
+the translator and the agent, then passed with `--aliases`:
+
+```json
+{"schema_version":"tokensquash.aliases.v1","path_prefixes":{"packages/mobile/src/":"@0/"}}
+```
+
+Learned aliases can reveal private repository paths. Keep real alias tables
+under `aliases/` or `private-aliases/`; both are ignored by Git.
 
 ## Benchmark
 
@@ -164,14 +177,17 @@ python -m tokensquash turns split private-turns\real.redacted-turns.jsonl --prom
 python -m tokensquash turns measure private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --target 0
 python -m tokensquash turns diagnose private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns mine private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
+python -m tokensquash turns aliases private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out aliases\session.json
 python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out benchmarks\real-turns-cl100k.json
+python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --aliases aliases\session.json --counter tiktoken:cl100k_base
 ```
 
 `turns measure` validates the corpus, summarizes it, and reports combined
 savings plus prompt-side and reply-side savings. `turns diagnose` shows the
 largest wins, raw wire losses, and adaptive pass-through rows so the next codec
 change has a target. `turns mine` reports repeated reply field values and path
-patterns with estimated token impact. `turns bench` returns the full benchmark
+patterns with estimated token impact. `turns aliases` learns a session path
+dictionary from reply-side files. `turns bench` returns the full benchmark
 payload for saving as JSON.
 For a first measurement run, add `--target 0` if you want the command to exit
 successfully even when the corpus does not beat the default `0.5%` target.
@@ -192,6 +208,7 @@ python -m unittest discover -s tests
 - Compact coding-agent reply format: `tr1`.
 - Common reply field-code shortcuts for repeated verification, command, and risk values.
 - Built-in reply file-prefix aliases for common project paths.
+- Configurable session alias tables for project-specific reply file prefixes.
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
