@@ -331,17 +331,23 @@ def compare_sidecar_evaluations(base_path: Path | str, target_path: Path | str) 
 def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
-        schema = (
-            '{"o":"fix|add|review|explain|test|docs|refactor|other",'
-            '"q":"<=5 words","p":["paths"],"c":["constraints"],"v":["verify"],"r":["returns"]}'
+        key_rules = (
+            "Required prompt keys: o, q. Optional array keys: p paths, c constraints, "
+            "v verification, r return wants."
         )
-        legend = "prompt keys: o operation, q task gist, p paths, c constraints, v verification, r return wants."
+        value_rules = (
+            "o must be one of: fix, add, review, explain, test, docs, refactor, other. "
+            "q must be the actual task gist in 1-5 words."
+        )
     else:
-        schema = (
-            '{"s":"d|p|b|f","m":"<=6 words","f":["files"],"v":["verification"],'
-            '"c":["commands"],"r":["risks"],"n":["next steps"]}'
+        key_rules = (
+            "Required reply keys: s, m. Optional array keys: f files, v verification, "
+            "c commands, r risks, n next steps."
         )
-        legend = "reply keys: s status (d done, p partial, b blocked, f failed), m result gist, f files, v verification, c commands, r risks, n next steps."
+        value_rules = (
+            "s must be one of: d done, p partial, b blocked, f failed. "
+            "m must be the actual result gist in 1-6 words."
+        )
     return "\n".join(
         [
             "You are a TokenSquash local semantic translator.",
@@ -349,11 +355,14 @@ def build_semantic_prompt(text: str, *, mode: str) -> str:
             "Use ONLY the short keys shown below. Do not use long key names.",
             "The mode is already known; do not include a kind key.",
             "Preserve meaning, but do not copy whole sentences.",
+            "Values must come from the English text only, never from these instructions.",
             "Keep q/m very short. Move paths, commands, tests, risks, and returns into their fields.",
             "Only include exact file paths; never use placeholders like files, code, test, or path.",
+            "Never output schema placeholders as values: <=5 words, <=6 words, constraints, constraint1, constraint2, verify, verification, returns.",
             "Omit empty optional arrays instead of writing []. Do not invent facts.",
-            legend,
-            f"Use this compact JSON shape: {schema}",
+            key_rules,
+            value_rules,
+            "Return a single JSON object using only those keys.",
             "",
             "English:",
             text.strip(),

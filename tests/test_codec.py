@@ -377,9 +377,12 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertFalse(payload["payload"]["stream"])
         self.assertEqual(payload["payload"]["format"], "json")
         self.assertIn("fix the login bug", payload["payload"]["prompt"])
-        self.assertIn('"o":"fix|add|review|explain|test|docs|refactor|other"', payload["payload"]["prompt"])
+        self.assertIn("Required prompt keys: o, q.", payload["payload"]["prompt"])
+        self.assertIn("q must be the actual task gist in 1-5 words", payload["payload"]["prompt"])
+        self.assertIn("Values must come from the English text only", payload["payload"]["prompt"])
         self.assertIn("Use ONLY the short keys", payload["payload"]["prompt"])
         self.assertIn("do not include a kind key", payload["payload"]["prompt"])
+        self.assertIn("Never output schema placeholders as values", payload["payload"]["prompt"])
 
     def test_parse_semantic_json_accepts_fenced_model_output(self) -> None:
         payload = parse_semantic_json('```json\n{"kind":"reply","status":"done","summary":"fixed login"}\n```')
@@ -723,7 +726,7 @@ class TokenSquashCodecTests(unittest.TestCase):
 
         def fake_urlopen(request, timeout):
             body = json.loads(request.data.decode("utf-8"))
-            if "prompt keys:" in body["prompt"]:
+            if "Required prompt keys" in body["prompt"]:
                 semantic = {
                     "o": "fix",
                     "q": "login bug",
