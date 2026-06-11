@@ -87,14 +87,22 @@ def format_pattern_mine_markdown(report: dict[str, Any]) -> str:
         f"- Source type: `{report.get('source_type')}`",
         f"- Source: `{report.get('source') or 'inline'}`",
         f"- Counter: `{report.get('counter')}`",
-        f"- Records: `{summary.get('record_count', 0)}`",
-        f"- New candidates: `{summary.get('new_candidate_count', 0)}`",
-        f"- Existing coded values seen: `{summary.get('existing_code_count', 0)}`",
-        f"- Path candidates: `{summary.get('path_candidate_count', 0)}`",
-        f"- Estimated new saved tokens: `{summary.get('estimated_new_saved_tokens', 0)}`",
-        f"- Estimated path saved tokens: `{summary.get('estimated_path_saved_tokens', 0)}`",
-        "",
     ]
+    if "turn_count" in summary:
+        lines.append(f"- Turns: `{summary.get('turn_count', 0)}`")
+    lines.append(f"- Records: `{summary.get('record_count', 0)}`")
+    if "prompt_path_record_count" in summary:
+        lines.append(f"- Prompt path records: `{summary.get('prompt_path_record_count', 0)}`")
+    lines.extend(
+        [
+            f"- New candidates: `{summary.get('new_candidate_count', 0)}`",
+            f"- Existing coded values seen: `{summary.get('existing_code_count', 0)}`",
+            f"- Path candidates: `{summary.get('path_candidate_count', 0)}`",
+            f"- Estimated new saved tokens: `{summary.get('estimated_new_saved_tokens', 0)}`",
+            f"- Estimated path saved tokens: `{summary.get('estimated_path_saved_tokens', 0)}`",
+            "",
+        ]
+    )
     _append_candidate_table(lines, "Top New Field Candidates", report.get("top_candidates", []), include_field=True)
     _append_candidate_table(lines, "Existing Codes Seen", report.get("existing_codes", []), include_field=True)
     _append_candidate_table(lines, "Path Patterns", report.get("path_patterns", []), include_field=False)

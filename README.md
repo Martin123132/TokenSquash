@@ -80,7 +80,8 @@ risks, next steps, warnings, and path patterns that may deserve the next compact
 code.
 
 Session alias tables let the sidecar learn project-specific file prefixes and
-repeated reply field values without changing the `tr1` spec for everyone. A
+repeated reply field values without changing the `ts1` or `tr1` specs for
+everyone. Prompt `p=` paths and reply `f=` paths use the same path aliases. A
 table is shared out-of-band by the translator and the agent, then passed with
 `--aliases`:
 
@@ -91,6 +92,11 @@ table is shared out-of-band by the translator and the agent, then passed with
 Learned aliases can reveal private repository paths, commands, and workflow
 details. Keep real alias tables under `aliases/` or `private-aliases/`; both are
 ignored by Git.
+
+```powershell
+python -m tokensquash encode "Review packages/mobile/src/screens/login.tsx and summarize files" --aliases aliases\session.json
+python -m tokensquash bench prompts\real.redacted.jsonl --aliases aliases\session.json
+```
 
 ## Benchmark
 
@@ -188,9 +194,10 @@ python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --alia
 `turns measure` validates the corpus, summarizes it, and reports combined
 savings plus prompt-side and reply-side savings. `turns diagnose` shows the
 largest wins, raw wire losses, and adaptive pass-through rows so the next codec
-change has a target. `turns mine` reports repeated reply field values and path
-patterns with estimated token impact. `turns aliases` learns a session
-dictionary from reply-side files, commands, risks, next steps, and warnings.
+change has a target. `turns mine` reports repeated reply field values plus
+prompt/reply path patterns with estimated token impact. `turns aliases` learns a session
+dictionary from prompt paths plus reply-side files, commands, risks, next steps,
+and warnings.
 `turns alias-impact` learns aliases and compares turn benchmarks with and
 without them, including alias setup tokens and break-even corpus count. `turns
 bench` returns the full benchmark payload for saving as JSON.
@@ -213,7 +220,7 @@ python -m unittest discover -s tests
 - Compact coding-agent reply format: `tr1`.
 - Common reply field-code shortcuts for repeated verification, command, and risk values.
 - Built-in reply file-prefix aliases for common project paths.
-- Configurable session alias tables for project-specific reply file prefixes and repeated field values.
+- Configurable session alias tables for project-specific prompt/reply path prefixes and repeated reply field values.
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.

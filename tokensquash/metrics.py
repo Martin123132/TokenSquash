@@ -48,10 +48,13 @@ def benchmark_prompts(
     target_savings_pct: float = 0.5,
     adaptive: bool = True,
     source: str | None = None,
+    aliases: AliasTable | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Benchmark original prompts against TokenSquash wire prompts."""
 
     started = time.time()
+    alias_table = coerce_alias_table(aliases)
+    include_alias_summary = aliases is not None
     rows = []
     totals = {
         "original_tokens": 0,
@@ -73,7 +76,7 @@ def benchmark_prompts(
         if not text:
             continue
         intent = encode_intent(text)
-        wire = intent.to_wire()
+        wire = intent.to_wire(aliases=alias_table)
         original_tokens = count_tokens(text, counter)
         wire_tokens = count_tokens(wire, counter)
         mode = "compact"
@@ -128,7 +131,7 @@ def benchmark_prompts(
     if total_original <= 0:
         status = "empty"
 
-    return {
+    report = {
         "schema_version": "tokensquash.bench.v1",
         "status": status,
         "counter": counter,
@@ -155,6 +158,9 @@ def benchmark_prompts(
         },
         "rows": rows,
     }
+    if include_alias_summary:
+        report["aliases"] = alias_table.to_summary()
+    return report
 
 
 def load_prompts(path: Path | str) -> list[str]:
@@ -339,6 +345,7 @@ def compare_benchmarks(base: Path | str, target: Path | str) -> dict[str, Any]:
 
 def format_benchmark_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
+    aliases = report.get("aliases")
     lines = [
         "# TokenSquash Benchmark",
         "",
@@ -357,12 +364,19 @@ def format_benchmark_markdown(report: dict[str, Any]) -> str:
         f"- Raw wire wins/losses/ties: `{summary.get('wire_wins', 0)}/{summary.get('wire_losses', 0)}/{summary.get('wire_ties', 0)}`",
         f"- Adaptive wins/losses/ties: `{summary.get('wins', 0)}/{summary.get('losses', 0)}/{summary.get('ties', 0)}`",
         f"- Pass-through rows: `{summary.get('passthroughs', 0)}`",
-        "",
-        "## Rows",
-        "",
-        "| # | Mode | Original | Wire | Squashed | Saved |",
-        "|---:|---|---:|---:|---:|---:|",
     ]
+    if aliases:
+        lines.append(f"- Custom path aliases: `{aliases.get('custom_path_prefix_count', 0)}`")
+        lines.append(f"- Total path aliases: `{aliases.get('path_prefix_count', 0)}`")
+    lines.extend(
+        [
+            "",
+            "## Rows",
+            "",
+            "| # | Mode | Original | Wire | Squashed | Saved |",
+            "|---:|---|---:|---:|---:|---:|",
+        ]
+    )
     for row in report.get("rows", []):
         lines.append(
             f"| {row.get('index')} | {row.get('mode')} | {row.get('original_tokens')} | "

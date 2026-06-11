@@ -267,6 +267,7 @@ def benchmark_turns(
         target_savings_pct=target_savings_pct,
         adaptive=adaptive,
         source=source,
+        aliases=aliases,
     )
     reply_report = benchmark_replies(
         replies,
@@ -501,6 +502,8 @@ def mine_turn_patterns(
             "summary": {
                 "turn_count": validation.get("summary", {}).get("turn_count", 0),
                 "record_count": 0,
+                "reply_record_count": 0,
+                "prompt_path_record_count": 0,
                 "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
                 "estimated_new_saved_tokens": 0,
                 "elapsed_seconds": round(time.time() - started, 4),
@@ -514,8 +517,9 @@ def mine_turn_patterns(
 
     records = load_turn_records(path)
     replies = [_reply_record_from_turn(item, guess_reply_fields=guess_reply_fields) for item in records]
+    prompt_path_records = _prompt_path_records_from_turns(records)
     report = mine_reply_patterns(
-        replies,
+        [*replies, *prompt_path_records],
         counter=counter,
         min_count=min_count,
         limit=limit,
@@ -529,6 +533,8 @@ def mine_turn_patterns(
     report["summary"] = {
         **report.get("summary", {}),
         "turn_count": len(records),
+        "reply_record_count": len(replies),
+        "prompt_path_record_count": len(prompt_path_records),
         "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
     }
     report["validation"] = validation
@@ -566,6 +572,8 @@ def learn_turn_aliases(
             "summary": {
                 "turn_count": validation.get("summary", {}).get("turn_count", 0),
                 "record_count": 0,
+                "reply_record_count": 0,
+                "prompt_path_record_count": 0,
                 "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
                 "path_count": 0,
                 "field_value_count": 0,
@@ -581,8 +589,9 @@ def learn_turn_aliases(
 
     records = load_turn_records(path)
     replies = [_reply_record_from_turn(item, guess_reply_fields=guess_reply_fields) for item in records]
+    prompt_path_records = _prompt_path_records_from_turns(records)
     report = learn_reply_aliases(
-        replies,
+        [*replies, *prompt_path_records],
         counter=counter,
         min_count=min_count,
         max_path_prefixes=max_path_prefixes,
@@ -597,6 +606,8 @@ def learn_turn_aliases(
     report["summary"] = {
         **report.get("summary", {}),
         "turn_count": len(records),
+        "reply_record_count": len(replies),
+        "prompt_path_record_count": len(prompt_path_records),
         "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
     }
     report["validation"] = validation
@@ -1076,6 +1087,23 @@ def _reply_record_from_turn(item: dict[str, Any], *, guess_reply_fields: bool) -
     fields.setdefault("status", "done")
     fields.setdefault("summary", _first_sentence(reply_text))
     return {"id": item.get("id"), "text": reply_text, **fields}
+
+
+def _prompt_path_records_from_turns(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for item in records:
+        prompt = str(item.get("prompt", ""))
+        paths = _unique(_normalize_path(match.group(0)) for match in _PATH_RE.finditer(prompt))[:8]
+        if paths:
+            rows.append(
+                {
+                    "id": f"{item.get('id')}:prompt",
+                    "summary": "prompt paths",
+                    "files": paths,
+                    "text": prompt,
+                }
+            )
+    return rows
 
 
 def _guess_reply_fields(text: str) -> dict[str, Any]:

@@ -6,6 +6,8 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Any
 
+from .aliases import AliasTable, coerce_alias_table
+
 
 WIRE_VERSION = "ts1"
 
@@ -69,7 +71,8 @@ class Intent:
     confidence: str = "medium"
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
-    def to_wire(self) -> str:
+    def to_wire(self, aliases: AliasTable | dict[str, Any] | None = None) -> str:
+        alias_table = coerce_alias_table(aliases)
         parts = [self.version, _wire_atom(_encode_code(self.op, OP_CODES))]
         if self.query:
             parts.append(_wire_value(self.query))
@@ -80,14 +83,14 @@ class Intent:
         if self.returns:
             parts.append(f"r={','.join(_wire_atom(_encode_code(item, RETURN_CODES)) for item in self.returns)}")
         if self.paths:
-            parts.append(f"p={','.join(_wire_value(item) for item in self.paths)}")
+            parts.append(f"p={','.join(_wire_value(alias_table.encode_path(item)) for item in self.paths)}")
         if self.confidence != "medium":
             parts.append(f"cf={_wire_atom(self.confidence)}")
         if self.warnings:
             parts.append(f"w={','.join(_wire_atom(item) for item in self.warnings)}")
         return " ".join(parts)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, aliases: AliasTable | dict[str, Any] | None = None) -> dict[str, Any]:
         return {
             "schema_version": "tokensquash.intent.v1",
             "wire_version": self.version,
@@ -99,7 +102,7 @@ class Intent:
             "paths": list(self.paths),
             "confidence": self.confidence,
             "warnings": list(self.warnings),
-            "wire": self.to_wire(),
+            "wire": self.to_wire(aliases=aliases),
         }
 
 
@@ -141,15 +144,16 @@ def encode_intent(text: str) -> Intent:
     )
 
 
-def parse_wire(wire: str) -> Intent:
+def parse_wire(wire: str, aliases: AliasTable | dict[str, Any] | None = None) -> Intent:
     """Parse a TokenSquash wire string into an Intent."""
 
+    alias_table = coerce_alias_table(aliases)
     text = wire.strip()
     if not text:
         raise ValueError("wire text must not be empty")
     if text.startswith("{"):
         payload = json.loads(text)
-        return _intent_from_dict(payload)
+        return _intent_from_dict(payload, aliases=alias_table)
 
     parts = shlex.split(text, posix=True)
     if not parts or parts[0] != WIRE_VERSION:
@@ -175,21 +179,21 @@ def parse_wire(wire: str) -> Intent:
         constraints=tuple(_decode_code(item, CONSTRAINT_NAMES) for item in _split_list(values.get("c", ""))),
         verify=tuple(_decode_code(item, VERIFY_NAMES) for item in _split_list(values.get("v", ""))),
         returns=tuple(_decode_code(item, RETURN_NAMES) for item in _split_list(values.get("r", ""))),
-        paths=tuple(_split_list(values.get("p", ""))),
+        paths=tuple(alias_table.decode_path(item) for item in _split_list(values.get("p", ""))),
         confidence=values.get("cf", "medium") or "medium",
         warnings=tuple(_split_list(values.get("w", ""))),
     )
 
 
-def decode_intent(value: Intent | str | dict[str, Any]) -> str:
+def decode_intent(value: Intent | str | dict[str, Any], aliases: AliasTable | dict[str, Any] | None = None) -> str:
     """Decode compact intent into readable task text."""
 
     if isinstance(value, Intent):
         intent = value
     elif isinstance(value, str):
-        intent = parse_wire(value)
+        intent = parse_wire(value, aliases=aliases)
     elif isinstance(value, dict):
-        intent = _intent_from_dict(value)
+        intent = _intent_from_dict(value, aliases=aliases)
     else:
         raise TypeError("decode_intent expects Intent, wire string, or dict")
 
@@ -209,16 +213,17 @@ def decode_intent(value: Intent | str | dict[str, Any]) -> str:
     return " ".join(lines)
 
 
-def _intent_from_dict(payload: dict[str, Any]) -> Intent:
+def _intent_from_dict(payload: dict[str, Any], aliases: AliasTable | dict[str, Any] | None = None) -> Intent:
+    alias_table = coerce_alias_table(aliases)
     if "wire" in payload and not payload.get("op"):
-        return parse_wire(str(payload["wire"]))
+        return parse_wire(str(payload["wire"]), aliases=alias_table)
     return Intent(
         op=str(payload.get("op", "task") or "task"),
         query=str(payload.get("query", payload.get("q", "")) or ""),
         constraints=tuple(str(item) for item in payload.get("constraints", payload.get("c", [])) or []),
         verify=tuple(str(item) for item in payload.get("verify", payload.get("v", [])) or []),
         returns=tuple(str(item) for item in payload.get("returns", payload.get("r", [])) or []),
-        paths=tuple(str(item) for item in payload.get("paths", payload.get("p", [])) or []),
+        paths=tuple(alias_table.decode_path(str(item)) for item in payload.get("paths", payload.get("p", [])) or []),
         confidence=str(payload.get("confidence", "medium") or "medium"),
         warnings=tuple(str(item) for item in payload.get("warnings", payload.get("w", [])) or []),
     )

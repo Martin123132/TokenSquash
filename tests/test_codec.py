@@ -60,6 +60,17 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("src/App.tsx", parsed.paths)
         self.assertEqual(parsed.to_wire(), wire)
 
+    def test_prompt_supports_session_path_aliases(self) -> None:
+        aliases = AliasTable({"packages/mobile/src/": "@0/"})
+        intent = encode_intent("Fix packages/mobile/src/screens/login.tsx, run tests, and summarize files changed.")
+
+        wire = intent.to_wire(aliases=aliases)
+        parsed = parse_wire(wire, aliases=aliases)
+
+        self.assertIn("p=@0/screens/login.tsx", wire)
+        self.assertEqual(parsed.paths, ("packages/mobile/src/screens/login.tsx",))
+        self.assertEqual(parsed.to_wire(aliases=aliases), wire)
+
     def test_decode_is_human_readable(self) -> None:
         text = decode_intent('ts1 f "login bug" c=sd v=t r=m,f')
 
@@ -95,6 +106,19 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["rows"][0]["mode"], "passthrough")
         self.assertEqual(report["summary"]["passthroughs"], 1)
         self.assertEqual(report["summary"]["saved_tokens"], 0)
+
+    def test_prompt_benchmark_uses_session_aliases(self) -> None:
+        prompts = [
+            "Please review packages/mobile/src/screens/login.tsx and summarize files changed.",
+            "Please review packages/mobile/src/screens/checkout.tsx and summarize files changed.",
+        ]
+        aliases = AliasTable({"packages/mobile/src/": "@0/"})
+
+        base = benchmark_prompts(prompts, counter="chars", target_savings_pct=0.0)
+        custom = benchmark_prompts(prompts, counter="chars", target_savings_pct=0.0, aliases=aliases)
+
+        self.assertLess(custom["summary"]["wire_tokens"], base["summary"]["wire_tokens"])
+        self.assertEqual(custom["aliases"]["custom_path_prefix_count"], 1)
 
     def test_reply_benchmark_reports_savings(self) -> None:
         records = [
@@ -704,6 +728,22 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn(("commands", "npm test"), candidates)
             self.assertGreater(candidates[("commands", "npm test")]["estimated_new_saved_tokens"], 0)
 
+    def test_mine_turn_patterns_includes_prompt_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"review packages/mobile/src/screens/login.tsx and summarize files","reply":"Done."}\n'
+                '{"id":"b","prompt":"review packages/mobile/src/screens/checkout.tsx and summarize files","reply":"Done."}\n',
+                encoding="utf-8",
+            )
+
+            report = mine_turn_patterns(path, counter="chars", min_count=2)
+            prompt_path = next(item for item in report["path_patterns"] if item["value"] == "packages/mobile/src/screens/")
+
+            self.assertEqual(report["summary"]["prompt_path_record_count"], 2)
+            self.assertEqual(prompt_path["pattern_type"], "path_prefix")
+            self.assertGreater(prompt_path["estimated_new_saved_tokens"], 0)
+
     def test_learn_turn_aliases_uses_guessed_reply_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "turns.jsonl"
@@ -720,6 +760,47 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["turn_count"], 2)
             self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
             self.assertTrue(aliases.encode_path("packages/mobile/src/screens/login.tsx").startswith("@0/"))
+
+    def test_learn_turn_aliases_uses_prompt_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"review packages/mobile/src/screens/login.tsx and summarize files","reply":"Done."}\n'
+                '{"id":"b","prompt":"review packages/mobile/src/screens/checkout.tsx and summarize files","reply":"Done."}\n',
+                encoding="utf-8",
+            )
+
+            report = learn_turn_aliases(path, counter="chars", min_count=2, max_path_prefixes=1)
+            aliases = AliasTable.from_dict(report)
+
+            self.assertEqual(report["summary"]["prompt_path_record_count"], 2)
+            self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
+            self.assertTrue(aliases.encode_path("packages/mobile/src/screens/login.tsx").startswith("@0/"))
+
+    def test_turn_alias_impact_reports_prompt_path_delta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"review packages/mobile/src/screens/login.tsx and summarize files","reply":"Done."}\n'
+                '{"id":"b","prompt":"review packages/mobile/src/screens/checkout.tsx and summarize files","reply":"Done."}\n',
+                encoding="utf-8",
+            )
+
+            report = benchmark_turn_alias_impact(
+                path,
+                counter="chars",
+                target_savings_pct=0.0,
+                max_path_prefixes=1,
+                max_field_values=0,
+            )
+
+            self.assertEqual(report["status"], "improved")
+            self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
+            self.assertGreater(report["summary"]["saved_tokens_delta"], 0)
+            self.assertGreater(
+                report["aliased"]["prompt_report"]["summary"]["wire_saved_tokens"],
+                report["baseline"]["prompt_report"]["summary"]["wire_saved_tokens"],
+            )
 
     def test_turn_alias_impact_reports_delta_and_break_even(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

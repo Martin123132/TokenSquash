@@ -276,17 +276,25 @@ def format_alias_report_markdown(report: Mapping[str, Any]) -> str:
         f"- Status: `{report.get('status')}`",
         f"- Source: `{report.get('source') or 'inline'}`",
         f"- Counter: `{report.get('counter')}`",
-        f"- Records: `{summary.get('record_count', 0)}`",
-        f"- Paths: `{summary.get('path_count', 0)}`",
-        f"- Field values: `{summary.get('field_value_count', 0)}`",
-        f"- Candidate prefixes: `{summary.get('candidate_prefix_count', 0)}`",
-        f"- Selected prefixes: `{summary.get('selected_path_prefix_count', 0)}`",
-        f"- Selected field values: `{summary.get('selected_field_value_count', 0)}`",
-        f"- Estimated saved tokens: `{summary.get('estimated_saved_tokens', 0)}`",
-        "",
-        "## Path Prefixes",
-        "",
     ]
+    if "turn_count" in summary:
+        lines.append(f"- Turns: `{summary.get('turn_count', 0)}`")
+    lines.append(f"- Records: `{summary.get('record_count', 0)}`")
+    if "prompt_path_record_count" in summary:
+        lines.append(f"- Prompt path records: `{summary.get('prompt_path_record_count', 0)}`")
+    lines.extend(
+        [
+            f"- Paths: `{summary.get('path_count', 0)}`",
+            f"- Field values: `{summary.get('field_value_count', 0)}`",
+            f"- Candidate prefixes: `{summary.get('candidate_prefix_count', 0)}`",
+            f"- Selected prefixes: `{summary.get('selected_path_prefix_count', 0)}`",
+            f"- Selected field values: `{summary.get('selected_field_value_count', 0)}`",
+            f"- Estimated saved tokens: `{summary.get('estimated_saved_tokens', 0)}`",
+            "",
+            "## Path Prefixes",
+            "",
+        ]
+    )
     selected = list(report.get("selected_path_prefixes", []) or [])
     if not selected:
         lines.extend(["No custom path prefixes selected.", ""])

@@ -59,10 +59,12 @@ def main(argv: list[str] | None = None) -> int:
 
     encode = sub.add_parser("encode", help="Encode human task text into TokenSquash wire format.")
     encode.add_argument("text", nargs="+", help="Human task text.")
+    encode.add_argument("--aliases", type=Path, help="Session alias JSON for prompt path prefixes.")
     encode.add_argument("--json", action="store_true", help="Print full intent JSON.")
 
     decode = sub.add_parser("decode", help="Decode TokenSquash wire text into readable task text.")
     decode.add_argument("wire", nargs="+", help="TokenSquash wire string or intent JSON.")
+    decode.add_argument("--aliases", type=Path, help="Session alias JSON for prompt path prefixes.")
     decode.add_argument("--json", action="store_true", help="Print parsed intent JSON.")
 
     bench = sub.add_parser("bench", help="Benchmark a prompt corpus against TokenSquash encoding.")
@@ -70,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     bench.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    bench.add_argument("--aliases", type=Path, help="Session alias JSON for prompt path prefixes.")
     bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
@@ -139,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     turns_bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     turns_bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
     turns_bench.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
-    turns_bench.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
+    turns_bench.add_argument("--aliases", type=Path, help="Session alias JSON for prompt/reply aliases.")
     turns_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     turns_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
@@ -149,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     turns_measure.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     turns_measure.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
     turns_measure.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
-    turns_measure.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
+    turns_measure.add_argument("--aliases", type=Path, help="Session alias JSON for prompt/reply aliases.")
     turns_measure.add_argument("--out", type=Path, help="Write measure output to this file.")
     turns_measure.add_argument("--json", action="store_true", help="Print measure JSON.")
 
@@ -159,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     turns_diagnose.add_argument("--limit", type=int, default=5, help="Rows to show per diagnostic section.")
     turns_diagnose.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
     turns_diagnose.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
-    turns_diagnose.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
+    turns_diagnose.add_argument("--aliases", type=Path, help="Session alias JSON for prompt/reply aliases.")
     turns_diagnose.add_argument("--out", type=Path, help="Write diagnostic output to this file.")
     turns_diagnose.add_argument("--json", action="store_true", help="Print diagnostic JSON.")
 
@@ -169,11 +172,11 @@ def main(argv: list[str] | None = None) -> int:
     turns_mine.add_argument("--min-count", type=int, default=2, help="Minimum occurrences before reporting a pattern.")
     turns_mine.add_argument("--limit", type=int, default=10, help="Rows to show per mining section.")
     turns_mine.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
-    turns_mine.add_argument("--aliases", type=Path, help="Session alias JSON for reply-side path prefixes.")
+    turns_mine.add_argument("--aliases", type=Path, help="Session alias JSON for prompt/reply aliases.")
     turns_mine.add_argument("--out", type=Path, help="Write mining output to this file.")
     turns_mine.add_argument("--json", action="store_true", help="Print mining JSON.")
 
-    turns_aliases = turns_sub.add_parser("aliases", help="Learn a session alias table from turn reply file paths.")
+    turns_aliases = turns_sub.add_parser("aliases", help="Learn a session alias table from turn prompt paths and reply fields.")
     turns_aliases.add_argument("corpus", type=Path)
     turns_aliases.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     turns_aliases.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
@@ -210,12 +213,12 @@ def main(argv: list[str] | None = None) -> int:
     reply_encode.add_argument("--command", dest="commands", action="append", default=[], help="Command that was run.")
     reply_encode.add_argument("--risk", dest="risks", action="append", default=[], help="Risk or caveat.")
     reply_encode.add_argument("--next", dest="next_steps", action="append", default=[], help="Suggested next step.")
-    reply_encode.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
+    reply_encode.add_argument("--aliases", type=Path, help="Session alias JSON for reply path prefixes and field values.")
     reply_encode.add_argument("--json", action="store_true", help="Print full reply JSON.")
 
     reply_decode = reply_sub.add_parser("decode", help="Decode reply wire text into readable result text.")
     reply_decode.add_argument("wire", nargs="+", help="TokenSquash reply wire string or reply JSON.")
-    reply_decode.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
+    reply_decode.add_argument("--aliases", type=Path, help="Session alias JSON for reply path prefixes and field values.")
     reply_decode.add_argument("--json", action="store_true", help="Print parsed reply JSON.")
 
     reply_bench = reply_sub.add_parser("bench", help="Benchmark a structured reply corpus against reply wire format.")
@@ -223,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     reply_bench.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     reply_bench.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
     reply_bench.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
-    reply_bench.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
+    reply_bench.add_argument("--aliases", type=Path, help="Session alias JSON for reply path prefixes and field values.")
     reply_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     reply_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
 
@@ -232,11 +235,11 @@ def main(argv: list[str] | None = None) -> int:
     reply_mine.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     reply_mine.add_argument("--min-count", type=int, default=2, help="Minimum occurrences before reporting a pattern.")
     reply_mine.add_argument("--limit", type=int, default=10, help="Rows to show per mining section.")
-    reply_mine.add_argument("--aliases", type=Path, help="Session alias JSON for file path prefixes.")
+    reply_mine.add_argument("--aliases", type=Path, help="Session alias JSON for reply path prefixes and field values.")
     reply_mine.add_argument("--out", type=Path, help="Write mining output to this file.")
     reply_mine.add_argument("--json", action="store_true", help="Print mining JSON.")
 
-    reply_aliases = reply_sub.add_parser("aliases", help="Learn a session alias table from repeated reply file paths.")
+    reply_aliases = reply_sub.add_parser("aliases", help="Learn a session alias table from repeated reply file paths and field values.")
     reply_aliases.add_argument("corpus", type=Path, help="JSONL or JSON reply corpus.")
     reply_aliases.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     reply_aliases.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
@@ -252,18 +255,20 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "encode":
             intent = encode_intent(" ".join(args.text))
+            aliases = _load_optional_aliases(args.aliases)
             if args.json:
-                print(json.dumps(intent.to_dict(), indent=2))
+                print(json.dumps(intent.to_dict(aliases=aliases), indent=2))
             else:
-                print(intent.to_wire())
+                print(intent.to_wire(aliases=aliases))
             return 0
 
         if args.command == "decode":
-            intent = parse_wire(" ".join(args.wire))
+            aliases = _load_optional_aliases(args.aliases)
+            intent = parse_wire(" ".join(args.wire), aliases=aliases)
             if args.json:
-                print(json.dumps(intent.to_dict(), indent=2))
+                print(json.dumps(intent.to_dict(aliases=aliases), indent=2))
             else:
-                print(decode_intent(intent))
+                print(decode_intent(intent, aliases=aliases))
             return 0
 
         if args.command == "bench":
@@ -274,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
                 target_savings_pct=args.target,
                 adaptive=not args.no_adaptive,
                 source=str(args.corpus),
+                aliases=_load_optional_aliases(args.aliases),
             )
             output = (
                 json.dumps(report, indent=2) + "\n"
