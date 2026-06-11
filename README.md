@@ -333,6 +333,14 @@ as skipped so token deltas do not look more meaningful than they are:
 python -m tokensquash sidecar sweep private-turns\real.redacted-turns.jsonl --name real-corpus-sweep --mode both --limit 20 --model llama3.2:3b --model another-local-model --counter chars
 ```
 
+Review a saved sidecar evaluation when you need a human inspection checklist for
+meaning risk. The command writes `review.json` and `review.md` next to the input
+evaluation by default:
+
+```powershell
+python -m tokensquash sidecar review private-turns\sidecar-sweeps\real-corpus-sweep\runs\001-realredacted-turns-llama323b-chars\evaluation.json
+```
+
 Compare two saved sidecar evaluation reports after changing the semantic prompt,
 schema, or local model:
 
@@ -365,6 +373,8 @@ savings, warning/failure counts, and best/worst examples when `--out-dir` is
 set. `sidecar experiment` wraps that evaluation in a named run folder so real
 experiments are easy to repeat and compare. `sidecar sweep` runs a small matrix
 of experiments and writes a top-level summary plus comparison files. `sidecar
+review` turns a saved evaluation into a row-by-row checklist for suspicious
+savings, warnings, missing fields, and generic decoded results. `sidecar
 compare-evaluations` reports before/after token deltas alongside warning and
 failure deltas, so increased savings do not hide worse meaning-risk signals.
 
@@ -390,7 +400,7 @@ python -m unittest discover -s tests
 - Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - One-command turn evaluation report packs for real-corpus measurement.
-- Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, and evaluation comparison.
+- Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No API keys or model dependency for the deterministic core codec; the optional

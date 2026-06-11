@@ -328,6 +328,43 @@ def compare_sidecar_evaluations(base_path: Path | str, target_path: Path | str) 
     }
 
 
+def review_sidecar_evaluation(
+    evaluation_path: Path | str,
+    *,
+    high_savings_pct: float = 40.0,
+    short_ratio: float = 0.45,
+) -> dict[str, Any]:
+    """Build a human-review checklist for a saved sidecar evaluation."""
+
+    evaluation = _load_sidecar_evaluation(evaluation_path)
+    rows = [
+        _review_sidecar_row(row, high_savings_pct=high_savings_pct, short_ratio=short_ratio)
+        for row in evaluation.get("rows", [])
+    ]
+    rows.extend(_review_sidecar_failure(failure) for failure in evaluation.get("failures", []))
+    rows.sort(
+        key=lambda row: (
+            int(row.get("risk_score", 0)),
+            float(row.get("saved_pct", 0.0)),
+            str(row.get("id", "")),
+        ),
+        reverse=True,
+    )
+    summary = _sidecar_review_summary(rows, evaluation.get("summary", {}))
+    return {
+        "schema_version": "tokensquash.sidecar.review.v1",
+        "status": "warn" if summary["review_count"] else "pass",
+        "source": str(Path(evaluation_path)),
+        "evaluation": _sidecar_report_brief(evaluation, evaluation_path),
+        "thresholds": {
+            "high_savings_pct": high_savings_pct,
+            "short_ratio": short_ratio,
+        },
+        "summary": summary,
+        "rows": rows,
+    }
+
+
 def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
@@ -542,6 +579,92 @@ def format_sidecar_evaluation_compare_markdown(report: dict[str, Any]) -> str:
         lines.extend(["", "## Notes", ""])
         for note in notes:
             lines.append(f"- {note}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_sidecar_review_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    thresholds = report.get("thresholds", {})
+    outputs = report.get("outputs", {})
+    lines = [
+        "# TokenSquash Sidecar Review",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Rows: `{summary.get('row_count', 0)}`",
+        f"- Needs review: `{summary.get('review_count', 0)}`",
+        f"- High risk: `{summary.get('high_risk_count', 0)}`",
+        f"- Warnings: `{summary.get('warning_count', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- High-savings threshold: `{thresholds.get('high_savings_pct', 0.0)}%`",
+        f"- Short-decoded ratio: `{thresholds.get('short_ratio', 0.0)}`",
+        "",
+        "## Risk Table",
+        "",
+    ]
+    rows = report.get("rows", [])
+    if not rows:
+        lines.extend(["No rows.", ""])
+    else:
+        lines.extend(
+            [
+                "| ID | Side | Verdict | Risk | Saved | Flags |",
+                "|---|---|---|---:|---:|---|",
+            ]
+        )
+        for row in rows:
+            flags = ", ".join(str(flag) for flag in row.get("flags", [])) or "none"
+            lines.append(
+                "| "
+                f"{_markdown_cell(str(row.get('id', '')))} | "
+                f"{row.get('side')} | "
+                f"`{row.get('verdict')}` | "
+                f"{row.get('risk_score')} | "
+                f"{row.get('saved_tokens', 0)} ({row.get('saved_pct', 0.0)}%) | "
+                f"{_markdown_cell(flags)} |"
+            )
+        lines.append("")
+
+    if rows:
+        lines.extend(["## Row Details", ""])
+        for row in rows:
+            semantic = json.dumps(row.get("semantic", {}), ensure_ascii=True, indent=2)
+            lines.extend(
+                [
+                    f"### {row.get('id')} / {row.get('side')}",
+                    "",
+                    f"- Verdict: `{row.get('verdict')}`",
+                    f"- Risk score: `{row.get('risk_score')}`",
+                    f"- Risk level: `{row.get('risk_level')}`",
+                    f"- Saved: `{row.get('saved_tokens', 0)}` (`{row.get('saved_pct', 0.0)}%`)",
+                    f"- Flags: `{', '.join(str(flag) for flag in row.get('flags', [])) or 'none'}`",
+                    "",
+                    "Original preview:",
+                    "",
+                    "```text",
+                    str(row.get("original_preview", "")),
+                    "```",
+                    "",
+                    "Decoded preview:",
+                    "",
+                    "```text",
+                    str(row.get("decoded_preview", "")),
+                    "```",
+                    "",
+                    "Semantic:",
+                    "",
+                    "```json",
+                    semantic,
+                    "```",
+                    "",
+                ]
+            )
+
+    if outputs:
+        lines.extend(["## Outputs", ""])
+        for key, path in sorted(outputs.items()):
+            lines.append(f"- {key}: `{path}`")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -805,6 +928,175 @@ def _numeric(value: Any) -> int | float:
         return float(text) if "." in text else int(text)
     except (TypeError, ValueError):
         return 0
+
+
+def _review_sidecar_row(row: dict[str, Any], *, high_savings_pct: float, short_ratio: float) -> dict[str, Any]:
+    flags: list[str] = []
+    reasons: list[str] = []
+    side = str(row.get("side", ""))
+    semantic = row.get("semantic", {}) if isinstance(row.get("semantic", {}), dict) else {}
+    original_preview = str(row.get("original_preview", ""))
+    decoded_preview = str(row.get("decoded_preview", ""))
+    saved_pct = float(row.get("saved_pct", 0.0))
+    warning_count = int(row.get("warning_count", 0))
+
+    if warning_count or row.get("warnings"):
+        flags.append("warnings")
+        reasons.extend(str(warning) for warning in row.get("warnings", []))
+    if str(row.get("status")) == "loss" or int(row.get("saved_tokens", 0)) < 0:
+        flags.append("token_loss")
+        reasons.append("semantic payload is longer than the original text")
+    if _sidecar_review_short_decoded(row, high_savings_pct=high_savings_pct, short_ratio=short_ratio):
+        flags.append("high_savings_short_decoded")
+        reasons.append("high savings with a much shorter decoded preview needs meaning review")
+    if side == "prompt" and not str(semantic.get("query", "")).strip():
+        flags.append("missing_prompt_query")
+        reasons.append("prompt semantic query is empty")
+    if side == "reply" and _sidecar_review_generic_summary(semantic.get("summary")):
+        flags.append("generic_summary")
+        reasons.append("reply summary is too generic to prove meaning survived")
+    if side == "reply" and _mentions_path(original_preview) and not semantic.get("files"):
+        flags.append("missing_files")
+        reasons.append("original preview mentions file-like text but semantic files are empty")
+    if side == "reply" and _mentions_command(original_preview) and not (semantic.get("commands") or semantic.get("verification")):
+        flags.append("missing_command_or_verification")
+        reasons.append("original preview mentions command/test text but semantic command and verification fields are empty")
+    if side == "reply" and _mentions_risk(original_preview) and not semantic.get("risks"):
+        flags.append("missing_risks")
+        reasons.append("original preview mentions risk text but semantic risks are empty")
+
+    risk_score = _sidecar_review_risk_score(flags, warning_count=warning_count, saved_pct=saved_pct)
+    return {
+        "index": row.get("index"),
+        "id": row.get("id"),
+        "side": side,
+        "verdict": "review" if flags else "ok",
+        "risk_level": _sidecar_review_risk_level(risk_score),
+        "risk_score": risk_score,
+        "flags": flags,
+        "reasons": reasons,
+        "status": row.get("status"),
+        "original_tokens": int(row.get("original_tokens", 0)),
+        "semantic_tokens": int(row.get("semantic_tokens", 0)),
+        "saved_tokens": int(row.get("saved_tokens", 0)),
+        "saved_pct": saved_pct,
+        "warning_count": warning_count,
+        "warnings": row.get("warnings", []),
+        "original_preview": original_preview,
+        "decoded_preview": decoded_preview,
+        "semantic": semantic,
+    }
+
+
+def _review_sidecar_failure(failure: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "index": failure.get("index"),
+        "id": failure.get("id"),
+        "side": failure.get("side"),
+        "verdict": "review",
+        "risk_level": "high",
+        "risk_score": 100,
+        "flags": ["failure"],
+        "reasons": [str(failure.get("error", "sidecar evaluation failed"))],
+        "status": "fail",
+        "original_tokens": 0,
+        "semantic_tokens": 0,
+        "saved_tokens": 0,
+        "saved_pct": 0.0,
+        "warning_count": 0,
+        "warnings": [],
+        "original_preview": str(failure.get("original_preview", "")),
+        "decoded_preview": "",
+        "semantic": {},
+    }
+
+
+def _sidecar_review_summary(rows: list[dict[str, Any]], evaluation_summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "row_count": len(rows),
+        "ok_count": sum(1 for row in rows if row.get("verdict") == "ok"),
+        "review_count": sum(1 for row in rows if row.get("verdict") == "review"),
+        "high_risk_count": sum(1 for row in rows if row.get("risk_level") == "high"),
+        "medium_risk_count": sum(1 for row in rows if row.get("risk_level") == "medium"),
+        "low_risk_count": sum(1 for row in rows if row.get("risk_level") == "low"),
+        "warning_count": sum(int(row.get("warning_count", 0)) for row in rows),
+        "original_tokens": int(evaluation_summary.get("original_tokens", 0)),
+        "semantic_tokens": int(evaluation_summary.get("semantic_tokens", 0)),
+        "saved_tokens": int(evaluation_summary.get("saved_tokens", 0)),
+        "saved_pct": float(evaluation_summary.get("saved_pct", 0.0)),
+    }
+
+
+def _sidecar_review_short_decoded(row: dict[str, Any], *, high_savings_pct: float, short_ratio: float) -> bool:
+    saved_pct = float(row.get("saved_pct", 0.0))
+    if saved_pct < high_savings_pct:
+        return False
+    original_preview = str(row.get("original_preview", "")).strip()
+    decoded_preview = str(row.get("decoded_preview", "")).strip()
+    if not original_preview or not decoded_preview:
+        return False
+    return len(decoded_preview) / max(len(original_preview), 1) < short_ratio
+
+
+def _sidecar_review_generic_summary(value: Any) -> bool:
+    text = str(value or "").strip().lower().strip(".")
+    return text in {"", "done", "fixed", "updated", "changed", "checked", "reviewed", "added"}
+
+
+def _sidecar_review_risk_score(flags: list[str], *, warning_count: int, saved_pct: float) -> int:
+    weights = {
+        "failure": 100,
+        "warnings": 35 + min(warning_count * 5, 25),
+        "high_savings_short_decoded": 30,
+        "token_loss": 20,
+        "generic_summary": 20,
+        "missing_files": 15,
+        "missing_command_or_verification": 15,
+        "missing_risks": 15,
+        "missing_prompt_query": 15,
+    }
+    score = sum(weights.get(flag, 10) for flag in flags)
+    if flags and saved_pct >= 60:
+        score += 10
+    return min(score, 100)
+
+
+def _sidecar_review_risk_level(score: int) -> str:
+    if score >= 60:
+        return "high"
+    if score >= 30:
+        return "medium"
+    if score > 0:
+        return "low"
+    return "ok"
+
+
+def _mentions_path(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in ("/", "\\", ".py", ".js", ".ts", ".tsx", ".json", ".md"))
+
+
+def _mentions_command(text: str) -> bool:
+    lowered = f" {text.lower()} "
+    return any(
+        marker in lowered
+        for marker in (
+            " python -m",
+            " pytest",
+            " npm ",
+            " pnpm ",
+            " yarn ",
+            " ran tests",
+            " run tests",
+            " tests pass",
+            " tests passed",
+        )
+    )
+
+
+def _mentions_risk(text: str) -> bool:
+    lowered = text.lower()
+    return "risk" in lowered or "risks" in lowered
 
 
 def _normalize_semantic_payload(

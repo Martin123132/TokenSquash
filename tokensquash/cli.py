@@ -39,10 +39,12 @@ from .sidecar import (
     format_sidecar_evaluation_markdown,
     format_sidecar_experiment_markdown,
     format_sidecar_request_markdown,
+    format_sidecar_review_markdown,
     format_sidecar_roundtrip_markdown,
     format_sidecar_sweep_markdown,
     format_sidecar_translation_markdown,
     parse_semantic_json,
+    review_sidecar_evaluation,
     roundtrip_with_ollama,
     translate_with_ollama,
 )
@@ -245,6 +247,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     sidecar_sweep.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
     sidecar_sweep.add_argument("--json", action="store_true", help="Print sweep JSON.")
+
+    sidecar_review = sidecar_sub.add_parser(
+        "review",
+        help="Review a saved sidecar evaluation for meaning-risk signals.",
+    )
+    sidecar_review.add_argument("evaluation", type=Path, help="Saved sidecar evaluation JSON.")
+    sidecar_review.add_argument(
+        "--out-dir",
+        type=Path,
+        help="Write review.json and review.md to this directory; defaults to the evaluation directory.",
+    )
+    sidecar_review.add_argument(
+        "--high-savings-pct",
+        type=float,
+        default=40.0,
+        help="Saved percentage that makes a short decoded preview suspicious.",
+    )
+    sidecar_review.add_argument(
+        "--short-ratio",
+        type=float,
+        default=0.45,
+        help="Decoded/original preview length ratio below which high-savings rows are flagged.",
+    )
+    sidecar_review.add_argument("--json", action="store_true", help="Print review JSON.")
 
     sidecar_compare_evaluations = sidecar_sub.add_parser(
         "compare-evaluations",
@@ -713,6 +739,16 @@ def main(argv: list[str] | None = None) -> int:
                 output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_sweep_markdown(report)
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.sidecar_command == "review":
+                report = review_sidecar_evaluation(
+                    args.evaluation,
+                    high_savings_pct=args.high_savings_pct,
+                    short_ratio=args.short_ratio,
+                )
+                _write_sidecar_review_outputs(args.out_dir or args.evaluation.parent, report)
+                output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_review_markdown(report)
+                print(output, end="")
+                return 0
             if args.sidecar_command == "compare-evaluations":
                 report = compare_sidecar_evaluations(args.base, args.target)
                 output = (
@@ -1186,6 +1222,17 @@ def _write_sidecar_evaluation_outputs(out_dir: Path, report: dict) -> None:
         encoding="utf-8",
     )
     evaluation_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_sidecar_review_outputs(out_dir: Path, report: dict) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    review_path = out_dir / "review.json"
+    markdown_path = out_dir / "review.md"
+    report.setdefault("outputs", {})
+    report["outputs"]["review"] = str(review_path)
+    report["outputs"]["markdown"] = str(markdown_path)
+    markdown_path.write_text(format_sidecar_review_markdown(report), encoding="utf-8")
+    review_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def _write_sidecar_experiment_outputs(
