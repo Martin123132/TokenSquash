@@ -385,6 +385,89 @@ def measure_turn_corpus(
     }
 
 
+def diagnose_turn_corpus(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Diagnose which paired turns save tokens, lose raw wire tokens, or pass through."""
+
+    started = time.time()
+    validation = validate_turn_corpus(path)
+    if validation["status"] == "fail":
+        return {
+            "schema_version": "tokensquash.turns.diagnose.v1",
+            "status": "fail",
+            "path": str(Path(path)),
+            "counter": counter,
+            "adaptive": adaptive,
+            "limit": limit,
+            "summary": {
+                "turn_count": validation.get("summary", {}).get("turn_count", 0),
+                "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+                "elapsed_seconds": round(time.time() - started, 4),
+            },
+            "issue_counts": {},
+            "largest_wins": [],
+            "largest_losses": [],
+            "pass_throughs": [],
+            "rows": [],
+            "validation": validation,
+            "benchmark_summary": None,
+        }
+
+    records = load_turn_records(path)
+    benchmark = benchmark_turns(
+        records,
+        counter=counter,
+        target_savings_pct=0.0,
+        adaptive=adaptive,
+        source=str(path),
+        guess_reply_fields=guess_reply_fields,
+    )
+    prompt_rows = {int(row.get("index", 0)): row for row in benchmark.get("prompt_report", {}).get("rows", [])}
+    reply_rows = {int(row.get("index", 0)): row for row in benchmark.get("reply_report", {}).get("rows", [])}
+    rows = [
+        _turn_diagnostic_row(record, index, prompt_rows.get(index, {}), reply_rows.get(index, {}))
+        for index, record in enumerate(records, start=1)
+    ]
+    capped_limit = max(1, int(limit))
+    summary = _turn_diagnostics_summary(rows, validation, time.time() - started)
+    status = "empty" if not rows else "warn" if validation["status"] == "warn" else "pass"
+
+    return {
+        "schema_version": "tokensquash.turns.diagnose.v1",
+        "status": status,
+        "path": str(Path(path)),
+        "counter": counter,
+        "adaptive": adaptive,
+        "limit": capped_limit,
+        "summary": summary,
+        "issue_counts": _diagnostic_issue_counts(rows),
+        "largest_wins": _diagnostic_briefs(
+            sorted((row for row in rows if row["saved_tokens"] > 0), key=lambda row: row["saved_tokens"], reverse=True),
+            capped_limit,
+        ),
+        "largest_losses": _diagnostic_briefs(
+            sorted((row for row in rows if row["wire_saved_tokens"] < 0), key=lambda row: row["wire_saved_tokens"]),
+            capped_limit,
+        ),
+        "pass_throughs": _diagnostic_briefs(
+            sorted(
+                (row for row in rows if row["prompt"]["mode"] == "passthrough" or row["reply"]["mode"] == "passthrough"),
+                key=lambda row: (row["wire_saved_tokens"], -row["original_tokens"]),
+            ),
+            capped_limit,
+        ),
+        "rows": rows,
+        "validation": validation,
+        "benchmark_summary": benchmark.get("summary"),
+    }
+
+
 def format_turn_validation_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     lines = [
@@ -492,6 +575,39 @@ def format_turn_measure_markdown(report: dict[str, Any]) -> str:
         lines.append("The corpus did not meet the target savings threshold. Use `--target 0` for exploratory runs.")
         lines.append("")
     return "\n".join(lines)
+
+
+def format_turn_diagnose_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    issue_counts = report.get("issue_counts", {})
+    lines = [
+        "# TokenSquash Turn Diagnose",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Adaptive: `{report.get('adaptive')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Original tokens: `{summary.get('original_tokens', 0)}`",
+        f"- Squashed tokens: `{summary.get('squashed_tokens', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Raw wire saved: `{summary.get('wire_saved_tokens', 0)} ({summary.get('wire_saved_pct', 0.0)}%)`",
+        f"- Win/loss/tie turns: `{summary.get('win_turns', 0)}/{summary.get('loss_turns', 0)}/{summary.get('tie_turns', 0)}`",
+        f"- Pass-through rows: `{summary.get('pass_through_rows', 0)}`",
+    ]
+    if issue_counts:
+        lines.append(f"- Top tags: `{_format_issue_counts(issue_counts)}`")
+    lines.append("")
+
+    if report.get("validation", {}).get("status") == "warn":
+        lines.append("Validation warnings or privacy findings are present; review before sharing this corpus.")
+        lines.append("")
+
+    _append_diagnostic_table(lines, "Largest Wins", report.get("largest_wins", []))
+    _append_diagnostic_table(lines, "Raw Wire Losses", report.get("largest_losses", []))
+    _append_diagnostic_table(lines, "Pass-Through Rows", report.get("pass_throughs", []))
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def format_turn_split_markdown(report: dict[str, Any]) -> str:
@@ -800,6 +916,200 @@ def _unique(values: Iterable[str]) -> list[str]:
 def _merge_counts(target: dict[str, int], source: dict[str, int]) -> None:
     for key, value in source.items():
         target[key] = target.get(key, 0) + value
+
+
+def _turn_diagnostic_row(
+    record: dict[str, Any],
+    index: int,
+    prompt: dict[str, Any],
+    reply: dict[str, Any],
+) -> dict[str, Any]:
+    prompt_diag = _side_diagnostic(prompt)
+    reply_diag = _side_diagnostic(reply)
+    original_tokens = prompt_diag["original_tokens"] + reply_diag["original_tokens"]
+    wire_tokens = prompt_diag["wire_tokens"] + reply_diag["wire_tokens"]
+    squashed_tokens = prompt_diag["squashed_tokens"] + reply_diag["squashed_tokens"]
+    wire_saved_tokens = prompt_diag["wire_saved_tokens"] + reply_diag["wire_saved_tokens"]
+    saved_tokens = prompt_diag["saved_tokens"] + reply_diag["saved_tokens"]
+    tags = _turn_diagnostic_tags(record, prompt_diag, reply_diag, wire_saved_tokens, saved_tokens)
+    return {
+        "index": index,
+        "id": record.get("id", f"turn-{index:04d}"),
+        "line": record.get("line", index),
+        "original_tokens": original_tokens,
+        "wire_tokens": wire_tokens,
+        "squashed_tokens": squashed_tokens,
+        "wire_saved_tokens": wire_saved_tokens,
+        "wire_saved_pct": _pct(wire_saved_tokens, original_tokens),
+        "saved_tokens": saved_tokens,
+        "saved_pct": _pct(saved_tokens, original_tokens),
+        "prompt": {**prompt_diag, "op": prompt.get("op")},
+        "reply": {**reply_diag, "status": reply.get("status")},
+        "tags": tags,
+        "prompt_preview": _truncate(str(record.get("prompt", "")), 100),
+        "reply_preview": _truncate(str(record.get("reply_text", "")), 100),
+    }
+
+
+def _side_diagnostic(row: dict[str, Any]) -> dict[str, Any]:
+    original_tokens = int(row.get("original_tokens", 0))
+    wire_tokens = int(row.get("wire_tokens", 0))
+    squashed_tokens = int(row.get("squashed_tokens", 0))
+    wire_saved_tokens = int(row.get("wire_saved_tokens", original_tokens - wire_tokens))
+    saved_tokens = int(row.get("saved_tokens", original_tokens - squashed_tokens))
+    return {
+        "mode": row.get("mode", "missing"),
+        "original_tokens": original_tokens,
+        "wire_tokens": wire_tokens,
+        "squashed_tokens": squashed_tokens,
+        "wire_saved_tokens": wire_saved_tokens,
+        "wire_saved_pct": _pct(wire_saved_tokens, original_tokens),
+        "saved_tokens": saved_tokens,
+        "saved_pct": _pct(saved_tokens, original_tokens),
+    }
+
+
+def _turn_diagnostic_tags(
+    record: dict[str, Any],
+    prompt: dict[str, Any],
+    reply: dict[str, Any],
+    wire_saved_tokens: int,
+    saved_tokens: int,
+) -> list[str]:
+    tags: list[str] = []
+    if saved_tokens > 0:
+        tags.append("adaptive_win")
+    elif saved_tokens == 0:
+        tags.append("no_adaptive_saving")
+    else:
+        tags.append("adaptive_loss")
+    if wire_saved_tokens < 0:
+        tags.append("raw_wire_loss")
+    if prompt["wire_saved_tokens"] < 0:
+        tags.append("prompt_wire_loss")
+    if reply["wire_saved_tokens"] < 0:
+        tags.append("reply_wire_loss")
+    if prompt["mode"] == "passthrough":
+        tags.append("prompt_passthrough")
+    if reply["mode"] == "passthrough":
+        tags.append("reply_passthrough")
+    if prompt["original_tokens"] <= 8:
+        tags.append("short_prompt")
+    if reply["original_tokens"] <= 12:
+        tags.append("short_reply")
+    combined_text = f"{record.get('prompt', '')} {record.get('reply_text', '')}"
+    if _PATH_RE.search(combined_text):
+        tags.append("path_heavy")
+    if _extract_commands(str(record.get("reply_text", ""))) or (record.get("reply_fields") or {}).get("commands"):
+        tags.append("command_heavy")
+    if not record.get("reply_fields"):
+        tags.append("guessed_reply_fields")
+    return tags
+
+
+def _turn_diagnostics_summary(
+    rows: list[dict[str, Any]],
+    validation: dict[str, Any],
+    elapsed_seconds: float,
+) -> dict[str, Any]:
+    original_tokens = sum(int(row["original_tokens"]) for row in rows)
+    wire_tokens = sum(int(row["wire_tokens"]) for row in rows)
+    squashed_tokens = sum(int(row["squashed_tokens"]) for row in rows)
+    wire_saved_tokens = sum(int(row["wire_saved_tokens"]) for row in rows)
+    saved_tokens = sum(int(row["saved_tokens"]) for row in rows)
+    return {
+        "turn_count": len(rows),
+        "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+        "original_tokens": original_tokens,
+        "wire_tokens": wire_tokens,
+        "squashed_tokens": squashed_tokens,
+        "wire_saved_tokens": wire_saved_tokens,
+        "wire_saved_pct": _pct(wire_saved_tokens, original_tokens),
+        "saved_tokens": saved_tokens,
+        "saved_pct": _pct(saved_tokens, original_tokens),
+        "win_turns": sum(1 for row in rows if int(row["saved_tokens"]) > 0),
+        "loss_turns": sum(1 for row in rows if int(row["saved_tokens"]) < 0),
+        "tie_turns": sum(1 for row in rows if int(row["saved_tokens"]) == 0),
+        "raw_wire_loss_turns": sum(1 for row in rows if int(row["wire_saved_tokens"]) < 0),
+        "prompt_passthroughs": sum(1 for row in rows if row["prompt"]["mode"] == "passthrough"),
+        "reply_passthroughs": sum(1 for row in rows if row["reply"]["mode"] == "passthrough"),
+        "pass_through_rows": sum(
+            1 for row in rows if row["prompt"]["mode"] == "passthrough" or row["reply"]["mode"] == "passthrough"
+        ),
+        "elapsed_seconds": round(elapsed_seconds, 4),
+    }
+
+
+def _diagnostic_issue_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        for tag in row.get("tags", []):
+            counts[tag] = counts.get(tag, 0) + 1
+    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _diagnostic_briefs(rows: Iterable[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    result = []
+    for row in rows:
+        result.append(
+            {
+                "index": row.get("index"),
+                "id": row.get("id"),
+                "line": row.get("line"),
+                "original_tokens": row.get("original_tokens"),
+                "wire_tokens": row.get("wire_tokens"),
+                "squashed_tokens": row.get("squashed_tokens"),
+                "wire_saved_tokens": row.get("wire_saved_tokens"),
+                "wire_saved_pct": row.get("wire_saved_pct"),
+                "saved_tokens": row.get("saved_tokens"),
+                "saved_pct": row.get("saved_pct"),
+                "prompt": row.get("prompt"),
+                "reply": row.get("reply"),
+                "tags": row.get("tags", []),
+                "prompt_preview": row.get("prompt_preview"),
+                "reply_preview": row.get("reply_preview"),
+            }
+        )
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _format_issue_counts(counts: dict[str, int]) -> str:
+    return ", ".join(f"{key}={value}" for key, value in list(counts.items())[:8])
+
+
+def _append_diagnostic_table(lines: list[str], title: str, rows: list[dict[str, Any]]) -> None:
+    lines.extend([f"## {title}", ""])
+    if not rows:
+        lines.extend(["No rows.", ""])
+        return
+    lines.extend(
+        [
+            "| ID | Original | Raw saved | Adaptive saved | Prompt | Reply | Tags |",
+            "|---|---:|---:|---:|---|---|---|",
+        ]
+    )
+    for row in rows:
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(row.get('id')))} | "
+            f"{row.get('original_tokens')} | "
+            f"{row.get('wire_saved_tokens')} ({row.get('wire_saved_pct')}%) | "
+            f"{row.get('saved_tokens')} ({row.get('saved_pct')}%) | "
+            f"{_markdown_cell(_side_summary(row.get('prompt', {})))} | "
+            f"{_markdown_cell(_side_summary(row.get('reply', {})))} | "
+            f"{_markdown_cell(', '.join(row.get('tags', [])[:5]))} |"
+        )
+    lines.append("")
+
+
+def _side_summary(side: dict[str, Any]) -> str:
+    return f"{side.get('mode')} raw {side.get('wire_saved_tokens')} saved {side.get('saved_tokens')}"
+
+
+def _markdown_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
 
 
 def _pct(part: int | float, whole: int | float) -> float:

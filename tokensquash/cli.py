@@ -27,8 +27,10 @@ from .reply import decode_reply, encode_reply, parse_reply_wire
 from .turns import (
     append_turn_record,
     benchmark_turns,
+    diagnose_turn_corpus,
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
+    format_turn_diagnose_markdown,
     format_turn_measure_markdown,
     format_turn_split_markdown,
     format_turn_stats_markdown,
@@ -142,6 +144,15 @@ def main(argv: list[str] | None = None) -> int:
     turns_measure.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
     turns_measure.add_argument("--out", type=Path, help="Write measure output to this file.")
     turns_measure.add_argument("--json", action="store_true", help="Print measure JSON.")
+
+    turns_diagnose = turns_sub.add_parser("diagnose", help="Show turn-level wins, losses, and pass-throughs.")
+    turns_diagnose.add_argument("corpus", type=Path)
+    turns_diagnose.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_diagnose.add_argument("--limit", type=int, default=5, help="Rows to show per diagnostic section.")
+    turns_diagnose.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_diagnose.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_diagnose.add_argument("--out", type=Path, help="Write diagnostic output to this file.")
+    turns_diagnose.add_argument("--json", action="store_true", help="Print diagnostic JSON.")
 
     reply = sub.add_parser("reply", help="Encode and decode compact agent replies.")
     reply_sub = reply.add_subparsers(dest="reply_command", required=True)
@@ -328,6 +339,24 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(report, indent=2) + "\n"
                     if args.json
                     else format_turn_measure_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "empty"} else 1
+            if args.turns_command == "diagnose":
+                report = diagnose_turn_corpus(
+                    args.corpus,
+                    counter=args.counter,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                    limit=args.limit,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_diagnose_markdown(report)
                 )
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)

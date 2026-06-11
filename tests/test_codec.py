@@ -19,6 +19,7 @@ from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 from tokensquash.turns import (
     append_turn_record,
     benchmark_turns,
+    diagnose_turn_corpus,
     load_turn_records,
     measure_turn_corpus,
     redact_turn_corpus,
@@ -428,6 +429,39 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "fail")
             self.assertIsNone(report["benchmark"])
             self.assertEqual(report["validation"]["errors"][0]["code"], "missing_reply")
+
+    def test_diagnose_turn_corpus_reports_pass_throughs_and_losses(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"short","prompt":"ok","reply":"Done."}\n'
+                '{"id":"win","prompt":"please fix the login bug, keep the diff small, run tests, and summarize files changed","reply":"Done. I fixed the login bug in src/auth.py and verified it with `python -m unittest discover -s tests`. Risks: none."}\n',
+                encoding="utf-8",
+            )
+
+            report = diagnose_turn_corpus(path, limit=3)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.diagnose.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["turn_count"], 2)
+            self.assertGreaterEqual(report["summary"]["pass_through_rows"], 1)
+            self.assertTrue(report["largest_losses"])
+            loss_ids = [item["id"] for item in report["largest_losses"]]
+            self.assertIn("short", loss_ids)
+            short_loss = next(item for item in report["largest_losses"] if item["id"] == "short")
+            self.assertIn("raw_wire_loss", short_loss["tags"])
+            self.assertIn("prompt_passthrough", report["issue_counts"])
+
+    def test_diagnose_turn_corpus_reports_validation_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad-turns.jsonl"
+            path.write_text('{"id":"t1","prompt":"missing reply"}\n', encoding="utf-8")
+
+            report = diagnose_turn_corpus(path)
+
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["rows"], [])
+            self.assertIsNone(report["benchmark_summary"])
 
 
 if __name__ == "__main__":

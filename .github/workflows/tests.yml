@@ -30,6 +30,7 @@ jobs:
           python -m tokensquash turns add --out /tmp/tokensquash-real.jsonl --prompt "fix login" --reply "Done. I fixed login and ran tests." --verify "unit tests pass"
           python -m tokensquash turns validate examples/real-turns.template.jsonl
           python -m tokensquash turns measure examples/real-turns.template.jsonl --target 0
+          python -m tokensquash turns diagnose examples/real-turns.template.jsonl
           python -m tokensquash turns bench examples/real-turns.template.jsonl
           python -m tokensquash turns split examples/real-turns.template.jsonl --prompts-out /tmp/tokensquash-prompts.jsonl --replies-out /tmp/tokensquash-replies.jsonl
       - name: Validate messy corpus
@@ -58,3 +59,5 @@ jobs:
         run: python -m tokensquash reply bench examples/agent-replies.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer turn benchmark
         run: python -m tokensquash turns bench examples/real-turns.template.jsonl --counter tiktoken:cl100k_base --target 0
+      - name: Run exact tokenizer turn diagnose
+        run: python -m tokensquash turns diagnose examples/real-turns.template.jsonl --counter tiktoken:cl100k_base

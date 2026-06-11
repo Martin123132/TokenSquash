@@ -7,6 +7,7 @@ from .reply import AgentReply, decode_reply, encode_reply, parse_reply_wire
 from .turns import (
     append_turn_record,
     benchmark_turns,
+    diagnose_turn_corpus,
     load_turn_records,
     measure_turn_corpus,
     redact_turn_corpus,
@@ -27,6 +28,7 @@ __all__ = [
     "corpus_stats",
     "decode_intent",
     "decode_reply",
+    "diagnose_turn_corpus",
     "encode_intent",
     "encode_reply",
     "load_prompt_records",
