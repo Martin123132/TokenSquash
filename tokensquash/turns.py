@@ -309,6 +309,82 @@ def benchmark_turns(
     }
 
 
+def measure_turn_corpus(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.5,
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+) -> dict[str, Any]:
+    """Validate, summarize, and benchmark a paired turn corpus."""
+
+    started = time.time()
+    validation = validate_turn_corpus(path)
+    if validation["status"] == "fail":
+        return {
+            "schema_version": "tokensquash.turns.measure.v1",
+            "status": "fail",
+            "path": str(Path(path)),
+            "counter": counter,
+            "adaptive": adaptive,
+            "summary": {
+                "turn_count": validation.get("summary", {}).get("turn_count", 0),
+                "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+                "saved_pct": 0.0,
+                "prompt_saved_pct": 0.0,
+                "reply_saved_pct": 0.0,
+                "elapsed_seconds": round(time.time() - started, 4),
+            },
+            "validation": validation,
+            "stats": None,
+            "benchmark": None,
+        }
+
+    stats = turn_stats(path)
+    benchmark = benchmark_turns(
+        load_turn_records(path),
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        source=str(path),
+        guess_reply_fields=guess_reply_fields,
+    )
+    validation_status = validation["status"]
+    benchmark_status = benchmark["status"]
+    if benchmark_status == "miss":
+        status = "miss"
+    elif validation_status == "warn":
+        status = "warn"
+    else:
+        status = benchmark_status
+
+    bench_summary = benchmark["summary"]
+    return {
+        "schema_version": "tokensquash.turns.measure.v1",
+        "status": status,
+        "path": str(Path(path)),
+        "counter": counter,
+        "adaptive": adaptive,
+        "target_savings_pct": target_savings_pct,
+        "summary": {
+            "turn_count": bench_summary.get("turn_count", 0),
+            "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
+            "original_tokens": bench_summary.get("original_tokens", 0),
+            "squashed_tokens": bench_summary.get("squashed_tokens", 0),
+            "saved_tokens": bench_summary.get("saved_tokens", 0),
+            "saved_pct": bench_summary.get("saved_pct", 0.0),
+            "prompt_saved_pct": bench_summary.get("prompt_saved_pct", 0.0),
+            "reply_saved_pct": bench_summary.get("reply_saved_pct", 0.0),
+            "pass_through_rows": bench_summary.get("passthroughs", 0),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "validation": validation,
+        "stats": stats,
+        "benchmark": benchmark,
+    }
+
+
 def format_turn_validation_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     lines = [
@@ -385,6 +461,36 @@ def format_turn_benchmark_markdown(report: dict[str, Any]) -> str:
         f"- Pass-through rows: `{summary.get('passthroughs', 0)}`",
         "",
     ]
+    return "\n".join(lines)
+
+
+def format_turn_measure_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Turn Measure",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Adaptive: `{report.get('adaptive')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        f"- Original tokens: `{summary.get('original_tokens', 0)}`",
+        f"- Squashed tokens: `{summary.get('squashed_tokens', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Prompt saved percent: `{summary.get('prompt_saved_pct', 0.0)}%`",
+        f"- Reply saved percent: `{summary.get('reply_saved_pct', 0.0)}%`",
+        f"- Pass-through rows: `{summary.get('pass_through_rows', 0)}`",
+        "",
+    ]
+    validation = report.get("validation") or {}
+    if validation.get("status") == "warn":
+        lines.append("Validation warnings or privacy findings are present; review before sharing this corpus.")
+        lines.append("")
+    if report.get("status") == "miss":
+        lines.append("The corpus did not meet the target savings threshold. Use `--target 0` for exploratory runs.")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -553,9 +659,17 @@ def _guess_reply_fields(text: str) -> dict[str, Any]:
 
 
 def _summary_from_text(text: str) -> str:
-    sentence = _first_sentence(text)
-    sentence = re.sub(r"^(done|blocked for now|blocked|failed|partially done)\.?\s*", "", sentence, flags=re.IGNORECASE)
-    return _truncate(_clean_text(sentence), 120)
+    for sentence in _SENTENCE_RE.split(_clean_text(text)):
+        summary = re.sub(
+            r"^(done|blocked for now|blocked|failed|partially done)\.?\s*",
+            "",
+            sentence,
+            flags=re.IGNORECASE,
+        )
+        summary = _clean_text(summary)
+        if summary:
+            return _truncate(summary, 120)
+    return _first_sentence(text)
 
 
 def _first_sentence(text: str) -> str:

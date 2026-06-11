@@ -20,6 +20,7 @@ from tokensquash.turns import (
     append_turn_record,
     benchmark_turns,
     load_turn_records,
+    measure_turn_corpus,
     redact_turn_corpus,
     split_turn_corpus,
     validate_turn_corpus,
@@ -354,6 +355,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(split_report["turns"], 1)
             self.assertIn("[REDACTED_EMAIL]", prompts.read_text(encoding="utf-8"))
             self.assertIn("python -m unittest discover -s tests", reply_payload["commands"])
+            self.assertTrue(reply_payload["summary"])
 
     def test_append_turn_record_writes_jsonl(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -399,6 +401,33 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["summary"]["turn_count"], 1)
         self.assertIn("prompt_report", report)
         self.assertIn("reply_report", report)
+
+    def test_measure_turn_corpus_reports_validation_and_benchmark(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"t1","prompt":"please fix login bug and run tests","reply":"Done. I fixed login in src/auth.py and ran tests."}\n',
+                encoding="utf-8",
+            )
+
+            report = measure_turn_corpus(path, target_savings_pct=0.0)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.measure.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["turn_count"], 1)
+            self.assertEqual(report["validation"]["status"], "pass")
+            self.assertIn("benchmark", report)
+
+    def test_measure_turn_corpus_reports_validation_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad-turns.jsonl"
+            path.write_text('{"id":"t1","prompt":"missing reply"}\n', encoding="utf-8")
+
+            report = measure_turn_corpus(path, target_savings_pct=0.0)
+
+            self.assertEqual(report["status"], "fail")
+            self.assertIsNone(report["benchmark"])
+            self.assertEqual(report["validation"]["errors"][0]["code"], "missing_reply")
 
 
 if __name__ == "__main__":

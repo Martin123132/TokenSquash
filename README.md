@@ -150,10 +150,13 @@ python -m tokensquash turns validate private-turns\real.jsonl
 python -m tokensquash turns stats private-turns\real.jsonl
 python -m tokensquash turns redact private-turns\real.jsonl --out private-turns\real.redacted-turns.jsonl
 python -m tokensquash turns split private-turns\real.redacted-turns.jsonl --prompts-out prompts\real.prompts.jsonl --replies-out prompts\real.replies.jsonl
+python -m tokensquash turns measure private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --target 0
 python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out benchmarks\real-turns-cl100k.json
 ```
 
-`turns bench` reports combined savings plus prompt-side and reply-side savings.
+`turns measure` validates the corpus, summarizes it, and reports combined
+savings plus prompt-side and reply-side savings. `turns bench` returns the full
+benchmark payload for saving as JSON.
 For a first measurement run, add `--target 0` if you want the command to exit
 successfully even when the corpus does not beat the default `0.5%` target.
 When a raw reply has no structured fields, TokenSquash guesses a starter `tr1`

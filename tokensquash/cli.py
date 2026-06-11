@@ -29,10 +29,12 @@ from .turns import (
     benchmark_turns,
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
+    format_turn_measure_markdown,
     format_turn_split_markdown,
     format_turn_stats_markdown,
     format_turn_validation_markdown,
     load_turn_records,
+    measure_turn_corpus,
     redact_turn_corpus,
     split_turn_corpus,
     turn_stats,
@@ -131,6 +133,15 @@ def main(argv: list[str] | None = None) -> int:
     turns_bench.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
     turns_bench.add_argument("--out", type=Path, help="Write benchmark output to this file.")
     turns_bench.add_argument("--json", action="store_true", help="Print benchmark JSON.")
+
+    turns_measure = turns_sub.add_parser("measure", help="Validate, summarize, and benchmark a turn corpus.")
+    turns_measure.add_argument("corpus", type=Path)
+    turns_measure.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_measure.add_argument("--target", type=float, default=0.5, help="Target savings percentage.")
+    turns_measure.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_measure.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_measure.add_argument("--out", type=Path, help="Write measure output to this file.")
+    turns_measure.add_argument("--json", action="store_true", help="Print measure JSON.")
 
     reply = sub.add_parser("reply", help="Encode and decode compact agent replies.")
     reply_sub = reply.add_subparsers(dest="reply_command", required=True)
@@ -305,6 +316,24 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "empty"} else 1
+            if args.turns_command == "measure":
+                report = measure_turn_corpus(
+                    args.corpus,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_measure_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "empty"} else 1
 
         if args.command == "reply":
             if args.reply_command == "encode":
