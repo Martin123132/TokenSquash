@@ -29,6 +29,7 @@ from tokensquash.sidecar import (
     evaluate_sidecar_turns,
     parse_semantic_json,
     review_sidecar_evaluation,
+    suggest_sidecar_review,
     translate_with_ollama,
 )
 from tokensquash.turns import (
@@ -1150,6 +1151,109 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "review.json").exists())
             self.assertTrue((out_dir / "review.md").exists())
             self.assertIn("TokenSquash Sidecar Review", (out_dir / "review.md").read_text(encoding="utf-8"))
+
+    def test_suggest_sidecar_review_groups_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = Path(tmp) / "review.json"
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "warn",
+                        "source": "evaluation.json",
+                        "summary": {
+                            "row_count": 2,
+                            "review_count": 2,
+                            "saved_tokens": 200,
+                            "saved_pct": 40.0,
+                        },
+                        "rows": [
+                            {
+                                "id": "r1",
+                                "side": "prompt",
+                                "verdict": "review",
+                                "risk_level": "medium",
+                                "risk_score": 40,
+                                "flags": ["high_savings_short_decoded"],
+                                "saved_tokens": 120,
+                                "saved_pct": 70.0,
+                                "original_preview": "Improve semantic wire with enough details.",
+                                "decoded_preview": "Improve wire.",
+                            },
+                            {
+                                "id": "r2",
+                                "side": "reply",
+                                "verdict": "review",
+                                "risk_level": "low",
+                                "risk_score": 15,
+                                "flags": ["missing_command_or_verification"],
+                                "saved_tokens": 80,
+                                "saved_pct": 30.0,
+                                "original_preview": "Done. Ran pytest.",
+                                "decoded_preview": "Done.",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = suggest_sidecar_review(review)
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.suggestions.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["summary"]["suggestion_count"], 2)
+        self.assertEqual(report["flag_counts"]["high_savings_short_decoded"], 1)
+        self.assertEqual(report["flag_counts"]["missing_command_or_verification"], 1)
+        self.assertEqual(report["suggestions"][0]["flag"], "high_savings_short_decoded")
+        self.assertIn("Preserve more meaning", report["suggestions"][0]["title"])
+
+    def test_sidecar_suggestions_cli_writes_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = Path(tmp) / "review.json"
+            out_dir = Path(tmp) / "suggestions"
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "warn",
+                        "source": "evaluation.json",
+                        "summary": {
+                            "row_count": 1,
+                            "review_count": 1,
+                            "saved_tokens": 50,
+                            "saved_pct": 25.0,
+                        },
+                        "rows": [
+                            {
+                                "id": "r1",
+                                "side": "reply",
+                                "verdict": "review",
+                                "risk_level": "low",
+                                "risk_score": 15,
+                                "flags": ["missing_files"],
+                                "saved_tokens": 50,
+                                "saved_pct": 25.0,
+                                "original_preview": "Done. Changed src/app.py.",
+                                "decoded_preview": "Done.",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["sidecar", "suggestions", str(review), "--out-dir", str(out_dir), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.sidecar.suggestions.v1")
+            self.assertEqual(payload["suggestions"][0]["flag"], "missing_files")
+            self.assertTrue((out_dir / "suggestions.json").exists())
+            self.assertTrue((out_dir / "suggestions.md").exists())
+            self.assertIn("TokenSquash Sidecar Suggestions", (out_dir / "suggestions.md").read_text(encoding="utf-8"))
 
     def test_compare_sidecar_evaluations_reports_improvement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

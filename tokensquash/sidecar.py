@@ -365,6 +365,52 @@ def review_sidecar_evaluation(
     }
 
 
+def suggest_sidecar_review(
+    review_path: Path | str,
+    *,
+    min_count: int = 1,
+    max_examples: int = 5,
+) -> dict[str, Any]:
+    """Turn a sidecar review report into prioritized tuning suggestions."""
+
+    review = _load_sidecar_review(review_path)
+    rows = review.get("rows", [])
+    flag_groups = _sidecar_review_flag_groups(rows, max_examples=max_examples)
+    suggestions = [
+        _sidecar_suggestion_for_flag(flag, group, review)
+        for flag, group in flag_groups.items()
+        if int(group.get("count", 0)) >= min_count
+    ]
+    suggestions.sort(
+        key=lambda suggestion: (
+            int(suggestion.get("priority_score", 0)),
+            int(suggestion.get("count", 0)),
+            str(suggestion.get("flag", "")),
+        ),
+        reverse=True,
+    )
+    return {
+        "schema_version": "tokensquash.sidecar.suggestions.v1",
+        "status": "pass" if suggestions else "empty",
+        "source": str(Path(review_path)),
+        "review": {
+            "status": review.get("status"),
+            "source": review.get("source"),
+            "summary": review.get("summary", {}),
+        },
+        "parameters": {
+            "min_count": min_count,
+            "max_examples": max_examples,
+        },
+        "summary": _sidecar_suggestions_summary(review, suggestions),
+        "flag_counts": {
+            flag: int(group.get("count", 0))
+            for flag, group in sorted(flag_groups.items())
+        },
+        "suggestions": suggestions,
+    }
+
+
 def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
@@ -668,6 +714,86 @@ def format_sidecar_review_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_sidecar_suggestions_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    outputs = report.get("outputs", {})
+    lines = [
+        "# TokenSquash Sidecar Suggestions",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Suggestions: `{summary.get('suggestion_count', 0)}`",
+        f"- Review rows: `{summary.get('review_count', 0)}`",
+        f"- High priority: `{summary.get('high_priority_count', 0)}`",
+        f"- Medium priority: `{summary.get('medium_priority_count', 0)}`",
+        f"- Saved tokens at review risk: `{summary.get('review_saved_tokens', 0)}`",
+        "",
+    ]
+    suggestions = report.get("suggestions", [])
+    if not suggestions:
+        lines.extend(["No suggestions met the threshold.", ""])
+    else:
+        lines.extend(
+            [
+                "## Priority Table",
+                "",
+                "| Priority | Flag | Count | Score | Suggestion |",
+                "|---|---|---:|---:|---|",
+            ]
+        )
+        for suggestion in suggestions:
+            lines.append(
+                "| "
+                f"`{suggestion.get('priority')}` | "
+                f"`{suggestion.get('flag')}` | "
+                f"{suggestion.get('count', 0)} | "
+                f"{suggestion.get('priority_score', 0)} | "
+                f"{_markdown_cell(str(suggestion.get('title', '')))} |"
+            )
+        lines.append("")
+
+        lines.extend(["## Suggestions", ""])
+        for suggestion in suggestions:
+            examples = suggestion.get("examples", [])
+            lines.extend(
+                [
+                    f"### {suggestion.get('title')}",
+                    "",
+                    f"- Flag: `{suggestion.get('flag')}`",
+                    f"- Priority: `{suggestion.get('priority')}`",
+                    f"- Count: `{suggestion.get('count', 0)}`",
+                    f"- Affected saved tokens: `{suggestion.get('affected_saved_tokens', 0)}`",
+                    f"- Recommendation: {suggestion.get('recommendation')}",
+                    f"- Rationale: {suggestion.get('rationale')}",
+                    f"- Suggested check: `{suggestion.get('suggested_check')}`",
+                    "",
+                ]
+            )
+            if examples:
+                lines.extend(["Examples:", ""])
+                for example in examples:
+                    lines.append(
+                        "- "
+                        f"`{example.get('id')}` / `{example.get('side')}` "
+                        f"saved `{example.get('saved_tokens', 0)}` (`{example.get('saved_pct', 0.0)}%`): "
+                        f"{_markdown_cell(str(example.get('decoded_preview', '')))}"
+                    )
+                lines.append("")
+
+    flag_counts = report.get("flag_counts", {})
+    if flag_counts:
+        lines.extend(["## Flag Counts", ""])
+        for flag, count in sorted(flag_counts.items()):
+            lines.append(f"- `{flag}`: `{count}`")
+        lines.append("")
+
+    if outputs:
+        lines.extend(["## Outputs", ""])
+        for key, path in sorted(outputs.items()):
+            lines.append(f"- {key}: `{path}`")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_sidecar_experiment_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     outputs = report.get("outputs", {})
@@ -837,6 +963,16 @@ def _load_sidecar_evaluation(path: Path | str) -> dict[str, Any]:
         raise ValueError("sidecar evaluation report must be a JSON object")
     if payload.get("schema_version") != "tokensquash.sidecar.evaluate.v1":
         raise ValueError(f"not a sidecar evaluation report: {source}")
+    return payload
+
+
+def _load_sidecar_review(path: Path | str) -> dict[str, Any]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError("sidecar review report must be a JSON object")
+    if payload.get("schema_version") != "tokensquash.sidecar.review.v1":
+        raise ValueError(f"not a sidecar review report: {source}")
     return payload
 
 
@@ -1025,6 +1161,158 @@ def _sidecar_review_summary(rows: list[dict[str, Any]], evaluation_summary: dict
         "saved_tokens": int(evaluation_summary.get("saved_tokens", 0)),
         "saved_pct": float(evaluation_summary.get("saved_pct", 0.0)),
     }
+
+
+def _sidecar_review_flag_groups(rows: list[dict[str, Any]], *, max_examples: int) -> dict[str, dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        for flag in row.get("flags", []):
+            group = groups.setdefault(
+                str(flag),
+                {
+                    "count": 0,
+                    "affected_saved_tokens": 0,
+                    "max_risk_score": 0,
+                    "examples": [],
+                },
+            )
+            group["count"] = int(group["count"]) + 1
+            group["affected_saved_tokens"] = int(group["affected_saved_tokens"]) + int(row.get("saved_tokens", 0))
+            group["max_risk_score"] = max(int(group["max_risk_score"]), int(row.get("risk_score", 0)))
+            if len(group["examples"]) < max_examples:
+                group["examples"].append(_sidecar_suggestion_example(row))
+    return groups
+
+
+def _sidecar_suggestion_for_flag(flag: str, group: dict[str, Any], review: dict[str, Any]) -> dict[str, Any]:
+    guidance = _sidecar_suggestion_guidance(flag)
+    count = int(group.get("count", 0))
+    affected_saved_tokens = int(group.get("affected_saved_tokens", 0))
+    max_risk_score = int(group.get("max_risk_score", 0))
+    priority_score = max_risk_score + count * 10 + min(max(affected_saved_tokens, 0), 50)
+    priority = _sidecar_suggestion_priority(priority_score)
+    return {
+        "flag": flag,
+        "priority": priority,
+        "priority_score": priority_score,
+        "count": count,
+        "affected_saved_tokens": affected_saved_tokens,
+        "title": guidance["title"],
+        "recommendation": guidance["recommendation"],
+        "rationale": guidance["rationale"],
+        "suggested_check": guidance["suggested_check"],
+        "review_source": review.get("source"),
+        "examples": group.get("examples", []),
+    }
+
+
+def _sidecar_suggestions_summary(review: dict[str, Any], suggestions: list[dict[str, Any]]) -> dict[str, Any]:
+    review_summary = review.get("summary", {})
+    return {
+        "suggestion_count": len(suggestions),
+        "review_count": int(review_summary.get("review_count", 0)),
+        "high_priority_count": sum(1 for suggestion in suggestions if suggestion.get("priority") == "high"),
+        "medium_priority_count": sum(1 for suggestion in suggestions if suggestion.get("priority") == "medium"),
+        "low_priority_count": sum(1 for suggestion in suggestions if suggestion.get("priority") == "low"),
+        "review_saved_tokens": sum(
+            max(int(row.get("saved_tokens", 0)), 0)
+            for row in review.get("rows", [])
+            if row.get("verdict") == "review"
+        ),
+        "review_status": review.get("status"),
+        "review_row_count": int(review_summary.get("row_count", 0)),
+        "saved_tokens": int(review_summary.get("saved_tokens", 0)),
+        "saved_pct": float(review_summary.get("saved_pct", 0.0)),
+    }
+
+
+def _sidecar_suggestion_example(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": row.get("id"),
+        "side": row.get("side"),
+        "risk_level": row.get("risk_level"),
+        "risk_score": row.get("risk_score"),
+        "saved_tokens": row.get("saved_tokens", 0),
+        "saved_pct": row.get("saved_pct", 0.0),
+        "original_preview": row.get("original_preview", ""),
+        "decoded_preview": row.get("decoded_preview", ""),
+    }
+
+
+def _sidecar_suggestion_priority(score: int) -> str:
+    if score >= 80:
+        return "high"
+    if score >= 40:
+        return "medium"
+    return "low"
+
+
+def _sidecar_suggestion_guidance(flag: str) -> dict[str, str]:
+    guidance = {
+        "failure": {
+            "title": "Fix sidecar evaluation failures first",
+            "recommendation": "Inspect failed rows before tuning token savings; failures can hide model, endpoint, or parsing problems.",
+            "rationale": "A failed row has no reliable semantic payload to compare.",
+            "suggested_check": "sidecar evaluate with a small --limit and inspect failures",
+        },
+        "warnings": {
+            "title": "Remove warning-producing semantic fields",
+            "recommendation": "Prioritize prompt or normalization fixes for rows that already emit decoder warnings.",
+            "rationale": "Warnings are explicit quality signals and should not be averaged away by token savings.",
+            "suggested_check": "sidecar review then inspect warnings in review.json",
+        },
+        "high_savings_short_decoded": {
+            "title": "Preserve more meaning on high-savings rows",
+            "recommendation": "Tighten the prompt so very short decoded text still preserves the object, action, constraints, verification, and expected return.",
+            "rationale": "Large savings paired with a much shorter decoded preview may mean the model dropped task details.",
+            "suggested_check": "rerun sidecar sweep and review high_savings_short_decoded count",
+        },
+        "missing_command_or_verification": {
+            "title": "Extract commands and verification explicitly",
+            "recommendation": "Strengthen reply translation so test and command mentions are placed in c or v instead of only summary text.",
+            "rationale": "Commands and verification are important evidence in assistant replies and are easy to lose during compression.",
+            "suggested_check": "review rows with python/pytest/npm/test mentions and confirm c or v is populated",
+        },
+        "missing_files": {
+            "title": "Preserve file references when present",
+            "recommendation": "Tune prompt wording or source anchoring so exact file paths in replies land in f.",
+            "rationale": "File references are high-value context for code work and should survive round trips.",
+            "suggested_check": "review rows with path-like previews and confirm semantic f contains exact paths",
+        },
+        "missing_risks": {
+            "title": "Preserve risk and caveat fields",
+            "recommendation": "Strengthen reply translation so risk/caveat mentions are placed in r.",
+            "rationale": "Risks are compact but important; dropping them can make a reply sound safer than it was.",
+            "suggested_check": "review rows with risk/caveat text and confirm semantic r is populated",
+        },
+        "generic_summary": {
+            "title": "Reject generic reply summaries",
+            "recommendation": "Require m to include the concrete object and action, not just Done, fixed, updated, or reviewed.",
+            "rationale": "Generic summaries can create strong savings while preserving very little meaning.",
+            "suggested_check": "rerun review and confirm generic_summary count is zero",
+        },
+        "token_loss": {
+            "title": "Shorten verbose semantic payloads",
+            "recommendation": "Inspect loss rows for overlong q/m values or arrays that duplicate the original wording.",
+            "rationale": "A semantic sidecar should pass through or improve rows that are longer than source text.",
+            "suggested_check": "sort review rows by token_loss and inspect semantic JSON length",
+        },
+        "missing_prompt_query": {
+            "title": "Require prompt task gist",
+            "recommendation": "Ensure prompt translations always include q with the concrete task object.",
+            "rationale": "A prompt without q cannot be decoded into a useful task request.",
+            "suggested_check": "review prompt rows and confirm q is non-empty",
+        },
+    }
+    return guidance.get(
+        flag,
+        {
+            "title": f"Investigate {flag}",
+            "recommendation": "Inspect affected rows and decide whether the prompt, normalizer, or review heuristic needs adjustment.",
+            "rationale": "Unknown review flags still indicate rows that need human attention.",
+            "suggested_check": "open review.md and inspect affected examples",
+        },
+    )
 
 
 def _sidecar_review_short_decoded(row: dict[str, Any], *, high_savings_pct: float, short_ratio: float) -> bool:

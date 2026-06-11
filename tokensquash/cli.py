@@ -41,11 +41,13 @@ from .sidecar import (
     format_sidecar_request_markdown,
     format_sidecar_review_markdown,
     format_sidecar_roundtrip_markdown,
+    format_sidecar_suggestions_markdown,
     format_sidecar_sweep_markdown,
     format_sidecar_translation_markdown,
     parse_semantic_json,
     review_sidecar_evaluation,
     roundtrip_with_ollama,
+    suggest_sidecar_review,
     translate_with_ollama,
 )
 from .turns import (
@@ -271,6 +273,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Decoded/original preview length ratio below which high-savings rows are flagged.",
     )
     sidecar_review.add_argument("--json", action="store_true", help="Print review JSON.")
+
+    sidecar_suggestions = sidecar_sub.add_parser(
+        "suggestions",
+        help="Turn a sidecar review report into prioritized tuning suggestions.",
+    )
+    sidecar_suggestions.add_argument("review", type=Path, help="Saved sidecar review JSON.")
+    sidecar_suggestions.add_argument(
+        "--out-dir",
+        type=Path,
+        help="Write suggestions.json and suggestions.md to this directory; defaults to the review directory.",
+    )
+    sidecar_suggestions.add_argument("--min-count", type=int, default=1, help="Minimum flag count to include.")
+    sidecar_suggestions.add_argument("--max-examples", type=int, default=5, help="Maximum examples per suggestion.")
+    sidecar_suggestions.add_argument("--json", action="store_true", help="Print suggestions JSON.")
 
     sidecar_compare_evaluations = sidecar_sub.add_parser(
         "compare-evaluations",
@@ -747,6 +763,20 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 _write_sidecar_review_outputs(args.out_dir or args.evaluation.parent, report)
                 output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_review_markdown(report)
+                print(output, end="")
+                return 0
+            if args.sidecar_command == "suggestions":
+                report = suggest_sidecar_review(
+                    args.review,
+                    min_count=args.min_count,
+                    max_examples=args.max_examples,
+                )
+                _write_sidecar_suggestions_outputs(args.out_dir or args.review.parent, report)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_sidecar_suggestions_markdown(report)
+                )
                 print(output, end="")
                 return 0
             if args.sidecar_command == "compare-evaluations":
@@ -1233,6 +1263,17 @@ def _write_sidecar_review_outputs(out_dir: Path, report: dict) -> None:
     report["outputs"]["markdown"] = str(markdown_path)
     markdown_path.write_text(format_sidecar_review_markdown(report), encoding="utf-8")
     review_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_sidecar_suggestions_outputs(out_dir: Path, report: dict) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    suggestions_path = out_dir / "suggestions.json"
+    markdown_path = out_dir / "suggestions.md"
+    report.setdefault("outputs", {})
+    report["outputs"]["suggestions"] = str(suggestions_path)
+    report["outputs"]["markdown"] = str(markdown_path)
+    markdown_path.write_text(format_sidecar_suggestions_markdown(report), encoding="utf-8")
+    suggestions_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def _write_sidecar_experiment_outputs(
