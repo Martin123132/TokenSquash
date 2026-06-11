@@ -213,6 +213,12 @@ Compare two saved reports after a codec change:
 python -m tokensquash turns compare-reports private-turns\report-before.json private-turns\report-after.json
 ```
 
+Turn a saved report into a prioritized codec-improvement checklist:
+
+```powershell
+python -m tokensquash turns suggestions private-turns\real-report.json
+```
+
 `turns report` defaults to `private-turns\real.redacted-turns.jsonl`, so you can
 just run:
 
@@ -225,9 +231,10 @@ Use this loop:
 1. Capture turns with `turns capture`.
 2. Run `turns report`.
 3. Review top wins, top raw-wire losses, and repeated candidates.
-4. Save a before/after report around codec changes.
-5. Run `turns compare-reports` to check whether saved percent improved.
-6. Keep iterating with more capture turns.
+4. Run `turns suggestions` for a short prioritized improvement list.
+5. Save a before/after report around codec changes.
+6. Run `turns compare-reports` to check whether saved percent improved.
+7. Keep iterating with more capture turns.
 
 ```powershell
 python -m tokensquash turns validate private-turns\real.jsonl

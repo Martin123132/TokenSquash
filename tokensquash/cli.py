@@ -41,6 +41,7 @@ from .turns import (
     format_turn_diagnose_markdown,
     format_turn_report_markdown,
     format_turn_report_compare_markdown,
+    format_turn_suggestions_markdown,
     format_turn_evaluate_markdown,
     format_turn_import_markdown,
     format_turn_measure_markdown,
@@ -48,6 +49,7 @@ from .turns import (
     format_turn_stats_markdown,
     format_turn_validation_markdown,
     report_turn_corpus,
+    suggest_turn_improvements,
     import_turn_corpus,
     learn_turn_aliases,
     load_turn_records,
@@ -185,6 +187,13 @@ def main(argv: list[str] | None = None) -> int:
     turns_compare_reports.add_argument("target", type=Path)
     turns_compare_reports.add_argument("--out", type=Path, help="Write comparison output to this file.")
     turns_compare_reports.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    turns_suggestions = turns_sub.add_parser("suggestions", help="Suggest next codec improvements from a turn report JSON.")
+    turns_suggestions.add_argument("report", type=Path)
+    turns_suggestions.add_argument("--limit", type=int, default=5, help="Maximum suggestions to show.")
+    turns_suggestions.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving to include.")
+    turns_suggestions.add_argument("--out", type=Path, help="Write suggestions output to this file.")
+    turns_suggestions.add_argument("--json", action="store_true", help="Print suggestions JSON.")
 
     turns_import = turns_sub.add_parser("import", help="Import a JSON/JSONL turn corpus into private raw/redacted storage.")
     turns_import.add_argument("corpus", type=Path)
@@ -510,6 +519,22 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(report, indent=2) + "\n"
                     if args.json
                     else format_turn_report_compare_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0
+            if args.turns_command == "suggestions":
+                report = suggest_turn_improvements(
+                    args.report,
+                    limit=args.limit,
+                    min_saved_tokens=args.min_saved_tokens,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_suggestions_markdown(report)
                 )
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)

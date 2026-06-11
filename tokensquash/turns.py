@@ -1173,6 +1173,146 @@ def compare_turn_reports(base: Path | str, target: Path | str) -> dict[str, Any]
     }
 
 
+def suggest_turn_improvements(
+    report_path: Path | str,
+    *,
+    limit: int = 5,
+    min_saved_tokens: int = 1,
+) -> dict[str, Any]:
+    """Rank concrete next improvement ideas from a saved turn report."""
+
+    source_report = _load_turn_report(report_path)
+    summary = source_report.get("summary", {})
+    limit = max(1, int(limit))
+    min_saved_tokens = max(0, int(min_saved_tokens))
+    candidates = []
+
+    alias_saved_tokens = _int_value(summary.get("alias_saved_tokens_delta"))
+    selected_aliases = _int_value(summary.get("selected_path_prefix_count")) + _int_value(
+        summary.get("selected_field_value_count")
+    )
+    if alias_saved_tokens > 0 and selected_aliases > 0:
+        candidates.append(
+            _turn_suggestion(
+                "alias_impact",
+                "Use the learned alias table for this corpus",
+                "The report's alias-impact run found net token savings from selected path/field aliases.",
+                "Run `turns aliases` to write a session alias table, then benchmark with `--aliases`.",
+                priority=alias_saved_tokens,
+                estimated_saved_tokens=alias_saved_tokens,
+                evidence={
+                    "selected_path_prefix_count": summary.get("selected_path_prefix_count", 0),
+                    "selected_field_value_count": summary.get("selected_field_value_count", 0),
+                    "alias_saved_pct_delta": summary.get("alias_saved_pct_delta", 0.0),
+                    "break_even_corpora": summary.get("break_even_corpora"),
+                },
+            )
+        )
+
+    for item in source_report.get("top_path_candidates", []) or []:
+        estimated = _int_value(item.get("estimated_new_saved_tokens"))
+        if estimated < min_saved_tokens:
+            continue
+        value = str(item.get("value", ""))
+        candidates.append(
+            _turn_suggestion(
+                "path_alias_candidate",
+                f"Add or keep a compact alias for `{value}`",
+                "This repeated path/prefix appears often enough to be worth compacting.",
+                "Promote the prefix into a session alias or built-in alias only if it recurs across real turns.",
+                priority=estimated,
+                estimated_saved_tokens=estimated,
+                evidence={
+                    "value": value,
+                    "count": item.get("count", 0),
+                    "existing_code": item.get("existing_code"),
+                },
+            )
+        )
+
+    for item in source_report.get("top_field_candidates", []) or []:
+        estimated = _int_value(item.get("estimated_new_saved_tokens"))
+        if estimated < min_saved_tokens:
+            continue
+        field = str(item.get("field", ""))
+        value = str(item.get("value", ""))
+        candidates.append(
+            _turn_suggestion(
+                "field_alias_candidate",
+                f"Alias repeated `{field}` value `{value}`",
+                "This repeated reply field value is a candidate for a compact field alias.",
+                "Add it to a session alias table first; only make it built-in if it appears across projects.",
+                priority=estimated,
+                estimated_saved_tokens=estimated,
+                evidence={
+                    "field": field,
+                    "value": value,
+                    "count": item.get("count", 0),
+                    "existing_code": item.get("existing_code"),
+                },
+            )
+        )
+
+    for row in source_report.get("top_raw_wire_losses", []) or []:
+        raw_saved_tokens = _int_value(row.get("wire_saved_tokens"))
+        loss_tokens = abs(raw_saved_tokens) if raw_saved_tokens < 0 else 0
+        if loss_tokens < min_saved_tokens:
+            continue
+        candidates.append(
+            _turn_suggestion(
+                "raw_wire_loss",
+                f"Inspect raw-wire loss `{row.get('id')}`",
+                "The raw compact wire is longer than the original before adaptive passthrough protects the result.",
+                "Look for repeated wording or missing aliases before adding a codec rule for this shape.",
+                priority=loss_tokens,
+                estimated_saved_tokens=loss_tokens,
+                evidence={
+                    "id": row.get("id"),
+                    "wire_saved_tokens": row.get("wire_saved_tokens"),
+                    "saved_tokens": row.get("saved_tokens"),
+                    "tags": row.get("tags", []),
+                    "prompt_preview": row.get("prompt_preview"),
+                    "reply_preview": row.get("reply_preview"),
+                },
+            )
+        )
+
+    privacy_findings = _int_value(summary.get("privacy_finding_count"))
+    if privacy_findings:
+        candidates.append(
+            _turn_suggestion(
+                "privacy_review",
+                "Review privacy findings before sharing this corpus",
+                "The report still has privacy findings; token metrics are useful locally but the corpus needs review before sharing.",
+                "Inspect `turns validate` output and keep raw data under ignored private storage.",
+                priority=0,
+                estimated_saved_tokens=0,
+                evidence={"privacy_finding_count": privacy_findings},
+            )
+        )
+
+    candidates.sort(key=lambda item: (-_int_value(item.get("priority")), str(item.get("type")), str(item.get("title"))))
+    suggestions = candidates[:limit]
+    for index, item in enumerate(suggestions, start=1):
+        item["rank"] = index
+
+    return {
+        "schema_version": "tokensquash.turns.suggestions.v1",
+        "status": "pass" if suggestions else "empty",
+        "report": _turn_report_identity(report_path, source_report),
+        "limit": limit,
+        "min_saved_tokens": min_saved_tokens,
+        "summary": {
+            "suggestion_count": len(suggestions),
+            "candidate_count": len(candidates),
+            "report_saved_pct": summary.get("saved_pct", 0.0),
+            "report_saved_tokens": summary.get("saved_tokens", 0),
+            "privacy_finding_count": privacy_findings,
+        },
+        "suggestions": suggestions,
+    }
+
+
 def format_turn_evaluate_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     break_even = summary.get("break_even_corpora")
@@ -1562,6 +1702,47 @@ def format_turn_report_compare_markdown(report: dict[str, Any]) -> str:
     )
 
 
+def format_turn_suggestions_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    source = report.get("report", {})
+    lines = [
+        "# TokenSquash Turn Suggestions",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Report: `{source.get('report_path')}`",
+        f"- Corpus: `{source.get('corpus_path')}`",
+        f"- Saved percent: `{summary.get('report_saved_pct', 0.0)}%`",
+        f"- Saved tokens: `{summary.get('report_saved_tokens', 0)}`",
+        f"- Suggestions: `{summary.get('suggestion_count', 0)}`",
+        "",
+        "## Suggestions",
+        "",
+    ]
+    suggestions = report.get("suggestions", [])
+    if not suggestions:
+        lines.extend(["No suggestions met the current thresholds.", ""])
+        return "\n".join(lines).rstrip() + "\n"
+
+    for item in suggestions:
+        lines.extend(
+            [
+                f"### {item.get('rank')}. {item.get('title')}",
+                "",
+                f"- Type: `{item.get('type')}`",
+                f"- Estimated saved tokens: `{item.get('estimated_saved_tokens', 0)}`",
+                f"- Why: {item.get('rationale')}",
+                f"- Next: {item.get('next_step')}",
+            ]
+        )
+        evidence = item.get("evidence") or {}
+        if evidence:
+            evidence_text = ", ".join(f"{key}={value}" for key, value in evidence.items() if value not in (None, "", []))
+            if evidence_text:
+                lines.append(f"- Evidence: `{_markdown_cell(evidence_text)}`")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_turn_import_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     lines = [
@@ -1629,6 +1810,27 @@ def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str,
         "alias_saved_tokens_delta": summary.get("alias_saved_tokens_delta"),
         "alias_saved_pct_delta": summary.get("alias_saved_pct_delta"),
         "break_even_corpora": summary.get("break_even_corpora"),
+    }
+
+
+def _turn_suggestion(
+    suggestion_type: str,
+    title: str,
+    rationale: str,
+    next_step: str,
+    *,
+    priority: int,
+    estimated_saved_tokens: int,
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "type": suggestion_type,
+        "title": title,
+        "priority": priority,
+        "estimated_saved_tokens": estimated_saved_tokens,
+        "rationale": rationale,
+        "next_step": next_step,
+        "evidence": evidence,
     }
 
 

@@ -988,6 +988,112 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue(out.exists())
             self.assertEqual(out.read_text(encoding="utf-8"), output)
 
+    def test_turns_suggestions_cli_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.json"
+            report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "adaptive": True,
+                        "summary": {
+                            "turn_count": 2,
+                            "saved_tokens": 10,
+                            "saved_pct": 5.0,
+                            "privacy_finding_count": 1,
+                            "selected_path_prefix_count": 1,
+                            "selected_field_value_count": 0,
+                            "alias_saved_tokens_delta": 6,
+                            "alias_saved_pct_delta": 2.0,
+                            "break_even_corpora": 2,
+                        },
+                        "top_path_candidates": [
+                            {
+                                "value": "packages/mobile/src/screens/",
+                                "count": 2,
+                                "estimated_new_saved_tokens": 30,
+                            }
+                        ],
+                        "top_field_candidates": [
+                            {
+                                "field": "commands",
+                                "value": "npm test",
+                                "count": 2,
+                                "estimated_new_saved_tokens": 12,
+                            }
+                        ],
+                        "top_raw_wire_losses": [
+                            {
+                                "id": "short",
+                                "wire_saved_tokens": -5,
+                                "saved_tokens": 0,
+                                "tags": ["raw_wire_loss"],
+                                "prompt_preview": "ok",
+                                "reply_preview": "Done.",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "suggestions", str(report), "--limit", "4", "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.suggestions.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["summary"]["suggestion_count"], 4)
+            self.assertEqual(payload["suggestions"][0]["type"], "path_alias_candidate")
+            self.assertEqual(payload["suggestions"][0]["estimated_saved_tokens"], 30)
+            self.assertEqual(
+                [item["type"] for item in payload["suggestions"]],
+                ["path_alias_candidate", "field_alias_candidate", "alias_impact", "raw_wire_loss"],
+            )
+
+    def test_turns_suggestions_cli_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.json"
+            out = Path(tmp) / "suggestions.md"
+            report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "summary": {
+                            "saved_tokens": 0,
+                            "saved_pct": 0.0,
+                        },
+                        "top_raw_wire_losses": [
+                            {
+                                "id": "short",
+                                "wire_saved_tokens": -4,
+                                "saved_tokens": 0,
+                                "tags": ["raw_wire_loss"],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "suggestions", str(report), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Suggestions", output)
+            self.assertIn("Inspect raw-wire loss", output)
+            self.assertIn("- Type: `raw_wire_loss`", output)
+            self.assertTrue(out.exists())
+            self.assertEqual(out.read_text(encoding="utf-8"), output)
+
     def test_private_turn_storage_is_gitignored(self) -> None:
         ignore_text = Path(".gitignore").read_text(encoding="utf-8")
 
