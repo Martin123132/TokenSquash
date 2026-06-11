@@ -274,6 +274,34 @@ When a raw reply has no structured fields, TokenSquash guesses a starter `tr1`
 record from obvious files, commands, verification phrases, risks, and next-step
 phrases. That heuristic is for measurement, not a claim of perfect translation.
 
+## Experimental Local AI Sidecar
+
+TokenSquash can also experiment with a local model such as Ollama as an optional
+semantic translator. This does not replace the deterministic codec. The local
+model proposes compact semantic JSON, and TokenSquash measures whether that
+semantic form is actually shorter than the original text.
+
+Preview the exact Ollama request without calling a model:
+
+```powershell
+python -m tokensquash sidecar translate prompt "fix the login bug, keep the diff small, run tests" --model llama3.2:3b --dry-run
+```
+
+Call a local Ollama server and measure the returned semantic JSON:
+
+```powershell
+python -m tokensquash sidecar translate reply "Done. I fixed login in src/auth.py and tests pass." --model llama3.2:3b --counter chars --json
+```
+
+The sidecar command asks the local model for strict JSON only. For prompt mode it
+uses fields such as `op`, `query`, `paths`, `constraints`, `verify`, and
+`returns`. For reply mode it uses `status`, `summary`, `files`, `verification`,
+`commands`, `risks`, and `next_steps`.
+
+This is intentionally experimental. A local model can add latency and may
+misread intent, so any sidecar result should be validated by round-trip quality
+and measured token savings before it is treated as useful.
+
 ## Install For Local Development
 
 ```powershell

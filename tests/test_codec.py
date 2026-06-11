@@ -22,6 +22,7 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
+from tokensquash.sidecar import parse_semantic_json, translate_with_ollama
 from tokensquash.turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
@@ -339,6 +340,86 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "improved")
             self.assertEqual(report["base"]["item_count"], 2)
             self.assertEqual(report["delta"]["saved_tokens"], 2)
+
+    def test_sidecar_dry_run_cli_outputs_ollama_request(self) -> None:
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            code = cli_main(
+                [
+                    "sidecar",
+                    "translate",
+                    "prompt",
+                    "fix",
+                    "the",
+                    "login",
+                    "bug",
+                    "--model",
+                    "tiny-local",
+                    "--dry-run",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["schema_version"], "tokensquash.sidecar.request.v1")
+        self.assertEqual(payload["backend"], "ollama")
+        self.assertEqual(payload["model"], "tiny-local")
+        self.assertEqual(payload["mode"], "prompt")
+        self.assertFalse(payload["payload"]["stream"])
+        self.assertEqual(payload["payload"]["format"], "json")
+        self.assertIn("fix the login bug", payload["payload"]["prompt"])
+        self.assertIn('"kind":"prompt"', payload["payload"]["prompt"])
+
+    def test_parse_semantic_json_accepts_fenced_model_output(self) -> None:
+        payload = parse_semantic_json('```json\n{"kind":"reply","status":"done","summary":"fixed login"}\n```')
+
+        self.assertEqual(payload["kind"], "reply")
+        self.assertEqual(payload["status"], "done")
+        self.assertEqual(payload["summary"], "fixed login")
+
+    def test_translate_with_ollama_uses_local_response(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "kind": "reply",
+                                "status": "done",
+                                "summary": "fixed login",
+                                "files": ["src/auth.py"],
+                                "verification": ["tests pass"],
+                                "commands": [],
+                                "risks": [],
+                                "next_steps": [],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()) as mocked_urlopen:
+            report = translate_with_ollama(
+                "Done. I fixed login in src/auth.py and tests pass.",
+                mode="reply",
+                model="tiny-local",
+                endpoint="http://localhost:11434",
+                counter="chars",
+            )
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.semantic.v1")
+        self.assertEqual(report["backend"], "ollama")
+        self.assertEqual(report["model"], "tiny-local")
+        self.assertEqual(report["semantic"]["summary"], "fixed login")
+        self.assertIn("semantic_tokens", report["summary"])
+        self.assertTrue(mocked_urlopen.called)
 
     def test_reply_wire_round_trip(self) -> None:
         reply = encode_reply(

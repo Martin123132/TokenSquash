@@ -26,6 +26,14 @@ from .metrics import (
 )
 from .mining import format_pattern_mine_markdown, mine_reply_patterns
 from .reply import decode_reply, encode_reply, parse_reply_wire
+from .sidecar import (
+    DEFAULT_OLLAMA_ENDPOINT,
+    DEFAULT_OLLAMA_MODEL,
+    build_sidecar_request,
+    format_sidecar_request_markdown,
+    format_sidecar_translation_markdown,
+    translate_with_ollama,
+)
 from .turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
@@ -92,6 +100,21 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("base", type=Path)
     compare.add_argument("target", type=Path)
     compare.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    sidecar = sub.add_parser("sidecar", help="Experimental local-AI semantic translator sidecar.")
+    sidecar_sub = sidecar.add_subparsers(dest="sidecar_command", required=True)
+
+    sidecar_translate = sidecar_sub.add_parser("translate", help="Translate English into compact semantic JSON with Ollama.")
+    sidecar_translate.add_argument("mode", choices=("prompt", "reply"), help="Translate a user prompt or assistant reply.")
+    sidecar_translate.add_argument("text", nargs="*", help="English text to translate.")
+    sidecar_translate.add_argument("--text-file", type=Path, help="File containing English text to translate.")
+    sidecar_translate.add_argument("--model", default=DEFAULT_OLLAMA_MODEL, help="Ollama model name.")
+    sidecar_translate.add_argument("--endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    sidecar_translate.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    sidecar_translate.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
+    sidecar_translate.add_argument("--dry-run", action="store_true", help="Print the Ollama request without sending it.")
+    sidecar_translate.add_argument("--out", type=Path, help="Write sidecar output to this file.")
+    sidecar_translate.add_argument("--json", action="store_true", help="Print sidecar JSON.")
 
     corpus = sub.add_parser("corpus", help="Inspect and prepare prompt corpora.")
     corpus_sub = corpus.add_subparsers(dest="corpus_command", required=True)
@@ -393,6 +416,41 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(format_benchmark_compare_markdown(report), end="")
             return 0
+
+        if args.command == "sidecar":
+            if args.sidecar_command == "translate":
+                text = _read_text_argument(args.text, args.text_file, "sidecar text")
+                if args.dry_run:
+                    report = build_sidecar_request(
+                        text,
+                        mode=args.mode,
+                        model=args.model,
+                        endpoint=args.endpoint,
+                    )
+                    output = (
+                        json.dumps(report, indent=2) + "\n"
+                        if args.json
+                        else format_sidecar_request_markdown(report)
+                    )
+                else:
+                    report = translate_with_ollama(
+                        text,
+                        mode=args.mode,
+                        model=args.model,
+                        endpoint=args.endpoint,
+                        counter=args.counter,
+                        timeout_seconds=args.timeout,
+                    )
+                    output = (
+                        json.dumps(report, indent=2) + "\n"
+                        if args.json
+                        else format_sidecar_translation_markdown(report)
+                    )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0
 
         if args.command == "corpus":
             if args.corpus_command == "stats":
@@ -815,6 +873,18 @@ def _read_required_text(path: Path | None, label: str) -> str:
     if path is None:
         raise ValueError(f"{label} must be provided with --{label} or --{label}-file")
     return path.read_text(encoding="utf-8-sig")
+
+
+def _read_text_argument(parts: list[str], path: Path | None, label: str) -> str:
+    if parts and path is not None:
+        raise ValueError(f"{label} must be provided as inline text or --text-file, not both")
+    if path is not None:
+        text = path.read_text(encoding="utf-8-sig")
+    else:
+        text = " ".join(parts)
+    if not text.strip():
+        raise ValueError(f"{label} must not be empty")
+    return text
 
 
 def _read_capture_stdin(args: argparse.Namespace) -> tuple[str, str]:
