@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 from urllib.request import Request, urlopen
 
@@ -168,6 +169,113 @@ def roundtrip_with_ollama(
     }
 
 
+def evaluate_sidecar_turns(
+    records: list[dict[str, Any]],
+    *,
+    source: str,
+    part: str = "both",
+    limit: int = 0,
+    model: str = DEFAULT_OLLAMA_MODEL,
+    endpoint: str = DEFAULT_OLLAMA_ENDPOINT,
+    counter: str = "heuristic",
+    timeout_seconds: float = 60.0,
+    example_limit: int = 5,
+) -> dict[str, Any]:
+    """Run sidecar round-trip evaluation over prompt/reply turn records."""
+
+    started = time.time()
+    if part not in {"prompt", "reply", "both"}:
+        raise ValueError("sidecar evaluation mode must be one of: prompt, reply, both")
+    if limit < 0:
+        raise ValueError("sidecar evaluation limit must be zero or greater")
+
+    rows: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    attempted = 0
+
+    for index, record in enumerate(records, start=1):
+        for side, text in _sidecar_turn_items(record, part):
+            if limit and attempted >= limit:
+                break
+            attempted += 1
+            item_id = record.get("id") or f"turn-{index:04d}"
+            try:
+                result = roundtrip_with_ollama(
+                    text,
+                    mode=side,
+                    model=model,
+                    endpoint=endpoint,
+                    counter=counter,
+                    timeout_seconds=timeout_seconds,
+                )
+            except Exception as exc:
+                failures.append(
+                    {
+                        "index": index,
+                        "id": item_id,
+                        "side": side,
+                        "error": str(exc),
+                        "original_preview": _preview(text),
+                    }
+                )
+                continue
+
+            summary = result.get("summary", {})
+            rows.append(
+                {
+                    "index": index,
+                    "id": item_id,
+                    "side": side,
+                    "status": result.get("status"),
+                    "original_tokens": int(summary.get("original_tokens", 0)),
+                    "semantic_tokens": int(summary.get("semantic_tokens", 0)),
+                    "saved_tokens": int(summary.get("saved_tokens", 0)),
+                    "saved_pct": float(summary.get("saved_pct", 0.0)),
+                    "warning_count": len(result.get("warnings", [])),
+                    "warnings": result.get("warnings", []),
+                    "original_preview": _preview(result.get("original_text", text)),
+                    "decoded_preview": _preview(result.get("decoded_text", "")),
+                    "semantic": result.get("semantic", {}),
+                }
+            )
+        if limit and attempted >= limit:
+            break
+
+    summary = _sidecar_evaluation_summary(
+        records=records,
+        rows=rows,
+        failures=failures,
+        attempted=attempted,
+        elapsed_seconds=time.time() - started,
+    )
+    status = (
+        "empty"
+        if attempted == 0
+        else "fail"
+        if failures and not rows
+        else "warn"
+        if failures or summary["warning_count"]
+        else "pass"
+    )
+    return {
+        "schema_version": "tokensquash.sidecar.evaluate.v1",
+        "status": status,
+        "backend": "ollama",
+        "model": model,
+        "endpoint": endpoint.rstrip("/"),
+        "counter": counter,
+        "source": source,
+        "mode": part,
+        "limit": limit,
+        "summary": summary,
+        "best_examples": _rank_sidecar_examples(rows, reverse=True, limit=example_limit),
+        "worst_examples": _rank_sidecar_examples(rows, reverse=False, limit=example_limit),
+        "warning_examples": [row for row in rows if row.get("warnings")][:example_limit],
+        "failures": failures,
+        "rows": rows,
+    }
+
+
 def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
@@ -281,6 +389,45 @@ def format_sidecar_roundtrip_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_sidecar_evaluation_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Sidecar Evaluation",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Mode: `{report.get('mode')}`",
+        f"- Model: `{report.get('model')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Evaluated items: `{summary.get('item_count', 0)}`",
+        f"- Failures: `{summary.get('failure_count', 0)}`",
+        f"- Warnings: `{summary.get('warning_count', 0)}`",
+        f"- Original tokens: `{summary.get('original_tokens', 0)}`",
+        f"- Semantic tokens: `{summary.get('semantic_tokens', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        "",
+        "## Outcomes",
+        "",
+        f"- Wins: `{summary.get('win_items', 0)}`",
+        f"- Losses: `{summary.get('loss_items', 0)}`",
+        f"- Ties: `{summary.get('tie_items', 0)}`",
+        f"- Prompt items: `{summary.get('prompt_items', 0)}`",
+        f"- Reply items: `{summary.get('reply_items', 0)}`",
+        "",
+    ]
+    outputs = report.get("outputs", {})
+    if outputs:
+        lines.extend(["## Outputs", ""])
+        for key, path in sorted(outputs.items()):
+            lines.append(f"- {key}: `{path}`")
+        lines.append("")
+    _append_sidecar_example_table(lines, "Best Examples", report.get("best_examples", []))
+    _append_sidecar_example_table(lines, "Worst Examples", report.get("worst_examples", []))
+    _append_sidecar_failure_table(lines, report.get("failures", []))
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_sidecar_request_markdown(report: dict[str, Any]) -> str:
     payload = report.get("payload", {})
     lines = [
@@ -329,6 +476,102 @@ def format_sidecar_translation_markdown(report: dict[str, Any]) -> str:
 def _validate_mode(mode: str) -> None:
     if mode not in VALID_MODES:
         raise ValueError(f"sidecar mode must be one of: {', '.join(VALID_MODES)}")
+
+
+def _sidecar_turn_items(record: dict[str, Any], part: str) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    if part in {"prompt", "both"}:
+        prompt = str(record.get("prompt", "")).strip()
+        if prompt:
+            items.append(("prompt", prompt))
+    if part in {"reply", "both"}:
+        reply = str(record.get("reply_text") or record.get("reply") or "").strip()
+        if reply:
+            items.append(("reply", reply))
+    return items
+
+
+def _sidecar_evaluation_summary(
+    *,
+    records: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+    attempted: int,
+    elapsed_seconds: float,
+) -> dict[str, Any]:
+    original_tokens = sum(int(row["original_tokens"]) for row in rows)
+    semantic_tokens = sum(int(row["semantic_tokens"]) for row in rows)
+    saved_tokens = sum(int(row["saved_tokens"]) for row in rows)
+    return {
+        "turn_count": len(records),
+        "attempted_items": attempted,
+        "item_count": len(rows),
+        "success_count": len(rows),
+        "failure_count": len(failures),
+        "warning_count": sum(int(row.get("warning_count", 0)) for row in rows),
+        "original_tokens": original_tokens,
+        "semantic_tokens": semantic_tokens,
+        "saved_tokens": saved_tokens,
+        "saved_pct": _pct(saved_tokens, original_tokens),
+        "win_items": sum(1 for row in rows if int(row["saved_tokens"]) > 0),
+        "loss_items": sum(1 for row in rows if int(row["saved_tokens"]) < 0),
+        "tie_items": sum(1 for row in rows if int(row["saved_tokens"]) == 0),
+        "prompt_items": sum(1 for row in rows if row.get("side") == "prompt"),
+        "reply_items": sum(1 for row in rows if row.get("side") == "reply"),
+        "elapsed_seconds": round(elapsed_seconds, 4),
+    }
+
+
+def _rank_sidecar_examples(rows: list[dict[str, Any]], *, reverse: bool, limit: int) -> list[dict[str, Any]]:
+    ranked = sorted(rows, key=lambda row: (int(row.get("saved_tokens", 0)), str(row.get("id"))), reverse=reverse)
+    return ranked[:limit]
+
+
+def _append_sidecar_example_table(lines: list[str], title: str, rows: list[dict[str, Any]]) -> None:
+    lines.extend([f"## {title}", ""])
+    if not rows:
+        lines.extend(["No rows.", ""])
+        return
+    lines.extend(["| ID | Side | Saved | Original | Semantic | Preview |", "|---|---|---:|---:|---:|---|"])
+    for row in rows:
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(row.get('id')))} | "
+            f"{row.get('side')} | "
+            f"{row.get('saved_tokens')} ({row.get('saved_pct')}%) | "
+            f"{row.get('original_tokens')} | "
+            f"{row.get('semantic_tokens')} | "
+            f"{_markdown_cell(str(row.get('original_preview', '')))} |"
+        )
+    lines.append("")
+
+
+def _append_sidecar_failure_table(lines: list[str], failures: list[dict[str, Any]]) -> None:
+    lines.extend(["## Failures", ""])
+    if not failures:
+        lines.extend(["No failures.", ""])
+        return
+    lines.extend(["| ID | Side | Error | Preview |", "|---|---|---|---|"])
+    for row in failures[:10]:
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(row.get('id')))} | "
+            f"{row.get('side')} | "
+            f"{_markdown_cell(str(row.get('error', '')))} | "
+            f"{_markdown_cell(str(row.get('original_preview', '')))} |"
+        )
+    lines.append("")
+
+
+def _markdown_cell(text: str) -> str:
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _preview(text: Any, limit: int = 140) -> str:
+    clean = " ".join(str(text).split())
+    if len(clean) <= limit:
+        return clean
+    return clean[: limit - 3].rstrip() + "..."
 
 
 def _coerce_semantic_text(

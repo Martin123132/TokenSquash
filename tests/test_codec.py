@@ -22,7 +22,7 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
-from tokensquash.sidecar import decode_semantic, parse_semantic_json, translate_with_ollama
+from tokensquash.sidecar import decode_semantic, evaluate_sidecar_turns, parse_semantic_json, translate_with_ollama
 from tokensquash.turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
@@ -584,6 +584,127 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("Saved percent", output)
         self.assertIn("Done: fixed login.", output)
         self.assertIn("Files: src/auth.py.", output)
+
+    def test_sidecar_evaluate_turns_reports_batch_summary(self) -> None:
+        class FakeResponse:
+            def __init__(self, semantic):
+                self.semantic = semantic
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps({"response": json.dumps(self.semantic)}).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            body = request.data.decode("utf-8")
+            if '\\"kind\\":\\"prompt\\"' in body:
+                semantic = {
+                    "kind": "prompt",
+                    "op": "fix",
+                    "query": "login bug",
+                    "paths": ["src/auth.py"],
+                    "constraints": [],
+                    "verify": ["tests"],
+                    "returns": ["summary"],
+                }
+            else:
+                semantic = {
+                    "kind": "reply",
+                    "status": "done",
+                    "summary": "fixed login",
+                    "files": ["src/auth.py"],
+                    "verification": ["tests pass"],
+                    "commands": [],
+                    "risks": [],
+                    "next_steps": [],
+                }
+            return FakeResponse(semantic)
+
+        records = [
+            {
+                "id": "turn-1",
+                "prompt": "fix the login bug in src/auth.py and run tests",
+                "reply_text": "Done. I fixed login in src/auth.py and tests pass.",
+            }
+        ]
+        with patch("tokensquash.sidecar.urlopen", side_effect=fake_urlopen):
+            report = evaluate_sidecar_turns(records, source="memory", part="both", counter="chars")
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.evaluate.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["summary"]["turn_count"], 1)
+        self.assertEqual(report["summary"]["item_count"], 2)
+        self.assertEqual(report["summary"]["prompt_items"], 1)
+        self.assertEqual(report["summary"]["reply_items"], 1)
+        self.assertIn("best_examples", report)
+        self.assertIn("worst_examples", report)
+
+    def test_sidecar_evaluate_cli_writes_report_pack(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "kind": "reply",
+                                "status": "done",
+                                "summary": "fixed login",
+                                "files": ["src/auth.py"],
+                                "verification": ["tests pass"],
+                                "commands": [],
+                                "risks": [],
+                                "next_steps": [],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "turns.jsonl"
+            out_dir = Path(tmp) / "sidecar-eval"
+            corpus.write_text(
+                '{"id":"turn-1","prompt":"fix login","reply":"Done. I fixed login in src/auth.py."}\n',
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+                with redirect_stdout(stdout):
+                    code = cli_main(
+                        [
+                            "sidecar",
+                            "evaluate",
+                            str(corpus),
+                            "--mode",
+                            "reply",
+                            "--limit",
+                            "1",
+                            "--out-dir",
+                            str(out_dir),
+                            "--counter",
+                            "chars",
+                            "--json",
+                        ]
+                    )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.sidecar.evaluate.v1")
+            self.assertEqual(payload["summary"]["item_count"], 1)
+            self.assertEqual(payload["summary"]["reply_items"], 1)
+            self.assertTrue((out_dir / "evaluation.json").exists())
+            self.assertTrue((out_dir / "rows.jsonl").exists())
+            self.assertIn("outputs", payload)
 
     def test_reply_wire_round_trip(self) -> None:
         reply = encode_reply(

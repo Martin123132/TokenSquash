@@ -31,7 +31,9 @@ from .sidecar import (
     DEFAULT_OLLAMA_MODEL,
     build_sidecar_request,
     decode_semantic,
+    evaluate_sidecar_turns,
     format_sidecar_decode_markdown,
+    format_sidecar_evaluation_markdown,
     format_sidecar_request_markdown,
     format_sidecar_translation_markdown,
     format_sidecar_roundtrip_markdown,
@@ -140,6 +142,31 @@ def main(argv: list[str] | None = None) -> int:
     sidecar_roundtrip.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
     sidecar_roundtrip.add_argument("--out", type=Path, help="Write sidecar output to this file.")
     sidecar_roundtrip.add_argument("--json", action="store_true", help="Print sidecar JSON.")
+
+    sidecar_evaluate = sidecar_sub.add_parser(
+        "evaluate",
+        help="Run sidecar round-trip evaluation over a turn corpus.",
+    )
+    sidecar_evaluate.add_argument(
+        "corpus",
+        nargs="?",
+        type=Path,
+        default=Path("private-turns/real.redacted-turns.jsonl"),
+        help="Redacted turn corpus to evaluate.",
+    )
+    sidecar_evaluate.add_argument(
+        "--mode",
+        choices=("prompt", "reply", "both"),
+        default="both",
+        help="Evaluate prompts, replies, or both.",
+    )
+    sidecar_evaluate.add_argument("--limit", type=int, default=0, help="Maximum prompt/reply items to evaluate; 0 means all.")
+    sidecar_evaluate.add_argument("--model", default=DEFAULT_OLLAMA_MODEL, help="Ollama model name.")
+    sidecar_evaluate.add_argument("--endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    sidecar_evaluate.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    sidecar_evaluate.add_argument("--timeout", type=float, default=60.0, help="Ollama request timeout in seconds.")
+    sidecar_evaluate.add_argument("--out-dir", type=Path, help="Write sidecar evaluation JSON files to this directory.")
+    sidecar_evaluate.add_argument("--json", action="store_true", help="Print sidecar evaluation JSON.")
 
     corpus = sub.add_parser("corpus", help="Inspect and prepare prompt corpora.")
     corpus_sub = corpus.add_subparsers(dest="corpus_command", required=True)
@@ -499,6 +526,23 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0
+            if args.sidecar_command == "evaluate":
+                records = load_turn_records(args.corpus)
+                report = evaluate_sidecar_turns(
+                    records,
+                    source=str(args.corpus),
+                    part=args.mode,
+                    limit=args.limit,
+                    model=args.model,
+                    endpoint=args.endpoint,
+                    counter=args.counter,
+                    timeout_seconds=args.timeout,
+                )
+                if args.out_dir:
+                    _write_sidecar_evaluation_outputs(args.out_dir, report)
+                output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_evaluation_markdown(report)
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn", "empty"} else 1
 
         if args.command == "corpus":
             if args.corpus_command == "stats":
@@ -945,6 +989,21 @@ def _read_json_argument(parts: list[str], path: Path | None, label: str) -> str:
     if not text.strip():
         raise ValueError(f"{label} must not be empty")
     return text
+
+
+def _write_sidecar_evaluation_outputs(out_dir: Path, report: dict) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    evaluation_path = out_dir / "evaluation.json"
+    rows_path = out_dir / "rows.jsonl"
+    report.setdefault("outputs", {})
+    report["outputs"]["evaluation"] = str(evaluation_path)
+    report["outputs"]["rows"] = str(rows_path)
+    rows = report.get("rows", [])
+    rows_path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=True, separators=(",", ":")) for row in rows) + ("\n" if rows else ""),
+        encoding="utf-8",
+    )
+    evaluation_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def _read_capture_stdin(args: argparse.Namespace) -> tuple[str, str]:
