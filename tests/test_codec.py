@@ -373,6 +373,22 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(parsed.files, ("packages/mobile/src/screens/login.tsx",))
         self.assertEqual(parsed.to_wire(aliases=aliases), wire)
 
+    def test_reply_supports_session_field_aliases(self) -> None:
+        aliases = AliasTable({}, {"commands": {"npm test": "c0"}, "risks": {"staging database not seeded": "r0"}})
+        reply = encode_reply(
+            "checked checkout",
+            commands=["npm test"],
+            risks=["staging database not seeded"],
+        )
+
+        wire = reply.to_wire(aliases=aliases)
+        parsed = parse_reply_wire(wire, aliases=aliases)
+
+        self.assertIn("c=c0", wire)
+        self.assertIn("r=r0", wire)
+        self.assertEqual(parsed.commands, ("npm test",))
+        self.assertEqual(parsed.risks, ("staging database not seeded",))
+
     def test_reply_benchmark_uses_session_aliases(self) -> None:
         records = [
             {
@@ -418,6 +434,33 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(prefix.startswith("apps/customer-portal/src/"))
         self.assertEqual(report["summary"]["selected_path_prefix_count"], 1)
         self.assertTrue(aliases.encode_path("apps/customer-portal/src/screens/login.tsx").startswith("@0/"))
+
+    def test_learn_reply_aliases_selects_repeated_field_values(self) -> None:
+        records = [
+            {
+                "id": "a",
+                "summary": "checked search",
+                "commands": ["npm test"],
+                "risks": ["staging database not seeded"],
+                "text": "Done. I checked search and ran npm test.",
+            },
+            {
+                "id": "b",
+                "summary": "checked checkout",
+                "commands": ["npm test"],
+                "risks": ["staging database not seeded"],
+                "text": "Done. I checked checkout and ran npm test.",
+            },
+        ]
+
+        report = learn_reply_aliases(records, counter="chars", min_count=2, max_field_values=2, max_path_prefixes=0)
+        aliases = AliasTable.from_dict(report)
+
+        selected = {(item["field"], item["value"]): item for item in report["selected_field_values"]}
+        self.assertIn(("commands", "npm test"), selected)
+        self.assertIn(("risks", "staging database not seeded"), selected)
+        self.assertEqual(aliases.field_code_for_value("commands", "npm test"), selected[("commands", "npm test")]["code"])
+        self.assertEqual(aliases.field_value_for_code("risks", selected[("risks", "staging database not seeded")]["code"]), "staging database not seeded")
 
     def test_learn_reply_aliases_preserves_base_aliases(self) -> None:
         records = [
@@ -702,6 +745,28 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertGreaterEqual(report["summary"]["break_even_corpora"], 1)
             self.assertIn("baseline", report)
             self.assertIn("aliased", report)
+
+    def test_turn_alias_impact_reports_field_alias_delta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            path.write_text(
+                '{"id":"a","prompt":"check search","reply":"Done. I ran `npm run integration -- --project customer-portal`. Risk: staging database not seeded."}\n'
+                '{"id":"b","prompt":"check checkout","reply":"Done. I ran `npm run integration -- --project customer-portal`. Risk: staging database not seeded."}\n',
+                encoding="utf-8",
+            )
+
+            report = benchmark_turn_alias_impact(
+                path,
+                counter="chars",
+                target_savings_pct=0.0,
+                max_path_prefixes=0,
+                max_field_values=2,
+            )
+
+            self.assertEqual(report["status"], "improved")
+            self.assertEqual(report["summary"]["selected_path_prefix_count"], 0)
+            self.assertGreaterEqual(report["summary"]["selected_field_value_count"], 1)
+            self.assertGreater(report["summary"]["saved_tokens_delta"], 0)
 
     def test_turn_alias_impact_has_no_setup_cost_without_new_aliases(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

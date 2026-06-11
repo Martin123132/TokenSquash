@@ -282,13 +282,21 @@ def _split_field_values(name: str, values: Iterable[str], aliases: AliasTable) -
 def _encode_field_value(name: str, value: str, aliases: AliasTable) -> str:
     if name == "files":
         return _encode_path_alias(value, aliases)
-    return FIELD_VALUE_CODES.get(name, {}).get(value.lower().strip(" .;:"), value)
+    builtin = FIELD_VALUE_CODES.get(name, {}).get(value.lower().strip(" .;:"))
+    if builtin:
+        return builtin
+    alias = aliases.field_code_for_value(name, value)
+    return alias or value
 
 
 def _decode_field_value(name: str, value: str, aliases: AliasTable) -> str:
     if name == "files":
         return _decode_path_alias(value, aliases)
-    return FIELD_VALUE_NAMES.get(name, {}).get(value, value)
+    builtin = FIELD_VALUE_NAMES.get(name, {}).get(value)
+    if builtin:
+        return builtin
+    alias = aliases.field_value_for_code(name, value)
+    return alias or value
 
 
 def _encode_path_alias(value: str, aliases: AliasTable) -> str:

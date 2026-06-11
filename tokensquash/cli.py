@@ -178,7 +178,8 @@ def main(argv: list[str] | None = None) -> int:
     turns_aliases.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     turns_aliases.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
     turns_aliases.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
-    turns_aliases.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per prefix.")
+    turns_aliases.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to select.")
+    turns_aliases.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per alias.")
     turns_aliases.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
     turns_aliases.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
     turns_aliases.add_argument("--out", type=Path, help="Write learned alias JSON to this file.")
@@ -192,7 +193,8 @@ def main(argv: list[str] | None = None) -> int:
     turns_alias_impact.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
     turns_alias_impact.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
     turns_alias_impact.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
-    turns_alias_impact.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per prefix.")
+    turns_alias_impact.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to select.")
+    turns_alias_impact.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per alias.")
     turns_alias_impact.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
     turns_alias_impact.add_argument("--out", type=Path, help="Write alias impact report to this file.")
     turns_alias_impact.add_argument("--json", action="store_true", help="Print alias impact JSON.")
@@ -239,7 +241,8 @@ def main(argv: list[str] | None = None) -> int:
     reply_aliases.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
     reply_aliases.add_argument("--min-count", type=int, default=2, help="Minimum prefix occurrences before selection.")
     reply_aliases.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
-    reply_aliases.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per prefix.")
+    reply_aliases.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to select.")
+    reply_aliases.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per alias.")
     reply_aliases.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
     reply_aliases.add_argument("--out", type=Path, help="Write learned alias JSON to this file.")
     reply_aliases.add_argument("--json", action="store_true", help="Print learned alias JSON.")
@@ -456,6 +459,7 @@ def main(argv: list[str] | None = None) -> int:
                     counter=args.counter,
                     min_count=args.min_count,
                     max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
                     min_saved_tokens=args.min_saved_tokens,
                     guess_reply_fields=not args.no_guess,
                     base_aliases=_load_optional_aliases(args.base_aliases),
@@ -478,6 +482,7 @@ def main(argv: list[str] | None = None) -> int:
                     guess_reply_fields=not args.no_guess,
                     min_count=args.min_count,
                     max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
                     min_saved_tokens=args.min_saved_tokens,
                     base_aliases=_load_optional_aliases(args.base_aliases),
                 )
@@ -565,6 +570,7 @@ def main(argv: list[str] | None = None) -> int:
                     counter=args.counter,
                     min_count=args.min_count,
                     max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
                     min_saved_tokens=args.min_saved_tokens,
                     base_aliases=_load_optional_aliases(args.base_aliases),
                     source=str(args.corpus),

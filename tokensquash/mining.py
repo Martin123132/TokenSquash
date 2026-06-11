@@ -39,7 +39,7 @@ def mine_reply_patterns(
     field_occurrences = _collect_field_occurrences(rows, alias_table)
     path_occurrences = _collect_path_occurrences(rows, alias_table)
     field_candidates = [
-        _field_candidate(field, value, occurrences, counter)
+        _field_candidate(field, value, occurrences, counter, alias_table)
         for (field, value), occurrences in field_occurrences.items()
         if len(occurrences) >= min_count
     ]
@@ -147,10 +147,12 @@ def _field_candidate(
     value: str,
     occurrences: list[dict[str, Any]],
     counter: str,
+    aliases: AliasTable,
 ) -> dict[str, Any]:
-    existing_code = _existing_field_code(field, value)
+    existing_code = _existing_field_code(field, value, aliases)
     suggested_code = existing_code or _suggest_code(field, value, len(occurrences))
-    gross_saved = _estimated_saved_tokens(value, suggested_code, len(occurrences), counter)
+    encoded_value = existing_code or value
+    gross_saved = _estimated_saved_tokens(encoded_value, suggested_code, len(occurrences), counter)
     return {
         "kind": "field_value",
         "field": field,
@@ -159,7 +161,7 @@ def _field_candidate(
         "existing_code": existing_code,
         "suggested_code": suggested_code,
         "already_coded": existing_code is not None,
-        "value_tokens": count_tokens(_wire_value(value), counter),
+        "value_tokens": count_tokens(_wire_value(encoded_value), counter),
         "code_tokens": count_tokens(suggested_code, counter),
         "gross_saved_tokens": gross_saved,
         "estimated_new_saved_tokens": 0 if existing_code else max(0, gross_saved),
@@ -212,8 +214,8 @@ def _group_candidates_by_field(candidates: list[dict[str, Any]], limit: int) -> 
     return grouped
 
 
-def _existing_field_code(field: str, value: str) -> str | None:
-    return FIELD_VALUE_CODES.get(field, {}).get(value.lower().strip(" .;:"))
+def _existing_field_code(field: str, value: str, aliases: AliasTable) -> str | None:
+    return FIELD_VALUE_CODES.get(field, {}).get(value.lower().strip(" .;:")) or aliases.field_code_for_value(field, value)
 
 
 def _suggest_code(field: str, value: str, count: int) -> str:

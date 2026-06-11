@@ -541,6 +541,7 @@ def learn_turn_aliases(
     counter: str = "heuristic",
     min_count: int = 2,
     max_path_prefixes: int = 8,
+    max_field_values: int = 8,
     min_saved_tokens: int = 1,
     guess_reply_fields: bool = True,
     base_aliases: AliasTable | dict[str, Any] | None = None,
@@ -557,19 +558,24 @@ def learn_turn_aliases(
             "counter": counter,
             "min_count": max(1, int(min_count)),
             "max_path_prefixes": max(0, int(max_path_prefixes)),
+            "max_field_values": max(0, int(max_field_values)),
             "min_saved_tokens": max(0, int(min_saved_tokens)),
             "include_builtins": True,
             "path_prefixes": {},
+            "field_values": {},
             "summary": {
                 "turn_count": validation.get("summary", {}).get("turn_count", 0),
                 "record_count": 0,
                 "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
                 "path_count": 0,
+                "field_value_count": 0,
                 "candidate_prefix_count": 0,
                 "selected_path_prefix_count": 0,
+                "selected_field_value_count": 0,
                 "estimated_saved_tokens": 0,
             },
             "selected_path_prefixes": [],
+            "selected_field_values": [],
             "validation": validation,
         }
 
@@ -580,6 +586,7 @@ def learn_turn_aliases(
         counter=counter,
         min_count=min_count,
         max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
         min_saved_tokens=min_saved_tokens,
         base_aliases=base_aliases,
         source=str(Path(path)),
@@ -605,6 +612,7 @@ def benchmark_turn_alias_impact(
     guess_reply_fields: bool = True,
     min_count: int = 2,
     max_path_prefixes: int = 8,
+    max_field_values: int = 8,
     min_saved_tokens: int = 1,
     base_aliases: AliasTable | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -625,6 +633,7 @@ def benchmark_turn_alias_impact(
                 "turn_count": validation.get("summary", {}).get("turn_count", 0),
                 "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
                 "selected_path_prefix_count": 0,
+                "selected_field_value_count": 0,
                 "saved_tokens_delta": 0,
                 "saved_pct_delta": 0.0,
                 "alias_setup_tokens": 0,
@@ -654,6 +663,7 @@ def benchmark_turn_alias_impact(
         counter=counter,
         min_count=min_count,
         max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
         min_saved_tokens=min_saved_tokens,
         guess_reply_fields=guess_reply_fields,
         base_aliases=base_aliases,
@@ -689,6 +699,7 @@ def benchmark_turn_alias_impact(
             "turn_count": len(records),
             "privacy_finding_count": validation.get("summary", {}).get("privacy_finding_count", 0),
             "selected_path_prefix_count": alias_summary.get("selected_path_prefix_count", 0),
+            "selected_field_value_count": alias_summary.get("selected_field_value_count", 0),
             "baseline_saved_pct": baseline_summary.get("saved_pct", 0.0),
             "aliased_saved_pct": aliased_summary.get("saved_pct", 0.0),
             "saved_tokens_delta": saved_tokens_delta,
@@ -792,6 +803,7 @@ def format_turn_alias_impact_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     alias_report = report.get("alias_report") or {}
     selected = list(alias_report.get("selected_path_prefixes", []) or [])
+    selected_fields = list(alias_report.get("selected_field_values", []) or [])
     break_even = summary.get("break_even_corpora")
     break_even_text = "n/a" if break_even is None else str(break_even)
     lines = [
@@ -802,7 +814,8 @@ def format_turn_alias_impact_markdown(report: dict[str, Any]) -> str:
         f"- Counter: `{report.get('counter')}`",
         f"- Adaptive: `{report.get('adaptive')}`",
         f"- Turns: `{summary.get('turn_count', 0)}`",
-        f"- Selected custom aliases: `{summary.get('selected_path_prefix_count', 0)}`",
+        f"- Selected path aliases: `{summary.get('selected_path_prefix_count', 0)}`",
+        f"- Selected field aliases: `{summary.get('selected_field_value_count', 0)}`",
         f"- Baseline saved percent: `{summary.get('baseline_saved_pct', 0.0)}%`",
         f"- Aliased saved percent: `{summary.get('aliased_saved_pct', 0.0)}%`",
         f"- Saved token delta: `{summary.get('saved_tokens_delta', 0)}`",
@@ -832,6 +845,25 @@ def format_turn_alias_impact_markdown(report: dict[str, Any]) -> str:
                 f"{_markdown_cell(str(item.get('prefix')))} | "
                 f"{item.get('count')} | "
                 f"{item.get('estimated_saved_tokens')} |"
+            )
+        lines.append("")
+    lines.extend(["## Selected Field Values", ""])
+    if not selected_fields:
+        lines.extend(["No custom field values selected.", ""])
+    else:
+        lines.extend(
+            [
+                "| Field | Code | Count | Est saved | Value |",
+                "|---|---|---:|---:|---|",
+            ]
+        )
+        for item in selected_fields:
+            lines.append(
+                f"| {_markdown_cell(str(item.get('field')))} | "
+                f"`{_markdown_cell(str(item.get('code')))}` | "
+                f"{item.get('count')} | "
+                f"{item.get('estimated_saved_tokens')} | "
+                f"{_markdown_cell(str(item.get('value')))} |"
             )
         lines.append("")
     if report.get("validation", {}).get("status") == "warn":
@@ -1423,14 +1455,23 @@ def _alias_impact_delta(
 
 def _alias_setup_tokens(alias_report: dict[str, Any], counter: str) -> int:
     selected = alias_report.get("selected_path_prefixes", []) or []
+    selected_fields = alias_report.get("selected_field_values", []) or []
     path_prefixes = {
         str(item.get("prefix")): str(item.get("code"))
         for item in selected
         if item.get("prefix") and item.get("code")
     }
-    if not path_prefixes:
+    field_values: dict[str, dict[str, str]] = {}
+    for item in selected_fields:
+        field_name = item.get("field")
+        value = item.get("value")
+        code = item.get("code")
+        if field_name and value and code:
+            field_values.setdefault(str(field_name), {})
+            field_values[str(field_name)][str(value)] = str(code)
+    if not path_prefixes and not field_values:
         return 0
-    payload = json.dumps(AliasTable(path_prefixes).to_dict(), ensure_ascii=True, separators=(",", ":"))
+    payload = json.dumps(AliasTable(path_prefixes, field_values).to_dict(), ensure_ascii=True, separators=(",", ":"))
     return count_tokens(payload, counter)
 
 

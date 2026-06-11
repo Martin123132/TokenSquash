@@ -79,16 +79,18 @@ Common file prefixes are aliased inside `f=`, including `@t/` for
 risks, next steps, warnings, and path patterns that may deserve the next compact
 code.
 
-Session alias tables let the sidecar learn project-specific file prefixes
-without changing the `tr1` spec for everyone. A table is shared out-of-band by
-the translator and the agent, then passed with `--aliases`:
+Session alias tables let the sidecar learn project-specific file prefixes and
+repeated reply field values without changing the `tr1` spec for everyone. A
+table is shared out-of-band by the translator and the agent, then passed with
+`--aliases`:
 
 ```json
-{"schema_version":"tokensquash.aliases.v1","path_prefixes":{"packages/mobile/src/":"@0/"}}
+{"schema_version":"tokensquash.aliases.v1","path_prefixes":{"packages/mobile/src/":"@0/"},"field_values":{"commands":{"npm test":"c0"}}}
 ```
 
-Learned aliases can reveal private repository paths. Keep real alias tables
-under `aliases/` or `private-aliases/`; both are ignored by Git.
+Learned aliases can reveal private repository paths, commands, and workflow
+details. Keep real alias tables under `aliases/` or `private-aliases/`; both are
+ignored by Git.
 
 ## Benchmark
 
@@ -187,11 +189,11 @@ python -m tokensquash turns bench private-turns\real.redacted-turns.jsonl --alia
 savings plus prompt-side and reply-side savings. `turns diagnose` shows the
 largest wins, raw wire losses, and adaptive pass-through rows so the next codec
 change has a target. `turns mine` reports repeated reply field values and path
-patterns with estimated token impact. `turns aliases` learns a session path
-dictionary from reply-side files. `turns alias-impact` learns aliases and
-compares turn benchmarks with and without them, including alias setup tokens and
-break-even corpus count. `turns bench` returns the full benchmark payload for
-saving as JSON.
+patterns with estimated token impact. `turns aliases` learns a session
+dictionary from reply-side files, commands, risks, next steps, and warnings.
+`turns alias-impact` learns aliases and compares turn benchmarks with and
+without them, including alias setup tokens and break-even corpus count. `turns
+bench` returns the full benchmark payload for saving as JSON.
 For a first measurement run, add `--target 0` if you want the command to exit
 successfully even when the corpus does not beat the default `0.5%` target.
 When a raw reply has no structured fields, TokenSquash guesses a starter `tr1`
@@ -211,7 +213,7 @@ python -m unittest discover -s tests
 - Compact coding-agent reply format: `tr1`.
 - Common reply field-code shortcuts for repeated verification, command, and risk values.
 - Built-in reply file-prefix aliases for common project paths.
-- Configurable session alias tables for project-specific reply file prefixes.
+- Configurable session alias tables for project-specific reply file prefixes and repeated field values.
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
