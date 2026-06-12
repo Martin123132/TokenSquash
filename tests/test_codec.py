@@ -500,6 +500,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.readiness.verify.v1", schemas)
         self.assertIn("tokensquash.release_info.v1", schemas)
         self.assertIn("tokensquash.release_candidate.v1", schemas)
+        self.assertIn("tokensquash.release_candidate.artifacts.v1", schemas)
         self.assertIn("tokensquash.release_candidate.verify.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
@@ -784,9 +785,19 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(steps["wheel_build"]["status"], "pass")
             self.assertTrue((out_dir / "release-candidate.json").exists())
             self.assertTrue((out_dir / "release-candidate.md").exists())
+            self.assertTrue((out_dir / "artifact-manifest.json").exists())
+            self.assertTrue((out_dir / "artifact-manifest.md").exists())
             self.assertTrue((out_dir / "release-info.json").exists())
             self.assertTrue((out_dir / "readiness" / "readiness.json").exists())
             self.assertTrue((out_dir / "readiness-verify.json").exists())
+            manifest = json.loads((out_dir / "artifact-manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(manifest["schema_version"], "tokensquash.release_candidate.artifacts.v1")
+            self.assertEqual(manifest["status"], "pass")
+            artifact_paths = {artifact["relative_path"] for artifact in manifest["artifacts"]}
+            self.assertIn("release-candidate.json", artifact_paths)
+            self.assertIn("release-info.json", artifact_paths)
+            self.assertIn("wheel/tokensquash-0.0.0-py3-none-any.whl", artifact_paths)
+            self.assertNotIn("artifact-manifest.json", artifact_paths)
             self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
             self.assertTrue(any("--skip-tests" in command for command in report["commands"]))
             self.assertTrue(any("--skip-exact-tokenizer" in command for command in report["commands"]))
@@ -827,6 +838,8 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["schema_version"], "tokensquash.release_candidate.verify.v1")
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["summary"]["release_candidate_status"], "pass")
+            self.assertEqual(report["summary"]["artifact_manifest_status"], "pass")
+            self.assertGreater(report["summary"]["artifact_manifest_artifact_count"], 0)
             self.assertIn(report["summary"]["release_info_status"], {"pass", "warn"})
             self.assertEqual(report["summary"]["nested_readiness_verify_status"], "pass")
             self.assertEqual(report["summary"]["baseline_verify_status"], "partial")
@@ -844,6 +857,20 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "fail")
             failed_names = {check["name"] for check in report["checks"] if check["status"] == "fail"}
             self.assertIn("wheel", failed_names)
+            self.assertIn("artifact_manifest_integrity", failed_names)
+
+    def test_verify_release_candidate_pack_fails_on_tampered_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            (out_dir / "release-info.md").write_text("tampered\n", encoding="utf-8")
+
+            report = verify_release_candidate_pack(out_dir)
+
+            self.assertEqual(report["status"], "fail")
+            failed_names = {check["name"] for check in report["checks"] if check["status"] == "fail"}
+            self.assertIn("artifact_manifest_integrity", failed_names)
 
     def test_verify_release_candidate_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

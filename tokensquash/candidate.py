@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -18,9 +19,11 @@ from .release_info import build_release_info, format_release_info_markdown
 
 
 RELEASE_CANDIDATE_SCHEMA_VERSION = "tokensquash.release_candidate.v1"
+RELEASE_CANDIDATE_ARTIFACTS_SCHEMA_VERSION = "tokensquash.release_candidate.artifacts.v1"
 RELEASE_CANDIDATE_VERIFY_SCHEMA_VERSION = "tokensquash.release_candidate.verify.v1"
 DEFAULT_RELEASE_CANDIDATE_OUT_DIR = Path("private-turns/release-candidate")
 PACKAGED_DEMO_DATA_PATH = "tokensquash/data/sample-turns.jsonl"
+ARTIFACT_MANIFEST_FILENAMES = {"artifact-manifest.json", "artifact-manifest.md"}
 
 
 def run_release_candidate(
@@ -152,6 +155,8 @@ def run_release_candidate(
             "output_dir": str(output_dir),
             "report": str(output_dir / "release-candidate.json"),
             "markdown": str(output_dir / "release-candidate.md"),
+            "artifact_manifest": str(output_dir / "artifact-manifest.json"),
+            "artifact_manifest_markdown": str(output_dir / "artifact-manifest.md"),
             "release_info": str(output_dir / "release-info.json"),
             "release_info_markdown": str(output_dir / "release-info.md"),
             "readiness_dir": str(readiness_dir),
@@ -177,8 +182,16 @@ def write_release_candidate_outputs(target: Path | str, report: dict[str, Any]) 
     report["outputs"]["output_dir"] = str(target_path)
     report["outputs"]["report"] = str(target_path / "release-candidate.json")
     report["outputs"]["markdown"] = str(target_path / "release-candidate.md")
+    report["outputs"]["artifact_manifest"] = str(target_path / "artifact-manifest.json")
+    report["outputs"]["artifact_manifest_markdown"] = str(target_path / "artifact-manifest.md")
     _write_json(target_path / "release-candidate.json", report)
     (target_path / "release-candidate.md").write_text(format_release_candidate_markdown(report), encoding="utf-8")
+    artifact_manifest = build_release_candidate_artifact_manifest(target_path, report)
+    _write_json(target_path / "artifact-manifest.json", artifact_manifest)
+    (target_path / "artifact-manifest.md").write_text(
+        format_release_candidate_artifact_manifest_markdown(artifact_manifest),
+        encoding="utf-8",
+    )
 
 
 def format_release_candidate_markdown(report: dict[str, Any]) -> str:
@@ -215,6 +228,8 @@ def format_release_candidate_markdown(report: dict[str, Any]) -> str:
     for name in (
         "report",
         "markdown",
+        "artifact_manifest",
+        "artifact_manifest_markdown",
         "release_info",
         "readiness",
         "readiness_verify",
@@ -228,6 +243,56 @@ def format_release_candidate_markdown(report: dict[str, Any]) -> str:
     lines.extend(["", "## Commands", ""])
     for command in report.get("commands", []):
         lines.append(f"- `{command}`")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def build_release_candidate_artifact_manifest(candidate_dir: Path | str, report: dict[str, Any]) -> dict[str, Any]:
+    """Build a SHA-256 manifest for the files in a release-candidate pack."""
+
+    root = Path(candidate_dir)
+    files = _candidate_artifact_manifest_expected_files(root, report)
+    artifacts = [_candidate_artifact_manifest_entry(root, path) for path in files]
+    total_bytes = sum(int(item["bytes"]) for item in artifacts)
+    return {
+        "schema_version": RELEASE_CANDIDATE_ARTIFACTS_SCHEMA_VERSION,
+        "status": "pass" if artifacts else "fail",
+        "out_dir": str(root),
+        "algorithm": "sha256",
+        "summary": {
+            "artifact_count": len(artifacts),
+            "total_bytes": total_bytes,
+        },
+        "release_candidate": {
+            "schema_version": report.get("schema_version"),
+            "status": report.get("status"),
+        },
+        "artifacts": artifacts,
+    }
+
+
+def format_release_candidate_artifact_manifest_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Release Candidate Artifact Manifest",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Output dir: `{report.get('out_dir')}`",
+        f"- Algorithm: `{report.get('algorithm')}`",
+        f"- Artifacts: `{summary.get('artifact_count', 0)}`",
+        f"- Total bytes: `{summary.get('total_bytes', 0)}`",
+        "",
+        "## Artifacts",
+        "",
+        "| Artifact | Bytes | SHA-256 |",
+        "|---|---:|---|",
+    ]
+    for artifact in report.get("artifacts", []):
+        lines.append(
+            "| "
+            f"`{_markdown_cell(str(artifact.get('relative_path', '')))}` | "
+            f"{artifact.get('bytes', 0)} | "
+            f"`{artifact.get('sha256')}` |"
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -258,6 +323,38 @@ def verify_release_candidate_pack(
         checks,
         "release_candidate_markdown",
         _resolve_candidate_artifact(candidate_dir, outputs.get("markdown"), Path("release-candidate.md")),
+        required=True,
+    )
+    artifact_manifest, artifact_manifest_check = _verify_candidate_json_artifact(
+        "artifact_manifest",
+        _resolve_candidate_artifact(candidate_dir, outputs.get("artifact_manifest"), Path("artifact-manifest.json")),
+        RELEASE_CANDIDATE_ARTIFACTS_SCHEMA_VERSION,
+        required=True,
+        allowed_statuses={"pass", "warn", "fail"},
+    )
+    checks.append(artifact_manifest_check)
+    _append_status_expectation_check(
+        checks,
+        "artifact_manifest_status",
+        artifact_manifest,
+        required=True,
+        allowed_statuses={"pass"},
+    )
+    _append_candidate_file_check(
+        checks,
+        "artifact_manifest_markdown",
+        _resolve_candidate_artifact(
+            candidate_dir,
+            outputs.get("artifact_manifest_markdown"),
+            Path("artifact-manifest.md"),
+        ),
+        required=True,
+    )
+    _append_candidate_artifact_manifest_integrity_check(
+        checks,
+        candidate_dir,
+        candidate,
+        artifact_manifest,
         required=True,
     )
     release_info, release_info_check = _verify_candidate_json_artifact(
@@ -417,6 +514,13 @@ def verify_release_candidate_pack(
             "release_candidate_pass_required": require_release_candidate_pass,
             "release_candidate_status": candidate.get("status") if candidate else None,
             "release_candidate_step_count": len(candidate.get("steps", [])) if candidate else 0,
+            "artifact_manifest_status": artifact_manifest.get("status") if artifact_manifest else None,
+            "artifact_manifest_artifact_count": (
+                (artifact_manifest.get("summary") or {}).get("artifact_count") if artifact_manifest else None
+            ),
+            "artifact_manifest_total_bytes": (
+                (artifact_manifest.get("summary") or {}).get("total_bytes") if artifact_manifest else None
+            ),
             "release_info_status": release_info.get("status") if release_info else None,
             "release_info_dirty": ((release_info.get("summary") or {}).get("dirty") if release_info else None),
             "release_info_commit": ((release_info.get("git") or {}).get("commit") if release_info else None),
@@ -429,6 +533,7 @@ def verify_release_candidate_pack(
         "checks": checks,
         "artifacts": {
             "release_candidate": _candidate_artifact_reference(candidate),
+            "artifact_manifest": _candidate_artifact_reference(artifact_manifest),
             "release_info": _candidate_artifact_reference(release_info),
             "readiness_verification": _candidate_artifact_reference(readiness_verify_report),
             "stored_readiness_verify": _candidate_artifact_reference(stored_readiness_verify),
@@ -451,6 +556,8 @@ def format_release_candidate_verify_markdown(report: dict[str, Any]) -> str:
         f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
         f"- Release-candidate status: `{summary.get('release_candidate_status')}`",
+        f"- Artifact manifest: `{summary.get('artifact_manifest_status')}`",
+        f"- Artifact count: `{summary.get('artifact_manifest_artifact_count')}`",
         f"- Release info: `{summary.get('release_info_status')}`",
         f"- Git commit: `{summary.get('release_info_commit')}`",
         f"- Git dirty: `{summary.get('release_info_dirty')}`",
@@ -658,6 +765,170 @@ def _wheel_contains(path: Path | None, member: str) -> bool:
             return member in set(archive.namelist())
     except (BadZipFile, OSError):
         return False
+
+
+def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: dict[str, Any]) -> list[Path]:
+    outputs = candidate.get("outputs", {}) if isinstance(candidate, dict) else {}
+    files: dict[str, Path] = {}
+
+    def add_path(path: Path) -> None:
+        if not path.exists():
+            return
+        if path.is_dir():
+            for child in path.rglob("*"):
+                add_path(child)
+            return
+        if not path.is_file() or path.name in ARTIFACT_MANIFEST_FILENAMES:
+            return
+        if not _candidate_path_is_within(path, candidate_dir):
+            return
+        relative = _candidate_relative_path(candidate_dir, path)
+        files[relative] = path
+
+    for key, fallback in (
+        ("report", Path("release-candidate.json")),
+        ("markdown", Path("release-candidate.md")),
+        ("release_info", Path("release-info.json")),
+        ("release_info_markdown", Path("release-info.md")),
+        ("readiness_verify", Path("readiness-verify.json")),
+        ("readiness_verify_markdown", Path("readiness-verify.md")),
+        ("baseline_verify", Path("baseline-verify.json")),
+        ("baseline_verify_markdown", Path("baseline-verify.md")),
+        ("exact_baseline_verify", Path("exact-baseline-verify.json")),
+        ("exact_baseline_verify_markdown", Path("exact-baseline-verify.md")),
+        ("wheel_log", Path("wheel-build.txt")),
+    ):
+        add_path(_resolve_candidate_artifact(candidate_dir, outputs.get(key), fallback))
+
+    readiness_dir = _resolve_candidate_artifact(candidate_dir, outputs.get("readiness_dir"), Path("readiness"))
+    add_path(readiness_dir)
+
+    wheel_dir = _resolve_candidate_artifact(candidate_dir, outputs.get("wheel_dir"), Path("wheel"))
+    add_path(wheel_dir)
+    wheel_path = _candidate_wheel_path(wheel_dir, candidate)
+    if wheel_path is not None:
+        add_path(wheel_path)
+
+    return [files[key] for key in sorted(files)]
+
+
+def _candidate_artifact_manifest_entry(candidate_dir: Path, path: Path) -> dict[str, Any]:
+    return {
+        "relative_path": _candidate_relative_path(candidate_dir, path),
+        "bytes": path.stat().st_size,
+        "sha256": _sha256_file(path),
+    }
+
+
+def _append_candidate_artifact_manifest_integrity_check(
+    checks: list[dict[str, Any]],
+    candidate_dir: Path,
+    candidate: dict[str, Any] | None,
+    manifest: dict[str, Any] | None,
+    *,
+    required: bool,
+) -> None:
+    if manifest is None:
+        checks.append(
+            _candidate_check(
+                "artifact_manifest_integrity",
+                "fail" if required else "skip",
+                required=required,
+                message="Cannot verify artifact hashes because the artifact manifest is unreadable.",
+            )
+        )
+        return
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        checks.append(
+            _candidate_check(
+                "artifact_manifest_integrity",
+                "fail",
+                required=required,
+                message="Artifact manifest field `artifacts` must be a list.",
+            )
+        )
+        return
+
+    expected_paths = _candidate_artifact_manifest_expected_files(candidate_dir, candidate or {})
+    expected = {_candidate_relative_path(candidate_dir, path) for path in expected_paths}
+    recorded: set[str] = set()
+    failures: list[dict[str, Any]] = []
+    verified_count = 0
+    for index, artifact in enumerate(artifacts):
+        if not isinstance(artifact, dict):
+            failures.append({"index": index, "reason": "artifact entry is not an object"})
+            continue
+        relative = artifact.get("relative_path")
+        if not isinstance(relative, str) or not relative:
+            failures.append({"index": index, "reason": "artifact entry is missing relative_path"})
+            continue
+        rel_path = Path(relative)
+        if rel_path.is_absolute() or ".." in rel_path.parts or rel_path.name in ARTIFACT_MANIFEST_FILENAMES:
+            failures.append({"relative_path": relative, "reason": "artifact path is not allowed"})
+            continue
+        if relative in recorded:
+            failures.append({"relative_path": relative, "reason": "duplicate artifact entry"})
+            continue
+        recorded.add(relative)
+
+        path = candidate_dir / rel_path
+        if not _candidate_path_is_within(path, candidate_dir):
+            failures.append({"relative_path": relative, "reason": "artifact path escapes the candidate directory"})
+            continue
+        if not path.exists() or not path.is_file():
+            failures.append({"relative_path": relative, "reason": "artifact file is missing"})
+            continue
+
+        actual_bytes = path.stat().st_size
+        expected_bytes = artifact.get("bytes")
+        if expected_bytes != actual_bytes:
+            failures.append(
+                {
+                    "relative_path": relative,
+                    "reason": "byte size mismatch",
+                    "expected_bytes": expected_bytes,
+                    "actual_bytes": actual_bytes,
+                }
+            )
+            continue
+
+        expected_sha = artifact.get("sha256")
+        actual_sha = _sha256_file(path)
+        if expected_sha != actual_sha:
+            failures.append(
+                {
+                    "relative_path": relative,
+                    "reason": "sha256 mismatch",
+                    "expected_sha256": expected_sha,
+                    "actual_sha256": actual_sha,
+                }
+            )
+            continue
+        verified_count += 1
+
+    missing_entries = sorted(expected - recorded)
+    passed = not failures and not missing_entries and verified_count > 0
+    checks.append(
+        _candidate_check(
+            "artifact_manifest_integrity",
+            "pass" if passed else "fail",
+            required=required,
+            message=(
+                f"Verified {verified_count} artifact hash(es)."
+                if passed
+                else "Artifact manifest is missing entries or contains mismatched hashes."
+            ),
+            data={
+                "verified_count": verified_count,
+                "expected_count": len(expected),
+                "recorded_count": len(recorded),
+                "missing_entries": missing_entries[:20],
+                "mismatch_count": len(failures),
+                "mismatches": failures[:20],
+            },
+        )
+    )
 
 
 def _verify_candidate_json_artifact(
@@ -1029,6 +1300,26 @@ def _resolve_candidate_artifact(base_dir: Path, value: Any, fallback: Path) -> P
         candidate = Path(value)
         return candidate if candidate.is_absolute() else base_dir / candidate
     return base_dir / fallback
+
+
+def _candidate_relative_path(base_dir: Path, path: Path) -> str:
+    return path.resolve().relative_to(base_dir.resolve()).as_posix()
+
+
+def _candidate_path_is_within(path: Path, base_dir: Path) -> bool:
+    try:
+        path.resolve().relative_to(base_dir.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _candidate_artifact_reference(payload: dict[str, Any] | None) -> dict[str, Any] | None:

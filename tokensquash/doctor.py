@@ -364,6 +364,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "tokensquash.readiness.verify.v1",
         "tokensquash.release_info.v1",
         "tokensquash.release_candidate.v1",
+        "tokensquash.release_candidate.artifacts.v1",
         "tokensquash.release_candidate.verify.v1",
         "tokensquash.baselines.verify.v1",
         "tokensquash.quality_budget.v1",

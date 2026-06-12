@@ -92,6 +92,7 @@ SUPPORTED_SCHEMAS = [
     ("product", "tokensquash.readiness.verify.v1", "Product-readiness evidence verification report."),
     ("product", "tokensquash.release_info.v1", "Release package, Git, and runtime metadata report."),
     ("product", "tokensquash.release_candidate.v1", "Pre-release product gate and packaging evidence report."),
+    ("product", "tokensquash.release_candidate.artifacts.v1", "Release-candidate artifact hash manifest."),
     ("product", "tokensquash.release_candidate.verify.v1", "Release-candidate evidence verification report."),
     ("product", MANIFEST_SCHEMA_VERSION, "Product manifest report."),
     ("product", "tokensquash.quality_budget.v1", "Project quality budget for release checks."),
