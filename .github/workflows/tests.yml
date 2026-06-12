@@ -31,6 +31,8 @@ jobs:
         run: python -m tokensquash turns gate /tmp/tokensquash-demo/turn-evaluation/evaluation.json --min-saved-pct 0.5 --max-privacy-findings 0
       - name: Certify public demo turn corpus
         run: python -m tokensquash turns certify examples/sample-turns.jsonl --counter chars --out-dir /tmp/tokensquash-certification
+      - name: Plan public quality budget init
+        run: python -m tokensquash budget init --out /tmp/tokensquash-quality-budget.json --dry-run --json
       - name: Validate public quality budget
         run: python -m tokensquash budget validate examples/quality-budget.json
       - name: Compare public demo certifications

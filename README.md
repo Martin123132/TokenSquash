@@ -366,6 +366,7 @@ Pass `--budget` with a `tokensquash.quality_budget.v1` JSON file to keep release
 thresholds in source control. The example in `examples\quality-budget.json`
 sets saved-percent, privacy, pass-through, raw-wire-loss, history, and doctor
 warning budgets; explicit CLI threshold flags override the budget for one run.
+Run `budget init --out quality-budget.json` to create a starter project budget.
 Run `budget validate examples\quality-budget.json` to check the schema, unknown
 keys, and effective defaulted release-check policy before using the file in CI.
 `turns measure` validates the corpus, summarizes it, and reports combined
@@ -531,6 +532,7 @@ checks that do not depend on API keys or a local model:
 python -m unittest discover -s tests
 python -m tokensquash about --json
 python -m tokensquash init --dry-run
+python -m tokensquash budget init --out private-turns\quality-budget.json --dry-run --json
 python -m tokensquash budget validate examples\quality-budget.json
 python -m tokensquash doctor --strict
 python -m tokensquash demo --counter chars --out-dir private-turns\demo-output

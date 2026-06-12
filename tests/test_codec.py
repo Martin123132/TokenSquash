@@ -25,7 +25,7 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
-from tokensquash.release import load_quality_budget, run_turn_release_check, validate_quality_budget
+from tokensquash.release import initialize_quality_budget, load_quality_budget, run_turn_release_check, validate_quality_budget
 from tokensquash.sidecar import (
     certify_sidecar_report,
     compact_semantic_payload,
@@ -413,6 +413,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         commands = {item["command"] for item in report["commands"]}
         schemas = {item["schema_version"] for item in report["schemas"]}
         self.assertIn("about", commands)
+        self.assertIn("budget init", commands)
         self.assertIn("budget validate", commands)
         self.assertIn("init", commands)
         self.assertIn("turns compare-certifications", commands)
@@ -422,6 +423,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
+        self.assertIn("tokensquash.quality_budget.init.v1", schemas)
         self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
         self.assertIn("tokensquash.workspace.init.v1", schemas)
         self.assertIn("tokensquash.turns.certify.compare.v1", schemas)
@@ -2879,6 +2881,56 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("## Adjacent Steps", output)
             self.assertTrue(out.exists())
             self.assertEqual(out.read_text(encoding="utf-8"), output)
+
+    def test_quality_budget_init_writes_and_preserves_existing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            budget = Path(tmp) / "quality-budget.json"
+
+            written = initialize_quality_budget(budget, min_saved_pct=1.25, require_history=True)
+            exists = initialize_quality_budget(budget, min_saved_pct=99.0)
+
+            self.assertEqual(written["schema_version"], "tokensquash.quality_budget.init.v1")
+            self.assertEqual(written["status"], "written")
+            self.assertEqual(written["summary"]["action"], "created")
+            self.assertEqual(written["validation"]["status"], "pass")
+            self.assertEqual(exists["status"], "exists")
+            self.assertEqual(exists["summary"]["action"], "unchanged")
+            self.assertEqual(exists["quality_budget"]["turns"]["release_check"]["min_saved_pct"], 1.25)
+            payload = load_quality_budget(budget)
+            self.assertEqual(payload["turns"]["release_check"]["min_saved_pct"], 1.25)
+            self.assertTrue(payload["turns"]["release_check"]["require_history"])
+
+    def test_quality_budget_init_cli_dry_run_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            budget = Path(tmp) / "quality-budget.json"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "budget",
+                        "init",
+                        "--out",
+                        str(budget),
+                        "--dry-run",
+                        "--min-saved-pct",
+                        "2.5",
+                        "--require-history",
+                        "--max-history-regressions",
+                        "1",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.quality_budget.init.v1")
+            self.assertEqual(payload["status"], "planned")
+            self.assertFalse(budget.exists())
+            release_budget = payload["quality_budget"]["turns"]["release_check"]
+            self.assertEqual(release_budget["min_saved_pct"], 2.5)
+            self.assertTrue(release_budget["require_history"])
+            self.assertEqual(release_budget["max_history_regressions"], 1)
 
     def test_quality_budget_validate_example(self) -> None:
         report = validate_quality_budget(Path("examples") / "quality-budget.json")

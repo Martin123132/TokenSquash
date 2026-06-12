@@ -31,8 +31,10 @@ from .metrics import (
 from .mining import format_pattern_mine_markdown, mine_reply_patterns
 from .reply import decode_reply, encode_reply, parse_reply_wire
 from .release import (
+    format_quality_budget_init_markdown,
     format_quality_budget_validation_markdown,
     format_turn_release_check_markdown,
+    initialize_quality_budget,
     run_turn_release_check,
     validate_quality_budget,
 )
@@ -178,6 +180,25 @@ def main(argv: list[str] | None = None) -> int:
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
+
+    budget_init = budget_sub.add_parser("init", help="Create a starter TokenSquash quality budget JSON file.")
+    budget_init.add_argument("--out", type=Path, default=Path("quality-budget.json"), help="Budget file to create.")
+    budget_init.add_argument("--force", action="store_true", help="Overwrite an existing budget file.")
+    budget_init.add_argument("--dry-run", action="store_true", help="Show what would be written without writing.")
+    budget_init.add_argument("--min-saved-pct", type=float, help="Minimum saved percent required.")
+    budget_init.add_argument("--max-privacy-findings", type=int, help="Maximum privacy findings allowed.")
+    budget_init.add_argument("--max-pass-through-rows", type=int, help="Maximum adaptive pass-through rows allowed.")
+    budget_init.add_argument("--max-raw-wire-loss-turns", type=int, help="Maximum rows where raw wire is longer.")
+    budget_init.add_argument(
+        "--require-history",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Require at least one baseline certification history input.",
+    )
+    budget_init.add_argument("--max-history-regressions", type=int, help="Maximum adjacent certification regressions.")
+    budget_init.add_argument("--max-history-failures", type=int, help="Maximum adjacent certification failures.")
+    budget_init.add_argument("--max-doctor-warnings", type=int, help="Maximum strict doctor warnings.")
+    budget_init.add_argument("--json", action="store_true", help="Print init JSON.")
 
     budget_validate = budget_sub.add_parser("validate", help="Validate a TokenSquash quality budget JSON file.")
     budget_validate.add_argument("budget_file", type=Path, help="tokensquash.quality_budget.v1 JSON file.")
@@ -887,6 +908,27 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if report["status"] in {"pass", "warn"} else 1
 
         if args.command == "budget":
+            if args.budget_command == "init":
+                report = initialize_quality_budget(
+                    args.out,
+                    overwrite=args.force,
+                    dry_run=args.dry_run,
+                    min_saved_pct=args.min_saved_pct,
+                    max_privacy_findings=args.max_privacy_findings,
+                    max_pass_through_rows=args.max_pass_through_rows,
+                    max_raw_wire_loss_turns=args.max_raw_wire_loss_turns,
+                    require_history=args.require_history,
+                    max_history_regressions=args.max_history_regressions,
+                    max_history_failures=args.max_history_failures,
+                    max_doctor_warnings=args.max_doctor_warnings,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_quality_budget_init_markdown(report)
+                )
+                print(output, end="")
+                return 0 if report["status"] in {"written", "planned", "exists"} else 1
             if args.budget_command == "validate":
                 report = validate_quality_budget(args.budget_file)
                 output = (

@@ -18,6 +18,7 @@ from .turns import (
 
 RELEASE_CHECK_SCHEMA_VERSION = "tokensquash.turns.release_check.v1"
 QUALITY_BUDGET_SCHEMA_VERSION = "tokensquash.quality_budget.v1"
+QUALITY_BUDGET_INIT_SCHEMA_VERSION = "tokensquash.quality_budget.init.v1"
 QUALITY_BUDGET_VALIDATION_SCHEMA_VERSION = "tokensquash.quality_budget.validate.v1"
 DEFAULT_RELEASE_BUDGET = {
     "min_saved_pct": 0.5,
@@ -235,47 +236,185 @@ def load_quality_budget(path: Path | str) -> dict[str, Any]:
     return payload
 
 
+def build_quality_budget(
+    *,
+    min_saved_pct: float | None = None,
+    max_privacy_findings: int | None = None,
+    max_pass_through_rows: int | None = None,
+    max_raw_wire_loss_turns: int | None = None,
+    require_history: bool | None = None,
+    max_history_regressions: int | None = None,
+    max_history_failures: int | None = None,
+    max_doctor_warnings: int | None = None,
+) -> dict[str, Any]:
+    """Build a canonical TokenSquash quality budget payload."""
+
+    return {
+        "schema_version": QUALITY_BUDGET_SCHEMA_VERSION,
+        "turns": {
+            "release_check": _build_release_budget(
+                {},
+                min_saved_pct=min_saved_pct,
+                max_privacy_findings=max_privacy_findings,
+                max_pass_through_rows=max_pass_through_rows,
+                max_raw_wire_loss_turns=max_raw_wire_loss_turns,
+                require_history=require_history,
+                max_history_regressions=max_history_regressions,
+                max_history_failures=max_history_failures,
+                max_doctor_warnings=max_doctor_warnings,
+            )
+        },
+    }
+
+
+def initialize_quality_budget(
+    path: Path | str = Path("quality-budget.json"),
+    *,
+    overwrite: bool = False,
+    dry_run: bool = False,
+    min_saved_pct: float | None = None,
+    max_privacy_findings: int | None = None,
+    max_pass_through_rows: int | None = None,
+    max_raw_wire_loss_turns: int | None = None,
+    require_history: bool | None = None,
+    max_history_regressions: int | None = None,
+    max_history_failures: int | None = None,
+    max_doctor_warnings: int | None = None,
+) -> dict[str, Any]:
+    """Create a starter quality budget file unless one already exists."""
+
+    target = Path(path)
+    existed = target.exists()
+    budget = build_quality_budget(
+        min_saved_pct=min_saved_pct,
+        max_privacy_findings=max_privacy_findings,
+        max_pass_through_rows=max_pass_through_rows,
+        max_raw_wire_loss_turns=max_raw_wire_loss_turns,
+        require_history=require_history,
+        max_history_regressions=max_history_regressions,
+        max_history_failures=max_history_failures,
+        max_doctor_warnings=max_doctor_warnings,
+    )
+    if dry_run:
+        action = "would_overwrite" if existed and overwrite else "would_skip_existing" if existed else "would_create"
+        status = "planned"
+        written = False
+    elif existed and not overwrite:
+        action = "unchanged"
+        status = "exists"
+        written = False
+        try:
+            budget = load_quality_budget(target)
+        except Exception:
+            pass
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _write_json_report(target, budget)
+        action = "overwritten" if existed else "created"
+        status = "written"
+        written = True
+
+    validation = validate_quality_budget(target) if target.exists() else _validate_quality_budget_payload(budget, target)
+    return {
+        "schema_version": QUALITY_BUDGET_INIT_SCHEMA_VERSION,
+        "status": status,
+        "path": str(target),
+        "dry_run": dry_run,
+        "overwrite": overwrite,
+        "summary": {
+            "existed": existed,
+            "written": written,
+            "action": action,
+            "validation_status": validation.get("status"),
+        },
+        "quality_budget": budget,
+        "validation": validation,
+    }
+
+
 def validate_quality_budget(path: Path | str) -> dict[str, Any]:
     """Validate a TokenSquash quality budget and report the effective release-check policy."""
 
     source = Path(path)
+    try:
+        payload = load_quality_budget(source)
+    except Exception as exc:
+        return _quality_budget_validation_report(
+            source,
+            errors=[_budget_issue("schema", str(exc), path=str(source))],
+            warnings=[],
+            release_budget={},
+            effective=None,
+        )
+    return _validate_quality_budget_payload(payload, source)
+
+
+def format_quality_budget_init_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    budget = report.get("quality_budget") or {}
+    release_budget = ((budget.get("turns") or {}).get("release_check") or {})
+    lines = [
+        "# TokenSquash Quality Budget Init",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Action: `{summary.get('action')}`",
+        f"- Written: `{summary.get('written')}`",
+        f"- Dry run: `{report.get('dry_run')}`",
+        f"- Validation: `{summary.get('validation_status')}`",
+        "",
+        "## Release Check Budget",
+        "",
+    ]
+    for key in _RELEASE_BUDGET_KEYS:
+        suffix = "%" if key == "min_saved_pct" else ""
+        lines.append(f"- `{key}`: `{release_budget.get(key)}{suffix}`")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _validate_quality_budget_payload(payload: dict[str, Any], source: Path) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
-    budget: dict[str, Any] | None = None
     release_budget: dict[str, Any] = {}
     effective: dict[str, Any] | None = None
 
-    try:
-        budget = load_quality_budget(source)
-    except Exception as exc:
-        errors.append(_budget_issue("schema", str(exc), path=str(source)))
-    if budget is not None:
-        turns = budget.get("turns", {})
-        release_budget = turns.get("release_check", {}) if isinstance(turns, dict) else {}
-        if "release_check" not in turns:
-            warnings.append(
-                _budget_issue(
-                    "turns.release_check",
-                    "Missing release_check section; defaults will be used.",
-                    path=str(source),
-                )
+    turns = payload.get("turns", {})
+    release_budget = turns.get("release_check", {}) if isinstance(turns, dict) else {}
+    if "release_check" not in turns:
+        warnings.append(
+            _budget_issue(
+                "turns.release_check",
+                "Missing release_check section; defaults will be used.",
+                path=str(source),
             )
-        if isinstance(release_budget, dict):
-            _validate_release_budget_values(release_budget, errors, warnings)
-        else:
-            errors.append(_budget_issue("turns.release_check", "release_check must be an object.", path=str(source)))
-        if not errors:
-            try:
-                effective = _resolve_quality_budget(
-                    source,
-                    min_saved_pct=None,
-                    max_privacy_findings=None,
-                    max_pass_through_rows=None,
-                    max_raw_wire_loss_turns=None,
-                )
-            except Exception as exc:
-                errors.append(_budget_issue("turns.release_check", str(exc), path=str(source)))
+        )
+    if isinstance(release_budget, dict):
+        _validate_release_budget_values(release_budget, errors, warnings)
+    else:
+        errors.append(_budget_issue("turns.release_check", "release_check must be an object.", path=str(source)))
+    if not errors:
+        try:
+            effective = _effective_quality_budget(source, release_budget)
+        except Exception as exc:
+            errors.append(_budget_issue("turns.release_check", str(exc), path=str(source)))
 
+    return _quality_budget_validation_report(
+        source,
+        errors=errors,
+        warnings=warnings,
+        release_budget=release_budget,
+        effective=effective,
+    )
+
+
+def _quality_budget_validation_report(
+    source: Path,
+    *,
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+    release_budget: dict[str, Any],
+    effective: dict[str, Any] | None,
+) -> dict[str, Any]:
     status = "fail" if errors else "warn" if warnings else "pass"
     return {
         "schema_version": QUALITY_BUDGET_VALIDATION_SCHEMA_VERSION,
@@ -620,7 +759,56 @@ def _resolve_quality_budget(
     release_budget = ((source_payload or {}).get("turns") or {}).get("release_check", {})
     if not isinstance(release_budget, dict):
         release_budget = {}
-    values = {
+    return {
+        "schema_version": QUALITY_BUDGET_SCHEMA_VERSION,
+        "source": "file" if path else "defaults",
+        "path": str(path) if path else None,
+        "release_check": _build_release_budget(
+            release_budget,
+            min_saved_pct=min_saved_pct,
+            max_privacy_findings=max_privacy_findings,
+            max_pass_through_rows=max_pass_through_rows,
+            max_raw_wire_loss_turns=max_raw_wire_loss_turns,
+            require_history=None,
+            max_history_regressions=None,
+            max_history_failures=None,
+            max_doctor_warnings=None,
+        ),
+    }
+
+
+def _effective_quality_budget(source: Path, release_budget: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": QUALITY_BUDGET_SCHEMA_VERSION,
+        "source": "file",
+        "path": str(source),
+        "release_check": _build_release_budget(
+            release_budget,
+            min_saved_pct=None,
+            max_privacy_findings=None,
+            max_pass_through_rows=None,
+            max_raw_wire_loss_turns=None,
+            require_history=None,
+            max_history_regressions=None,
+            max_history_failures=None,
+            max_doctor_warnings=None,
+        ),
+    }
+
+
+def _build_release_budget(
+    release_budget: dict[str, Any],
+    *,
+    min_saved_pct: float | None,
+    max_privacy_findings: int | None,
+    max_pass_through_rows: int | None,
+    max_raw_wire_loss_turns: int | None,
+    require_history: bool | None,
+    max_history_regressions: int | None,
+    max_history_failures: int | None,
+    max_doctor_warnings: int | None,
+) -> dict[str, Any]:
+    return {
         "min_saved_pct": _budget_float(release_budget, "min_saved_pct", min_saved_pct),
         "max_privacy_findings": _budget_int(release_budget, "max_privacy_findings", max_privacy_findings),
         "max_pass_through_rows": _budget_int(release_budget, "max_pass_through_rows", max_pass_through_rows),
@@ -629,16 +817,10 @@ def _resolve_quality_budget(
             "max_raw_wire_loss_turns",
             max_raw_wire_loss_turns,
         ),
-        "require_history": _budget_bool(release_budget, "require_history"),
-        "max_history_regressions": _budget_int(release_budget, "max_history_regressions", None),
-        "max_history_failures": _budget_int(release_budget, "max_history_failures", None),
-        "max_doctor_warnings": _budget_int(release_budget, "max_doctor_warnings", None),
-    }
-    return {
-        "schema_version": QUALITY_BUDGET_SCHEMA_VERSION,
-        "source": "file" if path else "defaults",
-        "path": str(path) if path else None,
-        "release_check": values,
+        "require_history": _budget_bool(release_budget, "require_history", require_history),
+        "max_history_regressions": _budget_int(release_budget, "max_history_regressions", max_history_regressions),
+        "max_history_failures": _budget_int(release_budget, "max_history_failures", max_history_failures),
+        "max_doctor_warnings": _budget_int(release_budget, "max_doctor_warnings", max_doctor_warnings),
     }
 
 
@@ -652,8 +834,8 @@ def _budget_int(release_budget: dict[str, Any], name: str, explicit: int | None)
     return _coerce_budget_int(name, value)
 
 
-def _budget_bool(release_budget: dict[str, Any], name: str) -> bool:
-    value = release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
+def _budget_bool(release_budget: dict[str, Any], name: str, explicit: bool | None) -> bool:
+    value = explicit if explicit is not None else release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
     return _coerce_budget_bool(name, value)
 
 
