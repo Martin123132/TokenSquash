@@ -9,7 +9,12 @@ from pathlib import Path
 from .about import build_product_manifest, format_product_manifest_markdown
 from .aliases import format_alias_report_markdown, learn_reply_aliases, load_alias_table, write_alias_table
 from .baselines import format_benchmark_baseline_verify_markdown, verify_benchmark_baselines
-from .candidate import format_release_candidate_markdown, run_release_candidate
+from .candidate import (
+    format_release_candidate_markdown,
+    format_release_candidate_verify_markdown,
+    run_release_candidate,
+    verify_release_candidate_pack,
+)
 from .codec import decode_intent, encode_intent, parse_wire
 from .corpus import (
     corpus_stats,
@@ -233,6 +238,19 @@ def main(argv: list[str] | None = None) -> int:
     release_candidate.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
     release_candidate.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
     release_candidate.add_argument("--json", action="store_true", help="Print release-candidate JSON.")
+
+    verify_release_candidate = sub.add_parser(
+        "verify-release-candidate",
+        help="Verify a saved release-candidate evidence pack.",
+    )
+    verify_release_candidate.add_argument("pack", type=Path, help="Release-candidate output directory or JSON file.")
+    verify_release_candidate.add_argument(
+        "--require-release-candidate-pass",
+        action="store_true",
+        help="Fail verification unless the release-candidate status is pass.",
+    )
+    verify_release_candidate.add_argument("--out", type=Path, help="Write verification output to this file.")
+    verify_release_candidate.add_argument("--json", action="store_true", help="Print release-candidate verification JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -1035,6 +1053,22 @@ def main(argv: list[str] | None = None) -> int:
             output = json.dumps(report, indent=2) + "\n" if args.json else format_release_candidate_markdown(report)
             print(output, end="")
             return 0 if report["status"] == "pass" else 1
+
+        if args.command == "verify-release-candidate":
+            report = verify_release_candidate_pack(
+                args.pack,
+                require_release_candidate_pass=args.require_release_candidate_pass,
+            )
+            output = (
+                json.dumps(report, indent=2) + "\n"
+                if args.json
+                else format_release_candidate_verify_markdown(report)
+            )
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
+            print(output, end="")
+            return 0 if report["status"] in {"pass", "warn"} else 1
 
         if args.command == "budget":
             if args.budget_command == "init":

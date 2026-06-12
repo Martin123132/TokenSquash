@@ -3,7 +3,7 @@
 from .about import build_product_manifest, package_version
 from .aliases import AliasTable, learn_reply_aliases, load_alias_table
 from .baselines import verify_benchmark_baselines
-from .candidate import run_release_candidate
+from .candidate import run_release_candidate, verify_release_candidate_pack
 from .codec import Intent, decode_intent, encode_intent, parse_wire
 from .corpus import corpus_stats, load_prompt_records, redact_corpus, validate_corpus
 from .demo import run_demo
@@ -92,6 +92,7 @@ __all__ = [
     "validate_quality_budget",
     "validate_corpus",
     "validate_turn_corpus",
+    "verify_release_candidate_pack",
     "verify_product_readiness_pack",
     "verify_benchmark_baselines",
     "verify_turn_release_pack",

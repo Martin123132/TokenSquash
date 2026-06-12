@@ -110,6 +110,8 @@ jobs:
         run: python -m tokensquash baselines verify --include-exact-tokenizer --json
       - name: Run release candidate gate
         run: python -m tokensquash release-candidate --skip-tests --out-dir /tmp/tokensquash-release-candidate --json
+      - name: Verify release candidate gate
+        run: python -m tokensquash verify-release-candidate /tmp/tokensquash-release-candidate --require-release-candidate-pass --json
       - name: Run exact tokenizer benchmark
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer reply benchmark
