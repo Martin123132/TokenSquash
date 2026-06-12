@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from email.parser import Parser
@@ -57,6 +58,7 @@ def run_release_candidate(
     output_dir.mkdir(parents=True, exist_ok=True)
     readiness_dir = output_dir / "readiness"
     wheel_dir = output_dir / "wheel"
+    sdist_dir = output_dir / "sdist"
     steps: list[dict[str, Any]] = []
 
     _run_candidate_step(
@@ -138,6 +140,13 @@ def run_release_candidate(
         required=True,
         action=lambda: _run_wheel_smoke(root, output_dir, wheel_dir),
     )
+    _run_candidate_step(
+        steps,
+        "sdist_build",
+        command=f"{sys.executable} -c \"import setuptools.build_meta as b; print(b.build_sdist(r'{sdist_dir}'))\"",
+        required=True,
+        action=lambda: _run_sdist_build(root, output_dir, sdist_dir),
+    )
 
     failed_required = [step for step in steps if step.get("required") and step.get("status") == "fail"]
     warnings = [step for step in steps if step.get("status") == "warn"]
@@ -165,6 +174,7 @@ def run_release_candidate(
             output_dir,
             readiness_dir,
             wheel_dir,
+            sdist_dir,
             counter,
             skip_tests=skip_tests,
             require_exact_tokenizer=require_exact_tokenizer,
@@ -193,6 +203,8 @@ def run_release_candidate(
             "wheel_dir": str(wheel_dir),
             "wheel_log": str(output_dir / "wheel-build.txt"),
             "wheel_smoke_log": str(output_dir / "wheel-smoke.txt"),
+            "sdist_dir": str(sdist_dir),
+            "sdist_log": str(output_dir / "sdist-build.txt"),
         },
     }
     write_release_candidate_outputs(output_dir, report)
@@ -263,6 +275,8 @@ def format_release_candidate_markdown(report: dict[str, Any]) -> str:
         "wheel_dir",
         "wheel_log",
         "wheel_smoke_log",
+        "sdist_dir",
+        "sdist_log",
     ):
         if outputs.get(name):
             lines.append(f"- `{name}`: `{outputs.get(name)}`")
@@ -329,6 +343,7 @@ def format_release_candidate_attestation_markdown(report: dict[str, Any]) -> str
     project = provenance.get("project", {})
     materials = report.get("materials", {})
     wheel = materials.get("wheel") or {}
+    sdist = materials.get("sdist") or {}
     artifact_manifest = materials.get("artifact_manifest") or {}
     lines = [
         "# TokenSquash Release Attestation",
@@ -343,6 +358,7 @@ def format_release_candidate_attestation_markdown(report: dict[str, Any]) -> str
         f"- Checks: `{verification.get('check_count', 0)}`",
         f"- Failed checks: `{verification.get('failed_check_count', 0)}`",
         f"- Wheel SHA-256: `{wheel.get('sha256')}`",
+        f"- Sdist SHA-256: `{sdist.get('sha256')}`",
         f"- Artifact manifest SHA-256: `{artifact_manifest.get('sha256')}`",
         f"- Signature: `{(report.get('signature') or {}).get('type')}`",
     ]
@@ -557,6 +573,13 @@ def verify_release_candidate_pack(
     )
     _append_candidate_wheel_smoke_check(checks, candidate, required=True)
 
+    sdist_dir = _resolve_candidate_artifact(candidate_dir, outputs.get("sdist_dir"), Path("sdist"))
+    sdist_log = _resolve_candidate_artifact(candidate_dir, outputs.get("sdist_log"), Path("sdist-build.txt"))
+    _append_candidate_file_check(checks, "sdist_log", sdist_log, required=True)
+    sdist_path = _candidate_sdist_path(sdist_dir, candidate)
+    if _append_candidate_directory_check(checks, "sdist_dir", sdist_dir, required=True):
+        _append_candidate_sdist_check(checks, sdist_path, release_info=release_info, required=True)
+
     _append_candidate_steps_check(checks, candidate_path, candidate)
 
     attestation_check = _candidate_check(
@@ -582,6 +605,7 @@ def verify_release_candidate_pack(
         readiness_verify_report=readiness_verify_report,
         baseline_verify=baseline_verify,
         exact_baseline_verify=exact_baseline_verify,
+        sdist_path=sdist_path,
     )
     try:
         _write_release_candidate_attestation_outputs(candidate_dir, attestation)
@@ -631,6 +655,8 @@ def verify_release_candidate_pack(
             "exact_baseline_verify_status": exact_baseline_verify.get("status") if exact_baseline_verify else None,
             "wheel": str(wheel_path) if wheel_path else None,
             "wheel_smoke_status": _candidate_step_status(candidate, "wheel_smoke"),
+            "sdist": str(sdist_path) if sdist_path else None,
+            "sdist_status": _candidate_step_status(candidate, "sdist_build"),
         },
         "checks": checks,
         "artifacts": {
@@ -676,6 +702,8 @@ def format_release_candidate_verify_markdown(report: dict[str, Any]) -> str:
         f"- Exact baseline verify: `{summary.get('exact_baseline_verify_status')}`",
         f"- Wheel: `{summary.get('wheel')}`",
         f"- Wheel smoke: `{summary.get('wheel_smoke_status')}`",
+        f"- Sdist: `{summary.get('sdist')}`",
+        f"- Sdist status: `{summary.get('sdist_status')}`",
         "",
         "## Checks",
         "",
@@ -837,7 +865,7 @@ def _run_wheel_build(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
     wheel_path = wheels[-1] if wheels else None
     packaged_demo_data = _wheel_contains(wheel_path, PACKAGED_DEMO_DATA_PATH) if wheel_path else False
     wheel_metadata = _wheel_metadata(wheel_path)
-    wheel_metadata_mismatches = _wheel_metadata_mismatches(
+    wheel_metadata_mismatches = _package_metadata_mismatches(
         wheel_metadata,
         expected_name=PROJECT_NAME,
         expected_version=package_version(root),
@@ -976,6 +1004,64 @@ def _run_wheel_smoke(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
     )
 
 
+def _run_sdist_build(root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str, str, dict[str, Any]]:
+    sdist_dir.mkdir(parents=True, exist_ok=True)
+    for old_sdist in sdist_dir.glob("tokensquash-*.tar.gz"):
+        old_sdist.unlink()
+    log_path = output_dir / "sdist-build.txt"
+    script = "import setuptools.build_meta as b, sys; print(b.build_sdist(sys.argv[1]))"
+    command = [sys.executable, "-c", script, str(sdist_dir)]
+    completed = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
+    sdists = sorted(sdist_dir.glob("tokensquash-*.tar.gz"))
+    sdist_path = sdists[-1] if sdists else None
+    packaged_demo_data = _sdist_contains(sdist_path, PACKAGED_DEMO_DATA_PATH) if sdist_path else False
+    sdist_metadata = _sdist_metadata(sdist_path)
+    sdist_metadata_mismatches = _package_metadata_mismatches(
+        sdist_metadata,
+        expected_name=PROJECT_NAME,
+        expected_version=package_version(root),
+        expected_requires_python=package_requires_python(root),
+    )
+    log_text = (
+        f"$ {' '.join(command)}\n"
+        f"exit_code={completed.returncode}\n"
+        f"sdist={sdist_path or ''}\n"
+        f"contains_{PACKAGED_DEMO_DATA_PATH}={packaged_demo_data}\n\n"
+        "## metadata\n"
+        f"{json.dumps(sdist_metadata, indent=2, sort_keys=True)}\n"
+        f"metadata_mismatches={json.dumps(sdist_metadata_mismatches, sort_keys=True)}\n\n"
+        "## stdout\n"
+        f"{completed.stdout}\n"
+        "## stderr\n"
+        f"{completed.stderr}\n"
+    )
+    log_path.write_text(log_text, encoding="utf-8")
+    if completed.returncode != 0:
+        status = "fail"
+        message = "Source distribution build failed."
+    elif not sdist_path:
+        status = "fail"
+        message = "Source distribution build completed but no TokenSquash sdist was produced."
+    elif not packaged_demo_data:
+        status = "fail"
+        message = f"Source distribution is missing packaged demo data: {PACKAGED_DEMO_DATA_PATH}."
+    elif sdist_metadata_mismatches:
+        status = "fail"
+        message = "Source distribution metadata does not match the release package metadata."
+    else:
+        status = "pass"
+        message = "Source distribution built, metadata matches, and packaged demo data is present."
+    return status, message, {
+        "sdist_dir": str(sdist_dir),
+        "log": str(log_path),
+        "returncode": completed.returncode,
+        "sdist": str(sdist_path) if sdist_path else None,
+        "packaged_demo_data": packaged_demo_data,
+        "sdist_metadata": sdist_metadata,
+        "sdist_metadata_mismatches": sdist_metadata_mismatches,
+    }
+
+
 def _run_logged_command(
     command: list[str],
     *,
@@ -1061,7 +1147,7 @@ def _wheel_metadata(path: Path | None) -> dict[str, Any]:
     }
 
 
-def _wheel_metadata_mismatches(
+def _package_metadata_mismatches(
     metadata: dict[str, Any],
     *,
     expected_name: str | None,
@@ -1090,6 +1176,59 @@ def _wheel_metadata_mismatches(
             }
         )
     return mismatches
+
+
+def _sdist_contains(path: Path | None, member: str) -> bool:
+    if path is None:
+        return False
+    target = member.replace("\\", "/")
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            return any(
+                item.isfile() and item.name.replace("\\", "/").endswith(f"/{target}")
+                for item in archive.getmembers()
+            )
+    except (tarfile.TarError, OSError):
+        return False
+
+
+def _sdist_metadata(path: Path | None) -> dict[str, Any]:
+    base = {
+        "present": False,
+        "metadata_path": None,
+        "name": None,
+        "version": None,
+        "requires_python": None,
+    }
+    if path is None:
+        return {**base, "message": "No source distribution path was resolved."}
+    try:
+        with tarfile.open(path, "r:gz") as archive:
+            members = [
+                member
+                for member in archive.getmembers()
+                if member.isfile() and member.name.replace("\\", "/").endswith("/PKG-INFO")
+            ]
+            if not members:
+                return {**base, "message": "Source distribution PKG-INFO file was not found."}
+            metadata_member = sorted(members, key=lambda item: item.name)[0]
+            handle = archive.extractfile(metadata_member)
+            if handle is None:
+                return {**base, "message": "Source distribution PKG-INFO could not be opened."}
+            text = handle.read().decode("utf-8", errors="replace")
+    except (tarfile.TarError, OSError, KeyError) as exc:
+        return {**base, "message": f"Source distribution metadata could not be read: {exc}"}
+
+    parsed = Parser().parsestr(text)
+    return {
+        **base,
+        "present": True,
+        "metadata_path": metadata_member.name,
+        "name": parsed.get("Name"),
+        "version": parsed.get("Version"),
+        "requires_python": parsed.get("Requires-Python"),
+        "message": "Source distribution metadata captured.",
+    }
 
 
 def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: dict[str, Any]) -> list[Path]:
@@ -1123,6 +1262,7 @@ def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: 
         ("exact_baseline_verify_markdown", Path("exact-baseline-verify.md")),
         ("wheel_log", Path("wheel-build.txt")),
         ("wheel_smoke_log", Path("wheel-smoke.txt")),
+        ("sdist_log", Path("sdist-build.txt")),
     ):
         add_path(_resolve_candidate_artifact(candidate_dir, outputs.get(key), fallback))
 
@@ -1134,6 +1274,12 @@ def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: 
     wheel_path = _candidate_wheel_path(wheel_dir, candidate)
     if wheel_path is not None:
         add_path(wheel_path)
+
+    sdist_dir = _resolve_candidate_artifact(candidate_dir, outputs.get("sdist_dir"), Path("sdist"))
+    add_path(sdist_dir)
+    sdist_path = _candidate_sdist_path(sdist_dir, candidate)
+    if sdist_path is not None:
+        add_path(sdist_path)
 
     return [files[key] for key in sorted(files)]
 
@@ -1162,6 +1308,7 @@ def _build_release_candidate_attestation(
     readiness_verify_report: dict[str, Any] | None,
     baseline_verify: dict[str, Any] | None,
     exact_baseline_verify: dict[str, Any] | None,
+    sdist_path: Path | None,
 ) -> dict[str, Any]:
     release_summary = (release_info.get("summary") if release_info else {}) or {}
     git = (release_info.get("git") if release_info else {}) or {}
@@ -1179,6 +1326,7 @@ def _build_release_candidate_attestation(
         "release_candidate": _candidate_file_reference(candidate_dir, candidate_path),
         "artifact_manifest": _candidate_file_reference(candidate_dir, candidate_dir / "artifact-manifest.json"),
         "wheel": _candidate_file_reference(candidate_dir, wheel_path),
+        "sdist": _candidate_file_reference(candidate_dir, sdist_path),
     }
     evidence = {
         "release_candidate_status": candidate.get("status") if candidate else None,
@@ -1190,6 +1338,7 @@ def _build_release_candidate_attestation(
         "baseline_verify_status": baseline_verify.get("status") if baseline_verify else None,
         "exact_baseline_verify_status": exact_baseline_verify.get("status") if exact_baseline_verify else None,
         "wheel_smoke_status": _candidate_step_status(candidate, "wheel_smoke"),
+        "sdist_status": _candidate_step_status(candidate, "sdist_build"),
     }
     evidence_material = {
         "git_commit": git.get("commit"),
@@ -1200,6 +1349,7 @@ def _build_release_candidate_attestation(
         "release_candidate_sha256": (materials.get("release_candidate") or {}).get("sha256"),
         "artifact_manifest_sha256": (materials.get("artifact_manifest") or {}).get("sha256"),
         "wheel_sha256": (materials.get("wheel") or {}).get("sha256"),
+        "sdist_sha256": (materials.get("sdist") or {}).get("sha256"),
     }
     return {
         "schema_version": RELEASE_CANDIDATE_ATTESTATION_SCHEMA_VERSION,
@@ -1692,7 +1842,7 @@ def _append_candidate_wheel_check(
     packaged_demo_data = _wheel_contains(path, PACKAGED_DEMO_DATA_PATH)
     project = release_info.get("project") if release_info else {}
     metadata = _wheel_metadata(path)
-    metadata_mismatches = _wheel_metadata_mismatches(
+    metadata_mismatches = _package_metadata_mismatches(
         metadata,
         expected_name=(project or {}).get("name") or PROJECT_NAME,
         expected_version=(project or {}).get("version"),
@@ -1776,6 +1926,66 @@ def _append_candidate_wheel_smoke_check(
     )
 
 
+def _append_candidate_sdist_check(
+    checks: list[dict[str, Any]],
+    path: Path | None,
+    *,
+    release_info: dict[str, Any] | None,
+    required: bool,
+) -> None:
+    if path is None:
+        checks.append(
+            _candidate_check(
+                "sdist",
+                "fail" if required else "skip",
+                required=required,
+                path=None,
+                message="No TokenSquash source distribution path could be resolved.",
+            )
+        )
+        return
+    if not path.exists() or not path.is_file():
+        checks.append(
+            _candidate_check(
+                "sdist",
+                "fail" if required else "skip",
+                required=required,
+                path=path,
+                message=f"Missing source distribution artifact: {path}.",
+            )
+        )
+        return
+    packaged_demo_data = _sdist_contains(path, PACKAGED_DEMO_DATA_PATH)
+    project = release_info.get("project") if release_info else {}
+    metadata = _sdist_metadata(path)
+    metadata_mismatches = _package_metadata_mismatches(
+        metadata,
+        expected_name=(project or {}).get("name") or PROJECT_NAME,
+        expected_version=(project or {}).get("version"),
+        expected_requires_python=(project or {}).get("requires_python"),
+    )
+    passed = packaged_demo_data and not metadata_mismatches
+    checks.append(
+        _candidate_check(
+            "sdist",
+            "pass" if passed else "fail",
+            required=required,
+            path=path,
+            message=(
+                "Source distribution exists, metadata matches, and packaged demo data is present."
+                if passed
+                else "Source distribution is missing packaged data or metadata does not match release-info."
+            ),
+            data={
+                "packaged_demo_data": packaged_demo_data,
+                "member": PACKAGED_DEMO_DATA_PATH,
+                "metadata": metadata,
+                "metadata_mismatches": metadata_mismatches,
+            },
+        )
+    )
+
+
 def _append_candidate_steps_check(
     checks: list[dict[str, Any]],
     candidate_path: Path,
@@ -1813,6 +2023,7 @@ def _append_candidate_steps_check(
         "exact_tokenizer_baselines",
         "wheel_build",
         "wheel_smoke",
+        "sdist_build",
     }
     names = {step.get("name") for step in steps if isinstance(step, dict)}
     missing_steps = sorted(required_steps - names)
@@ -1863,6 +2074,24 @@ def _candidate_wheel_path(wheel_dir: Path, candidate: dict[str, Any] | None) -> 
                 return Path(str(wheel))
     wheels = sorted(wheel_dir.glob("tokensquash-*.whl")) if wheel_dir.exists() and wheel_dir.is_dir() else []
     return wheels[-1] if wheels else None
+
+
+def _candidate_sdist_path(sdist_dir: Path, candidate: dict[str, Any] | None) -> Path | None:
+    if candidate:
+        sdist_step = next(
+            (
+                step
+                for step in candidate.get("steps", [])
+                if isinstance(step, dict) and step.get("name") == "sdist_build"
+            ),
+            None,
+        )
+        if sdist_step:
+            sdist = (sdist_step.get("data") or {}).get("sdist")
+            if sdist:
+                return Path(str(sdist))
+    sdists = sorted(sdist_dir.glob("tokensquash-*.tar.gz")) if sdist_dir.exists() and sdist_dir.is_dir() else []
+    return sdists[-1] if sdists else None
 
 
 def _candidate_step(candidate: dict[str, Any], name: str) -> dict[str, Any] | None:
@@ -1959,6 +2188,7 @@ def _release_candidate_commands(
     output_dir: Path,
     readiness_dir: Path,
     wheel_dir: Path,
+    sdist_dir: Path,
     counter: str,
     *,
     skip_tests: bool,
@@ -1996,6 +2226,9 @@ def _release_candidate_commands(
         "python -m venv <temp> && <venv-python> -m pip install --no-deps <wheel> "
         "&& <venv-python> -m tokensquash about --json "
         "&& <venv-python> -m tokensquash demo --counter chars --json"
+    )
+    commands.append(
+        f"python -c \"import setuptools.build_meta as b; print(b.build_sdist(r'{sdist_dir}'))\""
     )
     return commands
 

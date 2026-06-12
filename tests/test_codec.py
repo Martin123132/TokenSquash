@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
 import json
 import os
 import shutil
+import tarfile
+import tempfile
 from contextlib import redirect_stdout
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
 from zipfile import ZipFile
@@ -774,6 +775,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             ), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 report = run_release_candidate(
                     out_dir=out_dir,
@@ -792,6 +796,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(steps["exact_tokenizer_baselines"]["status"], "skip")
             self.assertEqual(steps["wheel_build"]["status"], "pass")
             self.assertEqual(steps["wheel_smoke"]["status"], "pass")
+            self.assertEqual(steps["sdist_build"]["status"], "pass")
             self.assertTrue((out_dir / "release-candidate.json").exists())
             self.assertTrue((out_dir / "release-candidate.md").exists())
             self.assertTrue((out_dir / "artifact-manifest.json").exists())
@@ -800,6 +805,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "readiness" / "readiness.json").exists())
             self.assertTrue((out_dir / "readiness-verify.json").exists())
             self.assertTrue((out_dir / "wheel-smoke.txt").exists())
+            self.assertTrue((out_dir / "sdist-build.txt").exists())
             manifest = json.loads((out_dir / "artifact-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["schema_version"], "tokensquash.release_candidate.artifacts.v1")
             self.assertEqual(manifest["status"], "pass")
@@ -808,6 +814,8 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("release-info.json", artifact_paths)
             self.assertIn("wheel-smoke.txt", artifact_paths)
             self.assertIn("wheel/tokensquash-0.0.0-py3-none-any.whl", artifact_paths)
+            self.assertIn("sdist-build.txt", artifact_paths)
+            self.assertIn("sdist/tokensquash-0.1.0.tar.gz", artifact_paths)
             self.assertNotIn("artifact-manifest.json", artifact_paths)
             self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
             self.assertTrue(any("--skip-tests" in command for command in report["commands"]))
@@ -824,6 +832,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             ), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 report = run_release_candidate(
                     out_dir=out_dir,
@@ -856,6 +867,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             ), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 with redirect_stdout(stdout):
                     code = cli_main(
@@ -878,6 +892,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
             self.assertTrue((out_dir / "wheel-build.txt").exists())
             self.assertTrue((out_dir / "wheel-smoke.txt").exists())
+            self.assertTrue((out_dir / "sdist-build.txt").exists())
 
     def test_verify_release_candidate_pack_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -885,6 +900,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
 
@@ -898,6 +916,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["release_attestation_status"], "pass")
             self.assertRegex(report["summary"]["release_attestation_evidence_hash"], r"^[0-9a-f]{64}$")
             self.assertEqual(report["summary"]["wheel_smoke_status"], "pass")
+            self.assertEqual(report["summary"]["sdist_status"], "pass")
             self.assertIn(report["summary"]["release_info_status"], {"pass", "warn"})
             self.assertEqual(report["summary"]["nested_readiness_verify_status"], "pass")
             self.assertEqual(report["summary"]["baseline_verify_status"], "partial")
@@ -910,6 +929,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(attestation["verification"]["status"], "pass")
             self.assertEqual(attestation["provenance"]["git"]["commit"], report["summary"]["release_info_commit"])
             self.assertRegex(attestation["materials"]["wheel"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(attestation["materials"]["sdist"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertRegex(attestation["materials"]["artifact_manifest"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertFalse(attestation["signature"]["signed"])
 
@@ -919,6 +939,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
             wheel = next((out_dir / "wheel").glob("tokensquash-*.whl"))
@@ -940,6 +963,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             ), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
             wheel = next((out_dir / "wheel").glob("tokensquash-*.whl"))
@@ -960,12 +986,39 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(checks["wheel"]["status"], "fail")
             self.assertEqual(checks["wheel"]["data"]["metadata_mismatches"][0]["field"], "Version")
 
+    def test_verify_release_candidate_pack_fails_on_sdist_metadata_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
+            ):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            sdist = next((out_dir / "sdist").glob("tokensquash-*.tar.gz"))
+            self._write_fake_sdist(sdist, version="9.9.9")
+
+            report = verify_release_candidate_pack(out_dir)
+
+            self.assertEqual(report["status"], "fail")
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(checks["sdist"]["status"], "fail")
+            self.assertEqual(checks["sdist"]["data"]["metadata_mismatches"][0]["field"], "Version")
+
     def test_verify_release_candidate_pack_fails_on_tampered_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
             with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
             (out_dir / "release-info.md").write_text("tampered\n", encoding="utf-8")
@@ -985,6 +1038,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
             candidate_path = out_dir / "release-candidate.json"
@@ -1005,6 +1061,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
             ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
 
@@ -1047,6 +1106,48 @@ class TokenSquashCodecTests(unittest.TestCase):
             "wheel": str(wheel_path),
             "packaged_demo_data": True,
         }
+
+    def _fake_sdist_build(self, root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str, str, dict[str, object]]:
+        sdist_dir.mkdir(parents=True, exist_ok=True)
+        sdist_path = sdist_dir / "tokensquash-0.1.0.tar.gz"
+        self._write_fake_sdist(sdist_path)
+        log_path = output_dir / "sdist-build.txt"
+        log_path.write_text("fake source distribution build\n", encoding="utf-8")
+        return "pass", "Source distribution build faked for unit test.", {
+            "sdist_dir": str(sdist_dir),
+            "log": str(log_path),
+            "returncode": 0,
+            "sdist": str(sdist_path),
+            "packaged_demo_data": True,
+            "sdist_metadata": {
+                "present": True,
+                "metadata_path": "tokensquash-0.1.0/PKG-INFO",
+                "name": "tokensquash",
+                "version": "0.1.0",
+                "requires_python": ">=3.10",
+                "message": "Source distribution metadata captured.",
+            },
+            "sdist_metadata_mismatches": [],
+        }
+
+    def _write_fake_sdist(self, path: Path, *, version: str = "0.1.0") -> None:
+        root = "tokensquash-0.1.0"
+        with tarfile.open(path, "w:gz") as archive:
+            self._tar_write_text(
+                archive,
+                f"{root}/PKG-INFO",
+                "Metadata-Version: 2.1\n"
+                "Name: tokensquash\n"
+                f"Version: {version}\n"
+                "Requires-Python: >=3.10\n",
+            )
+            self._tar_write_text(archive, f"{root}/tokensquash/data/sample-turns.jsonl", "{}\n")
+
+    def _tar_write_text(self, archive: tarfile.TarFile, name: str, text: str) -> None:
+        data = text.encode("utf-8")
+        info = tarfile.TarInfo(name)
+        info.size = len(data)
+        archive.addfile(info, BytesIO(data))
 
     def _fake_release_info(
         self,
