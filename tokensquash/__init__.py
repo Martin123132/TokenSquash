@@ -1,5 +1,6 @@
 """TokenSquash compact intent codec."""
 
+from .about import build_product_manifest, package_version
 from .aliases import AliasTable, learn_reply_aliases, load_alias_table
 from .codec import Intent, decode_intent, encode_intent, parse_wire
 from .corpus import corpus_stats, load_prompt_records, redact_corpus, validate_corpus
@@ -26,15 +27,19 @@ from .turns import (
     validate_turn_corpus,
 )
 
+__version__ = package_version()
+
 __all__ = [
     "AgentReply",
     "AliasTable",
     "Intent",
+    "__version__",
     "append_turn_record",
     "benchmark_turn_alias_impact",
     "benchmark_prompts",
     "benchmark_replies",
     "benchmark_turns",
+    "build_product_manifest",
     "capture_turn_record",
     "compare_benchmarks",
     "count_tokens",

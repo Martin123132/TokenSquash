@@ -8,6 +8,7 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from .about import MANIFEST_SCHEMA_VERSION, build_product_manifest
 from .demo import DEFAULT_DEMO_CORPUS, run_demo
 from .turns import certify_turn_corpus, write_turn_certification_outputs
 
@@ -54,6 +55,7 @@ def run_doctor(
             [
                 _check_sample_corpus_copy(root),
                 _check_console_script_metadata(root),
+                _check_product_manifest(root),
                 _check_turn_certification_workflow(strict_dir),
             ]
         )
@@ -302,6 +304,57 @@ def _check_console_script_metadata(cwd: Path) -> dict[str, Any]:
             else f"pyproject.toml is missing: {', '.join(missing)}."
         ),
         data={"pyproject": str(pyproject), "missing": missing},
+    )
+
+
+def _check_product_manifest(cwd: Path) -> dict[str, Any]:
+    try:
+        manifest = build_product_manifest(cwd=cwd)
+    except Exception as exc:  # pragma: no cover - exercised through failure path in CLI use.
+        return _doctor_check(
+            "product_manifest",
+            "fail",
+            required=True,
+            message=f"Product manifest failed to build: {exc}",
+        )
+    command_count = int((manifest.get("counts") or {}).get("command_count", 0))
+    schema_count = int((manifest.get("counts") or {}).get("schema_count", 0))
+    schemas = {item.get("schema_version") for item in manifest.get("schemas", [])}
+    commands = {item.get("command") for item in manifest.get("commands", [])}
+    required_schemas = {
+        MANIFEST_SCHEMA_VERSION,
+        "tokensquash.doctor.v1",
+        "tokensquash.turns.certify.v1",
+        "tokensquash.sidecar.certify.v1",
+    }
+    required_commands = {"about", "doctor", "turns certify", "sidecar certify"}
+    missing_schemas = sorted(required_schemas - schemas)
+    missing_commands = sorted(required_commands - commands)
+    passed = (
+        manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
+        and manifest.get("status") == "pass"
+        and command_count >= 40
+        and schema_count >= 40
+        and not missing_schemas
+        and not missing_commands
+        and bool((manifest.get("data") or {}).get("packaged_demo_corpus_exists"))
+    )
+    return _doctor_check(
+        "product_manifest",
+        "pass" if passed else "fail",
+        required=True,
+        message=(
+            f"Product manifest lists {command_count} commands and {schema_count} schemas."
+            if passed
+            else "Product manifest is incomplete; inspect missing commands, schemas, or packaged data."
+        ),
+        data={
+            "command_count": command_count,
+            "schema_count": schema_count,
+            "missing_commands": missing_commands,
+            "missing_schemas": missing_schemas,
+            "packaged_demo_corpus_exists": (manifest.get("data") or {}).get("packaged_demo_corpus_exists"),
+        },
     )
 
 

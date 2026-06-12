@@ -8,6 +8,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from tokensquash.about import build_product_manifest
 from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
 from tokensquash.cli import main as cli_main
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
@@ -397,6 +398,46 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "turn-evaluation" / "evaluation.json").exists())
             self.assertIn("TokenSquash Demo", (out_dir / "demo.md").read_text(encoding="utf-8"))
 
+    def test_product_manifest_lists_contract_surface(self) -> None:
+        report = build_product_manifest()
+
+        self.assertEqual(report["schema_version"], "tokensquash.product.manifest.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["project"]["name"], "tokensquash")
+        self.assertRegex(report["project"]["version"], r"^\d+\.\d+\.\d+")
+        commands = {item["command"] for item in report["commands"]}
+        schemas = {item["schema_version"] for item in report["schemas"]}
+        self.assertIn("about", commands)
+        self.assertIn("turns certify", commands)
+        self.assertIn("sidecar certify", commands)
+        self.assertIn("tokensquash.product.manifest.v1", schemas)
+        self.assertIn("tokensquash.turns.certify.v1", schemas)
+        self.assertIn("tokensquash.sidecar.certify.v1", schemas)
+        self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
+
+    def test_about_cli_json_and_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "about.md"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["about", "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Product Manifest", output)
+            self.assertIn("tokensquash.turns.certify.v1", output)
+            self.assertTrue(out.exists())
+
+            json_stdout = StringIO()
+            with redirect_stdout(json_stdout):
+                code = cli_main(["about", "--json"])
+
+            payload = json.loads(json_stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.product.manifest.v1")
+            self.assertGreaterEqual(payload["counts"]["command_count"], 40)
+
     def test_run_doctor_reports_required_checks(self) -> None:
         report = run_doctor()
 
@@ -432,6 +473,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             checks = {check["name"]: check for check in report["checks"]}
             self.assertEqual(checks["sample_corpus_copy"]["status"], "pass")
             self.assertEqual(checks["console_script_metadata"]["status"], "pass")
+            self.assertEqual(checks["product_manifest"]["status"], "pass")
             self.assertEqual(checks["turn_certification_workflow"]["status"], "pass")
             self.assertTrue((out_dir / "certification.json").exists())
             self.assertTrue((out_dir / "evaluation" / "evaluation.json").exists())

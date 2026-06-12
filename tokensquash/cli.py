@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from .about import build_product_manifest, format_product_manifest_markdown
 from .aliases import format_alias_report_markdown, learn_reply_aliases, load_alias_table, write_alias_table
 from .codec import decode_intent, encode_intent, parse_wire
 from .corpus import (
@@ -127,6 +128,10 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("base", type=Path)
     compare.add_argument("target", type=Path)
     compare.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    about = sub.add_parser("about", help="Show the TokenSquash product manifest.")
+    about.add_argument("--out", type=Path, help="Write product manifest output to this file.")
+    about.add_argument("--json", action="store_true", help="Print manifest JSON.")
 
     demo = sub.add_parser("demo", help="Run the public deterministic TokenSquash demo workflow.")
     demo.add_argument(
@@ -750,6 +755,15 @@ def main(argv: list[str] | None = None) -> int:
             output = json.dumps(report, indent=2) + "\n" if args.json else format_demo_markdown(report)
             print(output, end="")
             return 0 if report["status"] in {"pass", "warn"} else 1
+
+        if args.command == "about":
+            report = build_product_manifest()
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_product_manifest_markdown(report)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
+            print(output, end="")
+            return 0
 
         if args.command == "doctor":
             report = run_doctor(

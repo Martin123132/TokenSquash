@@ -17,6 +17,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Run tests
         run: python -m unittest discover -s tests
+      - name: Show product manifest
+        run: python -m tokensquash about --json
       - name: Run install doctor
         run: python -m tokensquash doctor
       - name: Run strict install doctor
