@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from pathlib import Path
 from typing import Any, Iterable
@@ -17,6 +18,7 @@ from .turns import (
 
 RELEASE_CHECK_SCHEMA_VERSION = "tokensquash.turns.release_check.v1"
 QUALITY_BUDGET_SCHEMA_VERSION = "tokensquash.quality_budget.v1"
+QUALITY_BUDGET_VALIDATION_SCHEMA_VERSION = "tokensquash.quality_budget.validate.v1"
 DEFAULT_RELEASE_BUDGET = {
     "min_saved_pct": 0.5,
     "max_privacy_findings": 0,
@@ -27,6 +29,15 @@ DEFAULT_RELEASE_BUDGET = {
     "max_history_failures": 0,
     "max_doctor_warnings": 0,
 }
+_RELEASE_BUDGET_KEYS = tuple(DEFAULT_RELEASE_BUDGET)
+_RELEASE_BUDGET_INT_KEYS = (
+    "max_privacy_findings",
+    "max_pass_through_rows",
+    "max_raw_wire_loss_turns",
+    "max_history_regressions",
+    "max_history_failures",
+    "max_doctor_warnings",
+)
 
 
 def run_turn_release_check(
@@ -222,6 +233,96 @@ def load_quality_budget(path: Path | str) -> dict[str, Any]:
     if not isinstance(release_check, dict):
         raise ValueError("quality budget field `turns.release_check` must be an object")
     return payload
+
+
+def validate_quality_budget(path: Path | str) -> dict[str, Any]:
+    """Validate a TokenSquash quality budget and report the effective release-check policy."""
+
+    source = Path(path)
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    budget: dict[str, Any] | None = None
+    release_budget: dict[str, Any] = {}
+    effective: dict[str, Any] | None = None
+
+    try:
+        budget = load_quality_budget(source)
+    except Exception as exc:
+        errors.append(_budget_issue("schema", str(exc), path=str(source)))
+    if budget is not None:
+        turns = budget.get("turns", {})
+        release_budget = turns.get("release_check", {}) if isinstance(turns, dict) else {}
+        if "release_check" not in turns:
+            warnings.append(
+                _budget_issue(
+                    "turns.release_check",
+                    "Missing release_check section; defaults will be used.",
+                    path=str(source),
+                )
+            )
+        if isinstance(release_budget, dict):
+            _validate_release_budget_values(release_budget, errors, warnings)
+        else:
+            errors.append(_budget_issue("turns.release_check", "release_check must be an object.", path=str(source)))
+        if not errors:
+            try:
+                effective = _resolve_quality_budget(
+                    source,
+                    min_saved_pct=None,
+                    max_privacy_findings=None,
+                    max_pass_through_rows=None,
+                    max_raw_wire_loss_turns=None,
+                )
+            except Exception as exc:
+                errors.append(_budget_issue("turns.release_check", str(exc), path=str(source)))
+
+    status = "fail" if errors else "warn" if warnings else "pass"
+    return {
+        "schema_version": QUALITY_BUDGET_VALIDATION_SCHEMA_VERSION,
+        "status": status,
+        "source": str(source),
+        "summary": {
+            "error_count": len(errors),
+            "warning_count": len(warnings),
+            "release_check_key_count": len(release_budget) if isinstance(release_budget, dict) else 0,
+            "effective_key_count": len((effective or {}).get("release_check", {})),
+        },
+        "quality_budget": effective,
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def format_quality_budget_validation_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    budget = report.get("quality_budget") or {}
+    release_budget = budget.get("release_check") or {}
+    lines = [
+        "# TokenSquash Quality Budget Validation",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Errors: `{summary.get('error_count', 0)}`",
+        f"- Warnings: `{summary.get('warning_count', 0)}`",
+        "",
+        "## Effective Release Check Budget",
+        "",
+    ]
+    if release_budget:
+        for key in _RELEASE_BUDGET_KEYS:
+            suffix = "%" if key == "min_saved_pct" else ""
+            lines.append(f"- `{key}`: `{release_budget.get(key)}{suffix}`")
+    else:
+        lines.append("No effective release-check budget.")
+    if report.get("errors"):
+        lines.extend(["", "## Errors", ""])
+        for issue in report.get("errors", []):
+            lines.append(f"- `{issue.get('field')}`: {issue.get('message')}")
+    if report.get("warnings"):
+        lines.extend(["", "## Warnings", ""])
+        for issue in report.get("warnings", []):
+            lines.append(f"- `{issue.get('field')}`: {issue.get('message')}")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def format_turn_release_check_markdown(report: dict[str, Any]) -> str:
@@ -480,6 +581,33 @@ def _path_list(paths: Iterable[Path | str] | Path | str | None) -> list[Path]:
     return [Path(path) for path in paths]
 
 
+def _validate_release_budget_values(
+    release_budget: dict[str, Any],
+    errors: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+) -> None:
+    unknown = sorted(set(release_budget) - set(_RELEASE_BUDGET_KEYS))
+    for key in unknown:
+        warnings.append(_budget_issue(f"turns.release_check.{key}", "Unknown release-check budget key."))
+    for key, value in release_budget.items():
+        field = f"turns.release_check.{key}"
+        if key == "min_saved_pct":
+            try:
+                _coerce_budget_float(key, value)
+            except ValueError as exc:
+                errors.append(_budget_issue(field, str(exc)))
+        elif key in _RELEASE_BUDGET_INT_KEYS:
+            try:
+                _coerce_budget_int(key, value)
+            except ValueError as exc:
+                errors.append(_budget_issue(field, str(exc)))
+        elif key == "require_history":
+            try:
+                _coerce_budget_bool(key, value)
+            except ValueError as exc:
+                errors.append(_budget_issue(field, str(exc)))
+
+
 def _resolve_quality_budget(
     path: Path | str | None,
     *,
@@ -516,21 +644,65 @@ def _resolve_quality_budget(
 
 def _budget_float(release_budget: dict[str, Any], name: str, explicit: float | None) -> float:
     value = explicit if explicit is not None else release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
-    return float(value)
+    return _coerce_budget_float(name, value)
 
 
 def _budget_int(release_budget: dict[str, Any], name: str, explicit: int | None) -> int:
     value = explicit if explicit is not None else release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
-    return max(0, int(value))
+    return _coerce_budget_int(name, value)
 
 
 def _budget_bool(release_budget: dict[str, Any], name: str) -> bool:
     value = release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
+    return _coerce_budget_bool(name, value)
+
+
+def _coerce_budget_float(name: str, value: Any) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a number, not a boolean")
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a number") from exc
+    if not math.isfinite(result) or result < 0 or result > 100:
+        raise ValueError(f"{name} must be between 0 and 100")
+    return result
+
+
+def _coerce_budget_int(name: str, value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be an integer, not a boolean")
+    if isinstance(value, float) and not value.is_integer():
+        raise ValueError(f"{name} must be an integer")
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if result < 0:
+        raise ValueError(f"{name} must be greater than or equal to 0")
+    return result
+
+
+def _coerce_budget_bool(name: str, value: Any) -> bool:
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "on"}:
+            return True
+        if text in {"0", "false", "no", "off"}:
+            return False
+        raise ValueError(f"{name} must be a boolean")
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    raise ValueError(f"{name} must be a boolean")
+
+
+def _budget_issue(field: str, message: str, *, path: str | None = None) -> dict[str, Any]:
+    issue = {"field": field, "message": message}
+    if path is not None:
+        issue["path"] = path
+    return issue
 
 
 def _write_json_report(path: Path, payload: dict[str, Any]) -> None:

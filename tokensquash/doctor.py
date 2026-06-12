@@ -361,11 +361,20 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         WORKSPACE_INIT_SCHEMA_VERSION,
         "tokensquash.doctor.v1",
         "tokensquash.quality_budget.v1",
+        "tokensquash.quality_budget.validate.v1",
         "tokensquash.turns.certify.v1",
         "tokensquash.turns.release_check.v1",
         "tokensquash.sidecar.certify.v1",
     }
-    required_commands = {"about", "init", "doctor", "turns certify", "turns release-check", "sidecar certify"}
+    required_commands = {
+        "about",
+        "budget validate",
+        "init",
+        "doctor",
+        "turns certify",
+        "turns release-check",
+        "sidecar certify",
+    }
     missing_schemas = sorted(required_schemas - schemas)
     missing_commands = sorted(required_commands - commands)
     passed = (

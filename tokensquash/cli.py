@@ -30,7 +30,12 @@ from .metrics import (
 )
 from .mining import format_pattern_mine_markdown, mine_reply_patterns
 from .reply import decode_reply, encode_reply, parse_reply_wire
-from .release import format_turn_release_check_markdown, run_turn_release_check
+from .release import (
+    format_quality_budget_validation_markdown,
+    format_turn_release_check_markdown,
+    run_turn_release_check,
+    validate_quality_budget,
+)
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -170,6 +175,14 @@ def main(argv: list[str] | None = None) -> int:
     doctor.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
     doctor.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
     doctor.add_argument("--json", action="store_true", help="Print doctor JSON.")
+
+    budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
+    budget_sub = budget.add_subparsers(dest="budget_command", required=True)
+
+    budget_validate = budget_sub.add_parser("validate", help="Validate a TokenSquash quality budget JSON file.")
+    budget_validate.add_argument("budget_file", type=Path, help="tokensquash.quality_budget.v1 JSON file.")
+    budget_validate.add_argument("--out", type=Path, help="Write validation output to this file.")
+    budget_validate.add_argument("--json", action="store_true", help="Print validation JSON.")
 
     sidecar = sub.add_parser("sidecar", help="Experimental local-AI semantic translator sidecar.")
     sidecar_sub = sidecar.add_subparsers(dest="sidecar_command", required=True)
@@ -872,6 +885,20 @@ def main(argv: list[str] | None = None) -> int:
             output = json.dumps(report, indent=2) + "\n" if args.json else format_doctor_markdown(report)
             print(output, end="")
             return 0 if report["status"] in {"pass", "warn"} else 1
+
+        if args.command == "budget":
+            if args.budget_command == "validate":
+                report = validate_quality_budget(args.budget_file)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_quality_budget_validation_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn"} else 1
 
         if args.command == "sidecar":
             if args.sidecar_command == "translate":

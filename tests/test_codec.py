@@ -25,7 +25,7 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
-from tokensquash.release import load_quality_budget, run_turn_release_check
+from tokensquash.release import load_quality_budget, run_turn_release_check, validate_quality_budget
 from tokensquash.sidecar import (
     certify_sidecar_report,
     compact_semantic_payload,
@@ -413,6 +413,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         commands = {item["command"] for item in report["commands"]}
         schemas = {item["schema_version"] for item in report["schemas"]}
         self.assertIn("about", commands)
+        self.assertIn("budget validate", commands)
         self.assertIn("init", commands)
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns certification-history", commands)
@@ -421,6 +422,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
+        self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
         self.assertIn("tokensquash.workspace.init.v1", schemas)
         self.assertIn("tokensquash.turns.certify.compare.v1", schemas)
         self.assertIn("tokensquash.turns.certify.history.v1", schemas)
@@ -2877,6 +2879,61 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("## Adjacent Steps", output)
             self.assertTrue(out.exists())
             self.assertEqual(out.read_text(encoding="utf-8"), output)
+
+    def test_quality_budget_validate_example(self) -> None:
+        report = validate_quality_budget(Path("examples") / "quality-budget.json")
+
+        self.assertEqual(report["schema_version"], "tokensquash.quality_budget.validate.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["summary"]["error_count"], 0)
+        self.assertEqual(report["quality_budget"]["schema_version"], "tokensquash.quality_budget.v1")
+        self.assertEqual(report["quality_budget"]["release_check"]["min_saved_pct"], 0.5)
+
+    def test_quality_budget_validate_cli_markdown_warns_unknown_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            budget = Path(tmp) / "quality-budget.json"
+            out = Path(tmp) / "budget.md"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.quality_budget.v1",
+                        "turns": {"release_check": {"min_saved_pct": 0.5, "typo_key": 1}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["budget", "validate", str(budget), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Quality Budget Validation", output)
+            self.assertIn("- Status: `warn`", output)
+            self.assertIn("Unknown release-check budget key", output)
+            self.assertTrue(out.exists())
+            self.assertEqual(out.read_text(encoding="utf-8"), output)
+
+    def test_quality_budget_validate_fails_invalid_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            budget = Path(tmp) / "quality-budget.json"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.quality_budget.v1",
+                        "turns": {"release_check": {"min_saved_pct": 101.0}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = validate_quality_budget(budget)
+
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["summary"]["error_count"], 1)
+            self.assertIn("between 0 and 100", report["errors"][0]["message"])
+            self.assertIsNone(report["quality_budget"])
 
     def test_turns_release_check_runs_certification_history_and_doctor(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
