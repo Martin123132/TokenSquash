@@ -360,6 +360,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         MANIFEST_SCHEMA_VERSION,
         WORKSPACE_INIT_SCHEMA_VERSION,
         "tokensquash.doctor.v1",
+        "tokensquash.quality_budget.v1",
         "tokensquash.turns.certify.v1",
         "tokensquash.turns.release_check.v1",
         "tokensquash.sidecar.certify.v1",

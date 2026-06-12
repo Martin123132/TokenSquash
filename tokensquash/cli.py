@@ -585,6 +585,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Redacted turn corpus to certify for release.",
     )
     turns_release_check.add_argument("--out-dir", type=Path, default=Path("private-turns/release-check"))
+    turns_release_check.add_argument("--budget", type=Path, help="TokenSquash quality budget JSON file.")
     turns_release_check.add_argument(
         "--history",
         action="append",
@@ -602,10 +603,10 @@ def main(argv: list[str] | None = None) -> int:
     turns_release_check.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to select.")
     turns_release_check.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per alias.")
     turns_release_check.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
-    turns_release_check.add_argument("--min-saved-pct", type=float, default=0.5, help="Minimum saved percent required.")
-    turns_release_check.add_argument("--max-privacy-findings", type=int, default=0, help="Maximum privacy findings allowed.")
-    turns_release_check.add_argument("--max-pass-through-rows", type=int, default=0, help="Maximum adaptive pass-through rows allowed.")
-    turns_release_check.add_argument("--max-raw-wire-loss-turns", type=int, default=0, help="Maximum rows where raw wire is longer.")
+    turns_release_check.add_argument("--min-saved-pct", type=float, help="Minimum saved percent required.")
+    turns_release_check.add_argument("--max-privacy-findings", type=int, help="Maximum privacy findings allowed.")
+    turns_release_check.add_argument("--max-pass-through-rows", type=int, help="Maximum adaptive pass-through rows allowed.")
+    turns_release_check.add_argument("--max-raw-wire-loss-turns", type=int, help="Maximum rows where raw wire is longer.")
     turns_release_check.add_argument("--suggestion-limit", type=int, default=5, help="Maximum suggestions to include.")
     turns_release_check.add_argument(
         "--suggestion-min-saved-tokens",
@@ -1311,6 +1312,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.corpus,
                     out_dir=args.out_dir,
                     history_paths=args.history,
+                    quality_budget_path=args.budget,
                     counter=args.counter,
                     target_savings_pct=args.target,
                     adaptive=not args.no_adaptive,

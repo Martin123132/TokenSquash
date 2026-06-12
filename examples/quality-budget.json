@@ -1,0 +1,15 @@
+{
+  "schema_version": "tokensquash.quality_budget.v1",
+  "turns": {
+    "release_check": {
+      "min_saved_pct": 0.5,
+      "max_privacy_findings": 0,
+      "max_pass_through_rows": 0,
+      "max_raw_wire_loss_turns": 0,
+      "require_history": false,
+      "max_history_regressions": 0,
+      "max_history_failures": 0,
+      "max_doctor_warnings": 0
+    }
+  }
+}

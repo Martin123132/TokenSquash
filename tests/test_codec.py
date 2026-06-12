@@ -25,7 +25,7 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
-from tokensquash.release import run_turn_release_check
+from tokensquash.release import load_quality_budget, run_turn_release_check
 from tokensquash.sidecar import (
     certify_sidecar_report,
     compact_semantic_payload,
@@ -420,6 +420,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns release-check", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
+        self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.workspace.init.v1", schemas)
         self.assertIn("tokensquash.turns.certify.compare.v1", schemas)
         self.assertIn("tokensquash.turns.certify.history.v1", schemas)
@@ -2934,6 +2935,103 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "certification" / "certification.json").exists())
             self.assertTrue((out_dir / "doctor.json").exists())
             self.assertFalse((out_dir / "history.json").exists())
+
+    def test_turns_release_check_budget_requires_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release"
+            budget = Path(tmp) / "quality-budget.json"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.quality_budget.v1",
+                        "turns": {"release_check": {"require_history": True}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = run_turn_release_check(
+                DEFAULT_DEMO_CORPUS,
+                out_dir=out_dir,
+                quality_budget_path=budget,
+                counter="chars",
+            )
+
+            history_check = next(check for check in report["checks"] if check["name"] == "certification_history")
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(history_check["status"], "fail")
+            self.assertEqual(report["quality_budget"]["path"], str(budget))
+            self.assertTrue(report["quality_budget"]["release_check"]["require_history"])
+            self.assertTrue((out_dir / "release-check.json").exists())
+
+    def test_turns_release_check_cli_budget_can_fail_certification_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release"
+            budget = Path(tmp) / "quality-budget.json"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.quality_budget.v1",
+                        "turns": {"release_check": {"min_saved_pct": 99.0}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "release-check",
+                        str(DEFAULT_DEMO_CORPUS),
+                        "--counter",
+                        "chars",
+                        "--budget",
+                        str(budget),
+                        "--out-dir",
+                        str(out_dir),
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            certification_check = next(check for check in payload["checks"] if check["name"] == "turn_certification")
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["status"], "fail")
+            self.assertEqual(payload["thresholds"]["min_saved_pct"], 99.0)
+            self.assertEqual(certification_check["status"], "fail")
+            self.assertEqual(load_quality_budget(budget)["schema_version"], "tokensquash.quality_budget.v1")
+            self.assertTrue((out_dir / "release-check.json").exists())
+
+            override_out_dir = Path(tmp) / "release-override"
+            override_stdout = StringIO()
+            with redirect_stdout(override_stdout):
+                override_code = cli_main(
+                    [
+                        "turns",
+                        "release-check",
+                        str(DEFAULT_DEMO_CORPUS),
+                        "--counter",
+                        "chars",
+                        "--budget",
+                        str(budget),
+                        "--min-saved-pct",
+                        "0.5",
+                        "--out-dir",
+                        str(override_out_dir),
+                        "--json",
+                    ]
+                )
+
+            override_payload = json.loads(override_stdout.getvalue())
+            override_certification_check = next(
+                check for check in override_payload["checks"] if check["name"] == "turn_certification"
+            )
+            self.assertEqual(override_code, 0)
+            self.assertEqual(override_payload["status"], "warn")
+            self.assertEqual(override_payload["thresholds"]["min_saved_pct"], 0.5)
+            self.assertEqual(override_certification_check["status"], "pass")
 
     def test_turns_suggestions_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

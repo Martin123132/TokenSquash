@@ -16,6 +16,17 @@ from .turns import (
 
 
 RELEASE_CHECK_SCHEMA_VERSION = "tokensquash.turns.release_check.v1"
+QUALITY_BUDGET_SCHEMA_VERSION = "tokensquash.quality_budget.v1"
+DEFAULT_RELEASE_BUDGET = {
+    "min_saved_pct": 0.5,
+    "max_privacy_findings": 0,
+    "max_pass_through_rows": 0,
+    "max_raw_wire_loss_turns": 0,
+    "require_history": False,
+    "max_history_regressions": 0,
+    "max_history_failures": 0,
+    "max_doctor_warnings": 0,
+}
 
 
 def run_turn_release_check(
@@ -23,6 +34,7 @@ def run_turn_release_check(
     *,
     out_dir: Path | str = Path("private-turns/release-check"),
     history_paths: Iterable[Path | str] | Path | str | None = None,
+    quality_budget_path: Path | str | None = None,
     counter: str = "heuristic",
     target_savings_pct: float = 0.0,
     adaptive: bool = True,
@@ -33,10 +45,10 @@ def run_turn_release_check(
     max_field_values: int = 8,
     min_saved_tokens: int = 1,
     base_aliases: AliasTable | dict[str, Any] | None = None,
-    min_saved_pct: float = 0.5,
-    max_privacy_findings: int = 0,
-    max_pass_through_rows: int = 0,
-    max_raw_wire_loss_turns: int = 0,
+    min_saved_pct: float | None = None,
+    max_privacy_findings: int | None = None,
+    max_pass_through_rows: int | None = None,
+    max_raw_wire_loss_turns: int | None = None,
     suggestion_limit: int = 5,
     suggestion_min_saved_tokens: int = 1,
     check_ollama: bool = False,
@@ -51,6 +63,14 @@ def run_turn_release_check(
     certification_dir = output_dir / "certification"
     doctor_strict_dir = output_dir / "doctor-strict"
     history_inputs = _path_list(history_paths)
+    quality_budget = _resolve_quality_budget(
+        quality_budget_path,
+        min_saved_pct=min_saved_pct,
+        max_privacy_findings=max_privacy_findings,
+        max_pass_through_rows=max_pass_through_rows,
+        max_raw_wire_loss_turns=max_raw_wire_loss_turns,
+    )
+    budget_values = quality_budget["release_check"]
 
     certification = certify_turn_corpus(
         corpus,
@@ -64,10 +84,10 @@ def run_turn_release_check(
         max_field_values=max_field_values,
         min_saved_tokens=min_saved_tokens,
         base_aliases=base_aliases,
-        min_saved_pct=min_saved_pct,
-        max_privacy_findings=max_privacy_findings,
-        max_pass_through_rows=max_pass_through_rows,
-        max_raw_wire_loss_turns=max_raw_wire_loss_turns,
+        min_saved_pct=float(budget_values["min_saved_pct"]),
+        max_privacy_findings=int(budget_values["max_privacy_findings"]),
+        max_pass_through_rows=int(budget_values["max_pass_through_rows"]),
+        max_raw_wire_loss_turns=int(budget_values["max_raw_wire_loss_turns"]),
         suggestion_limit=suggestion_limit,
         suggestion_min_saved_tokens=suggestion_min_saved_tokens,
     )
@@ -138,7 +158,8 @@ def run_turn_release_check(
                 "warning_count": (doctor.get("summary") or {}).get("warning_count", 0),
             },
         ),
-        _history_release_check(history, outputs),
+        _history_release_check(history, outputs, budget_values),
+        _doctor_warning_budget_check(doctor, budget_values),
     ]
     status = _release_status(checks)
     summary = _release_summary(certification, doctor, history, checks)
@@ -161,13 +182,19 @@ def run_turn_release_check(
             "suggestion_min_saved_tokens": max(0, int(suggestion_min_saved_tokens)),
             "history_input_count": len(history_inputs),
             "check_ollama": check_ollama,
+            "quality_budget_path": str(quality_budget_path) if quality_budget_path else None,
         },
         "thresholds": {
-            "min_saved_pct": min_saved_pct,
-            "max_privacy_findings": max_privacy_findings,
-            "max_pass_through_rows": max_pass_through_rows,
-            "max_raw_wire_loss_turns": max_raw_wire_loss_turns,
+            "min_saved_pct": budget_values["min_saved_pct"],
+            "max_privacy_findings": budget_values["max_privacy_findings"],
+            "max_pass_through_rows": budget_values["max_pass_through_rows"],
+            "max_raw_wire_loss_turns": budget_values["max_raw_wire_loss_turns"],
+            "require_history": budget_values["require_history"],
+            "max_history_regressions": budget_values["max_history_regressions"],
+            "max_history_failures": budget_values["max_history_failures"],
+            "max_doctor_warnings": budget_values["max_doctor_warnings"],
         },
+        "quality_budget": quality_budget,
         "summary": summary,
         "checks": checks,
         "outputs": outputs,
@@ -181,9 +208,27 @@ def run_turn_release_check(
     return report
 
 
+def load_quality_budget(path: Path | str) -> dict[str, Any]:
+    """Load a machine-readable TokenSquash quality budget JSON file."""
+
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != QUALITY_BUDGET_SCHEMA_VERSION:
+        raise ValueError(f"Not a TokenSquash quality budget: {source}")
+    turns = payload.get("turns", {})
+    if not isinstance(turns, dict):
+        raise ValueError("quality budget field `turns` must be an object")
+    release_check = turns.get("release_check", {})
+    if not isinstance(release_check, dict):
+        raise ValueError("quality budget field `turns.release_check` must be an object")
+    return payload
+
+
 def format_turn_release_check_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     outputs = report.get("outputs", {})
+    budget = report.get("quality_budget", {})
+    budget_values = budget.get("release_check", {})
     lines = [
         "# TokenSquash Turn Release Check",
         "",
@@ -197,6 +242,18 @@ def format_turn_release_check_markdown(report: dict[str, Any]) -> str:
         f"- History status: `{summary.get('history_status')}`",
         f"- Failed required checks: `{summary.get('failed_required_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
+        f"- Quality budget: `{budget.get('path') or budget.get('source')}`",
+        "",
+        "## Quality Budget",
+        "",
+        f"- Min saved percent: `{budget_values.get('min_saved_pct')}%`",
+        f"- Max privacy findings: `{budget_values.get('max_privacy_findings')}`",
+        f"- Max pass-through rows: `{budget_values.get('max_pass_through_rows')}`",
+        f"- Max raw wire loss turns: `{budget_values.get('max_raw_wire_loss_turns')}`",
+        f"- Require history: `{budget_values.get('require_history')}`",
+        f"- Max history regressions: `{budget_values.get('max_history_regressions')}`",
+        f"- Max history failures: `{budget_values.get('max_history_failures')}`",
+        f"- Max doctor warnings: `{budget_values.get('max_doctor_warnings')}`",
         "",
         "## Checks",
         "",
@@ -267,8 +324,20 @@ def write_turn_release_check_outputs(target: Path | str, report: dict[str, Any])
     _write_json_report(target_path / "release-check.json", report)
 
 
-def _history_release_check(history: dict[str, Any] | None, outputs: dict[str, str]) -> dict[str, Any]:
+def _history_release_check(
+    history: dict[str, Any] | None,
+    outputs: dict[str, str],
+    budget: dict[str, Any],
+) -> dict[str, Any]:
     if history is None:
+        if bool(budget.get("require_history")):
+            return _release_check(
+                "certification_history",
+                "fail",
+                required=True,
+                message="Quality budget requires baseline certification history.",
+                data={"require_history": True},
+            )
         return _release_check(
             "certification_history",
             "skip",
@@ -277,23 +346,51 @@ def _history_release_check(history: dict[str, Any] | None, outputs: dict[str, st
             data={},
         )
     status = history.get("status")
-    passed = status in {"improved", "same"}
+    summary = history.get("summary") or {}
+    regressed_step_count = int(summary.get("regressed_step_count", 0))
+    failed_step_count = int(summary.get("failed_step_count", 0))
+    max_regressions = int(budget.get("max_history_regressions", 0))
+    max_failures = int(budget.get("max_history_failures", 0))
+    passed = (
+        status != "failed"
+        and regressed_step_count <= max_regressions
+        and failed_step_count <= max_failures
+    )
     return _release_check(
         "certification_history",
         "pass" if passed else "fail",
         required=True,
         message=(
-            f"Certification history is {status}."
+            f"Certification history is within budget: {status}."
             if passed
-            else f"Certification history is {status}; inspect regressions before release."
+            else f"Certification history is outside budget: {status}; inspect regressions before release."
         ),
         data={
             "artifact": outputs.get("history"),
             "history_status": status,
-            "saved_pct_delta": (history.get("summary") or {}).get("saved_pct_delta"),
-            "regressed_step_count": (history.get("summary") or {}).get("regressed_step_count", 0),
-            "failed_step_count": (history.get("summary") or {}).get("failed_step_count", 0),
+            "saved_pct_delta": summary.get("saved_pct_delta"),
+            "regressed_step_count": regressed_step_count,
+            "failed_step_count": failed_step_count,
+            "max_history_regressions": max_regressions,
+            "max_history_failures": max_failures,
         },
+    )
+
+
+def _doctor_warning_budget_check(doctor: dict[str, Any], budget: dict[str, Any]) -> dict[str, Any]:
+    warning_count = int((doctor.get("summary") or {}).get("warning_count", 0))
+    max_warnings = int(budget.get("max_doctor_warnings", 0))
+    passed = warning_count <= max_warnings
+    return _release_check(
+        "doctor_warning_budget",
+        "pass" if passed else "fail",
+        required=True,
+        message=(
+            f"Doctor warning count {warning_count} is within budget."
+            if passed
+            else f"Doctor warning count {warning_count} exceeds budget {max_warnings}."
+        ),
+        data={"warning_count": warning_count, "max_doctor_warnings": max_warnings},
     )
 
 
@@ -381,6 +478,59 @@ def _path_list(paths: Iterable[Path | str] | Path | str | None) -> list[Path]:
     if isinstance(paths, (str, Path)):
         return [Path(paths)]
     return [Path(path) for path in paths]
+
+
+def _resolve_quality_budget(
+    path: Path | str | None,
+    *,
+    min_saved_pct: float | None,
+    max_privacy_findings: int | None,
+    max_pass_through_rows: int | None,
+    max_raw_wire_loss_turns: int | None,
+) -> dict[str, Any]:
+    source_payload = load_quality_budget(path) if path else None
+    release_budget = ((source_payload or {}).get("turns") or {}).get("release_check", {})
+    if not isinstance(release_budget, dict):
+        release_budget = {}
+    values = {
+        "min_saved_pct": _budget_float(release_budget, "min_saved_pct", min_saved_pct),
+        "max_privacy_findings": _budget_int(release_budget, "max_privacy_findings", max_privacy_findings),
+        "max_pass_through_rows": _budget_int(release_budget, "max_pass_through_rows", max_pass_through_rows),
+        "max_raw_wire_loss_turns": _budget_int(
+            release_budget,
+            "max_raw_wire_loss_turns",
+            max_raw_wire_loss_turns,
+        ),
+        "require_history": _budget_bool(release_budget, "require_history"),
+        "max_history_regressions": _budget_int(release_budget, "max_history_regressions", None),
+        "max_history_failures": _budget_int(release_budget, "max_history_failures", None),
+        "max_doctor_warnings": _budget_int(release_budget, "max_doctor_warnings", None),
+    }
+    return {
+        "schema_version": QUALITY_BUDGET_SCHEMA_VERSION,
+        "source": "file" if path else "defaults",
+        "path": str(path) if path else None,
+        "release_check": values,
+    }
+
+
+def _budget_float(release_budget: dict[str, Any], name: str, explicit: float | None) -> float:
+    value = explicit if explicit is not None else release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
+    return float(value)
+
+
+def _budget_int(release_budget: dict[str, Any], name: str, explicit: int | None) -> int:
+    value = explicit if explicit is not None else release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
+    return max(0, int(value))
+
+
+def _budget_bool(release_budget: dict[str, Any], name: str) -> bool:
+    value = release_budget.get(name, DEFAULT_RELEASE_BUDGET[name])
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _write_json_report(path: Path, payload: dict[str, Any]) -> None:

@@ -71,6 +71,7 @@ SUPPORTED_SCHEMAS = [
     ("product", "tokensquash.demo.v1", "Public deterministic demo report."),
     ("product", "tokensquash.doctor.v1", "Install and readiness doctor report."),
     ("product", MANIFEST_SCHEMA_VERSION, "Product manifest report."),
+    ("product", "tokensquash.quality_budget.v1", "Project quality budget for release checks."),
     ("product", WORKSPACE_INIT_SCHEMA_VERSION, "Local private workspace initialization report."),
     ("turns", "tokensquash.turns.validate.v1", "Turn corpus validation report."),
     ("turns", "tokensquash.turns.stats.v1", "Turn corpus statistics report."),
@@ -114,7 +115,7 @@ READINESS_COMMANDS = [
     "python -m tokensquash doctor --strict",
     "python -m tokensquash demo --counter chars --out-dir private-turns\\demo-output",
     "python -m tokensquash turns certify examples\\sample-turns.jsonl --counter chars --out-dir private-turns\\certification",
-    "python -m tokensquash turns release-check examples\\sample-turns.jsonl --counter chars --out-dir private-turns\\release-check",
+    "python -m tokensquash turns release-check examples\\sample-turns.jsonl --counter chars --budget examples\\quality-budget.json --out-dir private-turns\\release-check",
 ]
 
 PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)

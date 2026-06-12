@@ -9,7 +9,7 @@ from .doctor import run_doctor
 from .metrics import benchmark_prompts, benchmark_replies, compare_benchmarks, count_tokens, load_reply_records
 from .mining import mine_reply_patterns
 from .reply import AgentReply, decode_reply, encode_reply, parse_reply_wire
-from .release import run_turn_release_check
+from .release import load_quality_budget, run_turn_release_check
 from .turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
@@ -59,6 +59,7 @@ __all__ = [
     "import_turn_corpus",
     "initialize_workspace",
     "load_prompt_records",
+    "load_quality_budget",
     "load_alias_table",
     "load_reply_records",
     "load_turn_records",
