@@ -4,6 +4,13 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unittest:
     runs-on: ubuntu-latest
@@ -61,6 +68,20 @@ jobs:
           with ZipFile(wheel) as zf:
               assert "tokensquash/data/sample-turns.jsonl" in set(zf.namelist())
           PY
+      - name: Build source distribution
+        run: python -c "import setuptools.build_meta as b; print(b.build_sdist('/tmp/tokensquash-sdist'))"
+      - name: Check source distribution demo data
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import tarfile
+
+          sdist = next(Path("/tmp/tokensquash-sdist").glob("tokensquash-*.tar.gz"))
+          with tarfile.open(sdist, "r:gz") as archive:
+              names = {item.name for item in archive.getmembers() if item.isfile()}
+          assert any(name.endswith("/tokensquash/data/sample-turns.jsonl") for name in names)
+          assert any(name.endswith("/PKG-INFO") for name in names)
+          PY
       - name: Run sample benchmark
         run: python -m tokensquash bench examples/coding-prompts.jsonl
       - name: Run reply codec smoke test
@@ -101,6 +122,9 @@ jobs:
 
   exact-tokenizer:
     runs-on: ubuntu-latest
+    env:
+      TOKENSQUASH_RC_DIR: ${{ runner.temp }}/tokensquash-release-candidate
+      TOKENSQUASH_RC_VERIFY: ${{ runner.temp }}/tokensquash-release-candidate-verify.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -111,9 +135,60 @@ jobs:
       - name: Verify exact-tokenizer benchmark baselines
         run: python -m tokensquash baselines verify --include-exact-tokenizer --json
       - name: Run release candidate gate
-        run: python -m tokensquash release-candidate --skip-tests --out-dir /tmp/tokensquash-release-candidate --json
+        run: python -m tokensquash release-candidate --skip-tests --out-dir "$TOKENSQUASH_RC_DIR" --json
       - name: Verify release candidate gate
-        run: python -m tokensquash verify-release-candidate /tmp/tokensquash-release-candidate --require-release-candidate-pass --json
+        run: python -m tokensquash verify-release-candidate "$TOKENSQUASH_RC_DIR" --require-release-candidate-pass --out "$TOKENSQUASH_RC_VERIFY" --json
+      - name: Assert release package evidence
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          pack = Path(os.environ["TOKENSQUASH_RC_DIR"])
+          verify_path = Path(os.environ["TOKENSQUASH_RC_VERIFY"])
+          candidate = json.loads((pack / "release-candidate.json").read_text(encoding="utf-8"))
+          verify = json.loads(verify_path.read_text(encoding="utf-8"))
+          steps = {step["name"]: step for step in candidate["steps"]}
+          checks = {check["name"]: check for check in verify["checks"]}
+          expectations = {
+              "candidate.status": candidate.get("status"),
+              "verify.status": verify.get("status"),
+              "steps.exact_tokenizer_baselines": steps["exact_tokenizer_baselines"]["status"],
+              "steps.wheel_build": steps["wheel_build"]["status"],
+              "steps.wheel_smoke": steps["wheel_smoke"]["status"],
+              "steps.sdist_build": steps["sdist_build"]["status"],
+              "checks.wheel": checks["wheel"]["status"],
+              "checks.sdist": checks["sdist"]["status"],
+              "checks.artifact_manifest_integrity": checks["artifact_manifest_integrity"]["status"],
+              "summary.wheel_smoke_status": verify["summary"]["wheel_smoke_status"],
+              "summary.sdist_status": verify["summary"]["sdist_status"],
+          }
+          failures = {key: value for key, value in expectations.items() if value != "pass"}
+          if failures:
+              raise SystemExit(f"Release package evidence did not pass: {failures}")
+          for relative in (
+              "artifact-manifest.json",
+              "artifact-manifest.md",
+              "release-attestation.json",
+              "release-attestation.md",
+              "wheel-build.txt",
+              "wheel-smoke.txt",
+              "sdist-build.txt",
+          ):
+              path = pack / relative
+              if not path.exists() or path.stat().st_size <= 0:
+                  raise SystemExit(f"Missing or empty release evidence artifact: {path}")
+          PY
+      - name: Upload release candidate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-evidence
+          path: |
+            ${{ runner.temp }}/tokensquash-release-candidate
+            ${{ runner.temp }}/tokensquash-release-candidate-verify.json
+          if-no-files-found: warn
       - name: Run exact tokenizer benchmark
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer reply benchmark

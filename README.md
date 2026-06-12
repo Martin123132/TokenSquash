@@ -639,6 +639,12 @@ python -c "import setuptools.build_meta as b; print(b.build_sdist(r'private-turn
 `private-turns\doctor-strict` by default. Use `--strict-out-dir` when CI or a
 release process needs the evidence somewhere else.
 
+The GitHub Actions workflow runs the unit suite on Python 3.10 and 3.13,
+checks both wheel and source-distribution packaging, and runs the exact-tokenizer
+release-candidate gate on Python 3.13. That release job uploads the saved
+release-candidate pack and verifier JSON as the `release-candidate-evidence`
+artifact for inspection after each run.
+
 ## Current Scope
 
 - Compact coding-agent intent format: `ts1`.
