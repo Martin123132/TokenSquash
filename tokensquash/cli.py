@@ -16,6 +16,7 @@ from .corpus import (
     validate_corpus,
 )
 from .demo import DEFAULT_DEMO_CORPUS, format_demo_markdown, run_demo, write_demo_outputs
+from .doctor import format_doctor_markdown, run_doctor
 from .metrics import (
     benchmark_replies,
     benchmark_prompts,
@@ -133,6 +134,12 @@ def main(argv: list[str] | None = None) -> int:
     demo.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
     demo.add_argument("--out-dir", type=Path, help="Write demo.json, demo.md, and the turn evaluation pack.")
     demo.add_argument("--json", action="store_true", help="Print demo JSON.")
+
+    doctor = sub.add_parser("doctor", help="Check the local TokenSquash install and workspace health.")
+    doctor.add_argument("--check-ollama", action="store_true", help="Try to reach the local Ollama endpoint.")
+    doctor.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    doctor.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
+    doctor.add_argument("--json", action="store_true", help="Print doctor JSON.")
 
     sidecar = sub.add_parser("sidecar", help="Experimental local-AI semantic translator sidecar.")
     sidecar_sub = sidecar.add_subparsers(dest="sidecar_command", required=True)
@@ -686,6 +693,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.out_dir:
                 write_demo_outputs(args.out_dir, report)
             output = json.dumps(report, indent=2) + "\n" if args.json else format_demo_markdown(report)
+            print(output, end="")
+            return 0 if report["status"] in {"pass", "warn"} else 1
+
+        if args.command == "doctor":
+            report = run_doctor(
+                check_ollama=args.check_ollama,
+                ollama_endpoint=args.ollama_endpoint,
+                ollama_timeout=args.ollama_timeout,
+            )
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_doctor_markdown(report)
             print(output, end="")
             return 0 if report["status"] in {"pass", "warn"} else 1
 

@@ -13,6 +13,7 @@ from tokensquash.cli import main as cli_main
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
 from tokensquash.demo import DEFAULT_DEMO_CORPUS, run_demo
+from tokensquash.doctor import run_doctor
 from tokensquash.metrics import (
     benchmark_prompts,
     benchmark_replies,
@@ -393,6 +394,47 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "demo.md").exists())
             self.assertTrue((out_dir / "turn-evaluation" / "evaluation.json").exists())
             self.assertIn("TokenSquash Demo", (out_dir / "demo.md").read_text(encoding="utf-8"))
+
+    def test_run_doctor_reports_required_checks(self) -> None:
+        report = run_doctor()
+
+        self.assertEqual(report["schema_version"], "tokensquash.doctor.v1")
+        self.assertIn(report["status"], {"pass", "warn"})
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertEqual(checks["python_version"]["status"], "pass")
+        self.assertEqual(checks["packaged_demo_corpus"]["status"], "pass")
+        self.assertEqual(checks["deterministic_demo"]["status"], "pass")
+        self.assertEqual(checks["optional_ollama"]["status"], "skip")
+
+    def test_doctor_cli_json(self) -> None:
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            code = cli_main(["doctor", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["schema_version"], "tokensquash.doctor.v1")
+        self.assertIn(payload["status"], {"pass", "warn"})
+        self.assertGreaterEqual(payload["summary"]["required_check_count"], 3)
+
+    def test_doctor_ollama_check_can_pass_with_mock(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps({"models": [{"name": "tiny-local"}]}).encode("utf-8")
+
+        with patch("tokensquash.doctor.urlopen", return_value=FakeResponse()):
+            report = run_doctor(check_ollama=True, ollama_endpoint="http://localhost:11434")
+
+        checks = {check["name"]: check for check in report["checks"]}
+        self.assertEqual(checks["optional_ollama"]["status"], "pass")
+        self.assertEqual(checks["optional_ollama"]["data"]["model_count"], 1)
 
     def test_sidecar_dry_run_cli_outputs_ollama_request(self) -> None:
         stdout = StringIO()

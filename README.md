@@ -39,6 +39,15 @@ Run the public paired-turn demo with no private data and no local model:
 python -m tokensquash demo
 ```
 
+Check the local install and workspace health:
+
+```powershell
+python -m tokensquash doctor
+```
+
+Add `--check-ollama` when you want the doctor to query a local Ollama server
+for the experimental sidecar path.
+
 Write a reusable demo report pack:
 
 ```powershell
@@ -445,6 +454,7 @@ python -m unittest discover -s tests
 - Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - Public paired-turn sample corpus and first-run deterministic demo command.
+- Local doctor command for install, demo, private-storage, tokenizer, and optional Ollama checks.
 - One-command turn evaluation report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.
