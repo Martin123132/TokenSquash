@@ -2133,7 +2133,10 @@ def _candidate_wheel_path(wheel_dir: Path, candidate: dict[str, Any] | None) -> 
         if wheel_step:
             wheel = (wheel_step.get("data") or {}).get("wheel")
             if wheel:
-                return Path(str(wheel))
+                recorded = Path(str(wheel))
+                for candidate_path in (recorded, wheel_dir / recorded.name):
+                    if candidate_path.exists() and candidate_path.is_file():
+                        return candidate_path
     wheels = sorted(wheel_dir.glob("tokensquash-*.whl")) if wheel_dir.exists() and wheel_dir.is_dir() else []
     return wheels[-1] if wheels else None
 
@@ -2151,7 +2154,10 @@ def _candidate_sdist_path(sdist_dir: Path, candidate: dict[str, Any] | None) -> 
         if sdist_step:
             sdist = (sdist_step.get("data") or {}).get("sdist")
             if sdist:
-                return Path(str(sdist))
+                recorded = Path(str(sdist))
+                for candidate_path in (recorded, sdist_dir / recorded.name):
+                    if candidate_path.exists() and candidate_path.is_file():
+                        return candidate_path
     sdists = sorted(sdist_dir.glob("tokensquash-*.tar.gz")) if sdist_dir.exists() and sdist_dir.is_dir() else []
     return sdists[-1] if sdists else None
 
@@ -2182,10 +2188,15 @@ def _candidate_int(value: Any, *, default: int) -> int:
 
 
 def _resolve_candidate_artifact(base_dir: Path, value: Any, fallback: Path) -> Path:
+    fallback_path = base_dir / fallback
     if isinstance(value, str) and value:
-        candidate = Path(value)
-        return candidate if candidate.is_absolute() else base_dir / candidate
-    return base_dir / fallback
+        recorded = Path(value)
+        candidates = [recorded if recorded.is_absolute() else base_dir / recorded, fallback_path]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return fallback_path
+    return fallback_path
 
 
 def _candidate_relative_path(base_dir: Path, path: Path) -> str:

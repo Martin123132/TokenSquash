@@ -4,6 +4,16 @@ This guide explains how to inspect TokenSquash release assets and evidence.
 Release assets are attached to GitHub Releases so reviewers do not need access
 to local `private-turns/` storage or expired CI artifacts.
 
+Future releases should stage their public assets from a verified
+release-candidate pack before upload:
+
+```powershell
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets
+```
+
+Review `private-turns\release-assets\release-assets.json` before re-running the
+same command with `--upload`.
+
 ## v0.1.0 Assets
 
 The `v0.1.0` GitHub Release includes:

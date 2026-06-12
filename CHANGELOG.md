@@ -11,6 +11,9 @@ is produced locally and in GitHub Actions.
 
 ### Added
 
+- `release-assets` stages verified public release assets from a
+  release-candidate pack, writes a release asset report, and can optionally run
+  `gh release upload`.
 - Release asset verification docs now explain how to inspect published wheel,
   source distribution, attestation, artifact manifest, and verifier assets for
   `v0.1.0`.

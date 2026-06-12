@@ -1019,21 +1019,24 @@ def _append_readiness_steps_check(
 
 
 def _resolve_readiness_artifact(base_dir: Path, value: Any, fallback: Path) -> Path:
+    fallback_path = base_dir / fallback
     if value:
-        candidate = Path(str(value))
-        if candidate.is_absolute() or candidate.exists():
-            return candidate
+        recorded = Path(str(value))
+        candidates: list[Path] = []
+        candidates.append(recorded if recorded.is_absolute() else base_dir / recorded)
         base_name = base_dir.name
-        parts = list(candidate.parts)
+        parts = list(recorded.parts)
         if base_name in parts:
             index = len(parts) - 1 - parts[::-1].index(base_name)
             tail = parts[index + 1 :]
             if tail:
-                return base_dir.joinpath(*tail)
-        direct_child = base_dir / candidate.name
-        if direct_child.exists():
-            return direct_child
-    return base_dir / fallback
+                candidates.append(base_dir.joinpath(*tail))
+        candidates.append(base_dir / recorded.name)
+        candidates.append(fallback_path)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+    return fallback_path
 
 
 def _readiness_artifact_reference(payload: dict[str, Any] | None) -> dict[str, Any] | None:

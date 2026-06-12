@@ -645,10 +645,15 @@ status together:
 python -m pip install -e ".[tokenizer]"
 python -m tokensquash release-candidate --out-dir private-turns\release-candidate
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0
 ```
 
 Use `--require-clean` on `release-candidate` for a final release check when the
 Git work tree should have no tracked or untracked changes.
+`release-assets` verifies the release-candidate pack, stages the public release
+assets under `private-turns\release-assets`, writes `release-assets.json` and
+`release-assets.md`, and prints the exact `gh release upload` command. Add
+`--upload` only after reviewing those staged assets.
 
 Use `--skip-exact-tokenizer` only for local smoke checks where the tokenizer
 extra is intentionally not installed. Use the expanded form below when CI or

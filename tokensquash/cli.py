@@ -54,6 +54,7 @@ from .readiness import (
     verify_product_readiness_pack,
 )
 from .release_info import build_release_info, format_release_info_markdown
+from .release_assets import format_release_assets_markdown, prepare_release_assets
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -263,6 +264,25 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_release_candidate.add_argument("--out", type=Path, help="Write verification output to this file.")
     verify_release_candidate.add_argument("--json", action="store_true", help="Print release-candidate verification JSON.")
+
+    release_assets = sub.add_parser(
+        "release-assets",
+        help="Stage verified release assets and optionally upload them to a GitHub Release.",
+    )
+    release_assets.add_argument("pack", type=Path, help="Release-candidate output directory or JSON file.")
+    release_assets.add_argument("--tag", required=True, help="Release tag, for example v0.1.0.")
+    release_assets.add_argument("--repo", help="GitHub repo as owner/name; inferred from release-info when omitted.")
+    release_assets.add_argument("--out-dir", type=Path, default=Path("private-turns/release-assets"))
+    release_assets.add_argument(
+        "--require-release-candidate-pass",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Require the release-candidate verifier to pass before staging assets.",
+    )
+    release_assets.add_argument("--upload", action="store_true", help="Run gh release upload after staging assets.")
+    release_assets.add_argument("--clobber", action="store_true", help="Pass --clobber to gh release upload.")
+    release_assets.add_argument("--gh", default="gh", help="GitHub CLI executable.")
+    release_assets.add_argument("--json", action="store_true", help="Print release asset JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -1091,6 +1111,21 @@ def main(argv: list[str] | None = None) -> int:
                 args.out.write_text(output, encoding="utf-8")
             print(output, end="")
             return 0 if report["status"] in {"pass", "warn"} else 1
+
+        if args.command == "release-assets":
+            report = prepare_release_assets(
+                args.pack,
+                tag=args.tag,
+                repo=args.repo,
+                out_dir=args.out_dir,
+                require_release_candidate_pass=args.require_release_candidate_pass,
+                upload=args.upload,
+                clobber=args.clobber,
+                gh_executable=args.gh,
+            )
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_release_assets_markdown(report)
+            print(output, end="")
+            return 0 if report["status"] == "pass" else 1
 
         if args.command == "budget":
             if args.budget_command == "init":
