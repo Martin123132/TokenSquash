@@ -40,6 +40,7 @@ COMMAND_GROUPS = {
         "turns gate",
         "turns certify",
         "turns release-check",
+        "turns verify-release",
         "turns suggestions",
     ],
     "sidecar_experimental": [
@@ -96,6 +97,7 @@ SUPPORTED_SCHEMAS = [
     ("turns", "tokensquash.turns.gate.v1", "Turn report quality gate."),
     ("turns", "tokensquash.turns.certify.v1", "Turn certification evidence pack."),
     ("turns", "tokensquash.turns.release_check.v1", "Turn release-readiness check report."),
+    ("turns", "tokensquash.turns.release_verify.v1", "Turn release evidence verification report."),
     ("turns", "tokensquash.turns.suggestions.v1", "Turn improvement suggestions report."),
     ("sidecar_experimental", "tokensquash.sidecar.request.v1", "Ollama request preview."),
     ("sidecar_experimental", "tokensquash.sidecar.semantic.v1", "Local-AI semantic translation report."),
@@ -121,6 +123,7 @@ READINESS_COMMANDS = [
     "python -m tokensquash demo --counter chars --out-dir private-turns\\demo-output",
     "python -m tokensquash turns certify examples\\sample-turns.jsonl --counter chars --out-dir private-turns\\certification",
     "python -m tokensquash turns release-check examples\\sample-turns.jsonl --counter chars --budget examples\\quality-budget.json --out-dir private-turns\\release-check",
+    "python -m tokensquash turns verify-release private-turns\\release-check",
 ]
 
 PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)

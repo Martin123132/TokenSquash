@@ -25,7 +25,13 @@ from tokensquash.metrics import (
 )
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
-from tokensquash.release import initialize_quality_budget, load_quality_budget, run_turn_release_check, validate_quality_budget
+from tokensquash.release import (
+    initialize_quality_budget,
+    load_quality_budget,
+    run_turn_release_check,
+    validate_quality_budget,
+    verify_turn_release_pack,
+)
 from tokensquash.sidecar import (
     certify_sidecar_report,
     compact_semantic_payload,
@@ -420,6 +426,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
         self.assertIn("turns release-check", commands)
+        self.assertIn("turns verify-release", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
@@ -430,6 +437,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.turns.certify.history.v1", schemas)
         self.assertIn("tokensquash.turns.certify.v1", schemas)
         self.assertIn("tokensquash.turns.release_check.v1", schemas)
+        self.assertIn("tokensquash.turns.release_verify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
 
@@ -3054,6 +3062,64 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "quality-budget-validation.json").exists())
             self.assertTrue((out_dir / "doctor.json").exists())
             self.assertFalse((out_dir / "history.json").exists())
+
+    def test_turns_verify_release_pack_passes_for_complete_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            baseline_dir = Path(tmp) / "baseline"
+            release_dir = Path(tmp) / "release"
+            baseline = certify_turn_corpus(DEFAULT_DEMO_CORPUS, counter="chars")
+            write_turn_certification_outputs(baseline_dir, baseline)
+            run_turn_release_check(
+                DEFAULT_DEMO_CORPUS,
+                out_dir=release_dir,
+                history_paths=[baseline_dir],
+                counter="chars",
+            )
+
+            report = verify_turn_release_pack(release_dir)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.release_verify.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["release_status"], "pass")
+            self.assertEqual(report["summary"]["certification_status"], "pass")
+            self.assertEqual(report["summary"]["quality_budget_validation_status"], "pass")
+            names = {check["name"] for check in report["checks"]}
+            self.assertIn("release_check", names)
+            self.assertIn("quality_budget_validation", names)
+            self.assertIn("doctor_markdown", names)
+            self.assertIn("history", names)
+
+    def test_turns_verify_release_cli_json_fails_missing_required_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            release_dir = Path(tmp) / "release"
+            run_turn_release_check(DEFAULT_DEMO_CORPUS, out_dir=release_dir, counter="chars")
+            (release_dir / "quality-budget-validation.json").unlink()
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "verify-release", str(release_dir), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            failed_names = {check["name"] for check in payload["checks"] if check["status"] == "fail"}
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.release_verify.v1")
+            self.assertEqual(payload["status"], "fail")
+            self.assertIn("quality_budget_validation", failed_names)
+
+    def test_turns_verify_release_cli_markdown_can_write_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            release_dir = Path(tmp) / "release"
+            out = Path(tmp) / "verify.md"
+            run_turn_release_check(DEFAULT_DEMO_CORPUS, out_dir=release_dir, counter="chars")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "verify-release", str(release_dir / "release-check.json"), "--out", str(out)])
+
+            self.assertEqual(code, 0)
+            self.assertTrue(out.exists())
+            self.assertIn("# TokenSquash Turn Release Verify", stdout.getvalue())
+            self.assertIn("quality_budget_validation", out.read_text(encoding="utf-8"))
 
     def test_turns_release_check_budget_requires_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

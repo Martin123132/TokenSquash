@@ -17,6 +17,7 @@ from .turns import (
 
 
 RELEASE_CHECK_SCHEMA_VERSION = "tokensquash.turns.release_check.v1"
+RELEASE_VERIFY_SCHEMA_VERSION = "tokensquash.turns.release_verify.v1"
 QUALITY_BUDGET_SCHEMA_VERSION = "tokensquash.quality_budget.v1"
 QUALITY_BUDGET_INIT_SCHEMA_VERSION = "tokensquash.quality_budget.init.v1"
 QUALITY_BUDGET_VALIDATION_SCHEMA_VERSION = "tokensquash.quality_budget.validate.v1"
@@ -218,6 +219,170 @@ def run_turn_release_check(
     }
     write_turn_release_check_outputs(output_dir, report)
     return report
+
+
+def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
+    """Verify a saved turn release-check evidence pack."""
+
+    source = Path(path)
+    release_check_path = source / "release-check.json" if source.is_dir() else source
+    release_dir = release_check_path.parent
+    checks: list[dict[str, Any]] = []
+    release_check, release_check_payload_check = _verify_release_json_artifact(
+        "release_check",
+        release_check_path,
+        RELEASE_CHECK_SCHEMA_VERSION,
+        required=True,
+        allowed_statuses={"pass", "warn"},
+    )
+    checks.append(release_check_payload_check)
+
+    outputs = release_check.get("outputs", {}) if release_check else {}
+    _append_release_file_check(
+        checks,
+        "release_markdown",
+        _resolve_release_artifact(release_dir, outputs.get("markdown"), Path("release-check.md")),
+        required=True,
+    )
+
+    certification, certification_check = _verify_release_json_artifact(
+        "certification",
+        _resolve_release_artifact(
+            release_dir,
+            outputs.get("certification"),
+            Path("certification") / "certification.json",
+        ),
+        "tokensquash.turns.certify.v1",
+        required=True,
+        allowed_statuses={"pass"},
+    )
+    checks.append(certification_check)
+
+    quality_budget, quality_budget_check = _verify_release_json_artifact(
+        "quality_budget",
+        _resolve_release_artifact(release_dir, outputs.get("quality_budget"), Path("quality-budget.json")),
+        QUALITY_BUDGET_SCHEMA_VERSION,
+        required=True,
+    )
+    checks.append(quality_budget_check)
+
+    quality_budget_validation, quality_budget_validation_check = _verify_release_json_artifact(
+        "quality_budget_validation",
+        _resolve_release_artifact(
+            release_dir,
+            outputs.get("quality_budget_validation"),
+            Path("quality-budget-validation.json"),
+        ),
+        QUALITY_BUDGET_VALIDATION_SCHEMA_VERSION,
+        required=True,
+        allowed_statuses={"pass"},
+    )
+    checks.append(quality_budget_validation_check)
+    _append_release_file_check(
+        checks,
+        "quality_budget_validation_markdown",
+        _resolve_release_artifact(
+            release_dir,
+            outputs.get("quality_budget_validation_markdown"),
+            Path("quality-budget-validation.md"),
+        ),
+        required=True,
+    )
+
+    doctor, doctor_check = _verify_release_json_artifact(
+        "doctor",
+        _resolve_release_artifact(release_dir, outputs.get("doctor"), Path("doctor.json")),
+        "tokensquash.doctor.v1",
+        required=True,
+        allowed_statuses={"pass", "warn"},
+    )
+    checks.append(doctor_check)
+    _append_release_file_check(
+        checks,
+        "doctor_markdown",
+        _resolve_release_artifact(release_dir, outputs.get("doctor_markdown"), Path("doctor.md")),
+        required=True,
+    )
+
+    history = None
+    if outputs.get("history"):
+        history, history_check = _verify_release_json_artifact(
+            "history",
+            _resolve_release_artifact(release_dir, outputs.get("history"), Path("history.json")),
+            "tokensquash.turns.certify.history.v1",
+            required=True,
+        )
+        checks.append(history_check)
+        _append_release_file_check(
+            checks,
+            "history_markdown",
+            _resolve_release_artifact(release_dir, outputs.get("history_markdown"), Path("history.md")),
+            required=True,
+        )
+
+    failed_checks = [check for check in checks if check.get("status") == "fail"]
+    warning_checks = [check for check in checks if check.get("status") == "warn"]
+    status = "fail" if failed_checks else "warn" if warning_checks else "pass"
+    return {
+        "schema_version": RELEASE_VERIFY_SCHEMA_VERSION,
+        "status": status,
+        "source": str(source),
+        "release_check_path": str(release_check_path),
+        "summary": {
+            "check_count": len(checks),
+            "failed_check_count": len(failed_checks),
+            "warning_count": len(warning_checks),
+            "release_status": release_check.get("status") if release_check else None,
+            "certification_status": certification.get("status") if certification else None,
+            "doctor_status": doctor.get("status") if doctor else None,
+            "quality_budget_validation_status": quality_budget_validation.get("status")
+            if quality_budget_validation
+            else None,
+            "history_status": history.get("status") if history else None,
+        },
+        "checks": checks,
+        "artifacts": {
+            "release_check": _release_artifact_reference(release_check),
+            "certification": _release_artifact_reference(certification),
+            "quality_budget": _release_artifact_reference(quality_budget),
+            "quality_budget_validation": _release_artifact_reference(quality_budget_validation),
+            "doctor": _release_artifact_reference(doctor),
+            "history": _release_artifact_reference(history),
+        },
+    }
+
+
+def format_turn_release_verify_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Turn Release Verify",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Release check: `{report.get('release_check_path')}`",
+        f"- Checks: `{summary.get('check_count', 0)}`",
+        f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
+        f"- Warnings: `{summary.get('warning_count', 0)}`",
+        f"- Release status: `{summary.get('release_status')}`",
+        f"- Certification status: `{summary.get('certification_status')}`",
+        f"- Doctor status: `{summary.get('doctor_status')}`",
+        f"- Quality budget validation: `{summary.get('quality_budget_validation_status')}`",
+        "",
+        "## Checks",
+        "",
+        "| Check | Status | Required | Path | Detail |",
+        "|---|---|---:|---|---|",
+    ]
+    for check in report.get("checks", []):
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(check.get('name', '')))} | "
+            f"`{check.get('status')}` | "
+            f"{check.get('required')} | "
+            f"`{_markdown_cell(str(check.get('path', '')))}` | "
+            f"{_markdown_cell(str(check.get('message', '')))} |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def load_quality_budget(path: Path | str) -> dict[str, Any]:
@@ -727,6 +892,215 @@ def _release_check(
         "required": required,
         "message": message,
         "data": data or {},
+    }
+
+
+def _verify_release_json_artifact(
+    name: str,
+    path: Path,
+    expected_schema: str,
+    *,
+    required: bool,
+    allowed_statuses: set[str] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    if not path.exists():
+        return None, _release_artifact_check(
+            name,
+            "fail" if required else "warn",
+            required=required,
+            path=path,
+            expected_schema=expected_schema,
+            message="Required JSON artifact is missing." if required else "Optional JSON artifact is missing.",
+        )
+    if not path.is_file():
+        return None, _release_artifact_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            expected_schema=expected_schema,
+            message="Artifact path is not a file.",
+        )
+    if path.stat().st_size == 0:
+        return None, _release_artifact_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            expected_schema=expected_schema,
+            message="JSON artifact is empty.",
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception as exc:
+        return None, _release_artifact_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            expected_schema=expected_schema,
+            message=f"JSON artifact could not be parsed: {exc}",
+        )
+    if not isinstance(payload, dict):
+        return None, _release_artifact_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            expected_schema=expected_schema,
+            message="JSON artifact root must be an object.",
+        )
+
+    actual_schema = payload.get("schema_version")
+    artifact_status = payload.get("status")
+    if actual_schema != expected_schema:
+        return payload, _release_artifact_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            expected_schema=expected_schema,
+            actual_schema=actual_schema,
+            artifact_status=artifact_status,
+            message="JSON artifact schema does not match the expected schema.",
+        )
+    if allowed_statuses is not None and artifact_status not in allowed_statuses:
+        return payload, _release_artifact_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            expected_schema=expected_schema,
+            actual_schema=actual_schema,
+            artifact_status=artifact_status,
+            message="JSON artifact status is outside the allowed release states.",
+        )
+
+    status = "warn" if artifact_status == "warn" else "pass"
+    return payload, _release_artifact_check(
+        name,
+        status,
+        required=required,
+        path=path,
+        expected_schema=expected_schema,
+        actual_schema=actual_schema,
+        artifact_status=artifact_status,
+        message="JSON artifact is present and valid."
+        if status == "pass"
+        else "JSON artifact is valid but reports warnings.",
+    )
+
+
+def _append_release_file_check(
+    checks: list[dict[str, Any]],
+    name: str,
+    path: Path,
+    *,
+    required: bool,
+) -> None:
+    if not path.exists():
+        checks.append(
+            _release_artifact_check(
+                name,
+                "fail" if required else "warn",
+                required=required,
+                path=path,
+                message="Required artifact is missing." if required else "Optional artifact is missing.",
+            )
+        )
+        return
+    if not path.is_file():
+        checks.append(
+            _release_artifact_check(
+                name,
+                "fail",
+                required=required,
+                path=path,
+                message="Artifact path is not a file.",
+            )
+        )
+        return
+    if path.stat().st_size == 0:
+        checks.append(
+            _release_artifact_check(
+                name,
+                "fail",
+                required=required,
+                path=path,
+                message="Artifact file is empty.",
+            )
+        )
+        return
+    checks.append(
+        _release_artifact_check(
+            name,
+            "pass",
+            required=required,
+            path=path,
+            message="Artifact is present and non-empty.",
+        )
+    )
+
+
+def _release_artifact_check(
+    name: str,
+    status: str,
+    *,
+    required: bool,
+    path: Path,
+    message: str,
+    expected_schema: str | None = None,
+    actual_schema: Any = None,
+    artifact_status: Any = None,
+) -> dict[str, Any]:
+    check = {
+        "name": name,
+        "status": status,
+        "required": required,
+        "path": str(path),
+        "message": message,
+    }
+    if expected_schema is not None:
+        check["expected_schema"] = expected_schema
+    if actual_schema is not None:
+        check["actual_schema"] = actual_schema
+    if artifact_status is not None:
+        check["artifact_status"] = artifact_status
+    return check
+
+
+def _resolve_release_artifact(release_dir: Path, recorded: Any, default_rel: Path) -> Path:
+    default_path = release_dir / default_rel
+    if recorded is None:
+        return default_path
+
+    recorded_path = Path(str(recorded))
+    candidates: list[Path] = []
+    if recorded_path.is_absolute():
+        candidates.extend([recorded_path, default_path])
+    else:
+        candidates.extend(
+            [
+                release_dir / recorded_path,
+                recorded_path,
+                default_path,
+                release_dir / recorded_path.name,
+            ]
+        )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else default_path
+
+
+def _release_artifact_reference(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if payload is None:
+        return None
+    return {
+        "schema_version": payload.get("schema_version"),
+        "status": payload.get("status"),
+        "summary": payload.get("summary", {}),
+        "outputs": payload.get("outputs", {}),
     }
 
 

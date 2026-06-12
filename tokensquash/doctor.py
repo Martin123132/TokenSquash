@@ -365,6 +365,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "tokensquash.quality_budget.validate.v1",
         "tokensquash.turns.certify.v1",
         "tokensquash.turns.release_check.v1",
+        "tokensquash.turns.release_verify.v1",
         "tokensquash.sidecar.certify.v1",
     }
     required_commands = {
@@ -375,6 +376,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "doctor",
         "turns certify",
         "turns release-check",
+        "turns verify-release",
         "sidecar certify",
     }
     missing_schemas = sorted(required_schemas - schemas)

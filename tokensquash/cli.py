@@ -34,9 +34,11 @@ from .release import (
     format_quality_budget_init_markdown,
     format_quality_budget_validation_markdown,
     format_turn_release_check_markdown,
+    format_turn_release_verify_markdown,
     initialize_quality_budget,
     run_turn_release_check,
     validate_quality_budget,
+    verify_turn_release_pack,
 )
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
@@ -652,6 +654,14 @@ def main(argv: list[str] | None = None) -> int:
     turns_release_check.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
     turns_release_check.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
     turns_release_check.add_argument("--json", action="store_true", help="Print release-check JSON.")
+
+    turns_verify_release = turns_sub.add_parser(
+        "verify-release",
+        help="Verify a saved release-check evidence pack.",
+    )
+    turns_verify_release.add_argument("pack", type=Path, help="Release-check output directory or release-check.json.")
+    turns_verify_release.add_argument("--out", type=Path, help="Write verification output to this file.")
+    turns_verify_release.add_argument("--json", action="store_true", help="Print release verification JSON.")
 
     turns_suggestions = turns_sub.add_parser("suggestions", help="Suggest next codec improvements from a turn report JSON.")
     turns_suggestions.add_argument("report", type=Path)
@@ -1407,6 +1417,18 @@ def main(argv: list[str] | None = None) -> int:
                     if args.json
                     else format_turn_release_check_markdown(report)
                 )
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn"} else 1
+            if args.turns_command == "verify-release":
+                report = verify_turn_release_pack(args.pack)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_release_verify_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn"} else 1
             if args.turns_command == "suggestions":
