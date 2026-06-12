@@ -294,6 +294,7 @@ Verify that a saved release evidence pack is complete and internally readable:
 
 ```powershell
 python -m tokensquash turns verify-release private-turns\release-check --json
+python -m tokensquash turns verify-release private-turns\release-check --require-release-pass --json
 ```
 
 Turn a saved report into a prioritized codec-improvement checklist:
@@ -379,12 +380,17 @@ complete enough to trust.
 It can verify a complete pack whose release gate failed; check
 `summary.release_status` to distinguish evidence integrity from release
 approval.
+Use `--require-release-pass` in CI when verification should also fail unless
+the saved release-check status is `pass`.
 Python automation can use the same release verifier through the package root:
 
 ```python
 import tokensquash
 
-report = tokensquash.verify_turn_release_pack("private-turns/release-check")
+report = tokensquash.verify_turn_release_pack(
+    "private-turns/release-check",
+    require_release_pass=True,
+)
 assert report["status"] in {"pass", "warn"}
 ```
 

@@ -3096,6 +3096,12 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("doctor_strict_gate", names)
             self.assertIn("history", names)
 
+            approval_report = verify_turn_release_pack(release_dir, require_release_pass=True)
+            approval_names = {check["name"] for check in approval_report["checks"]}
+            self.assertEqual(approval_report["status"], "pass")
+            self.assertTrue(approval_report["require_release_pass"])
+            self.assertIn("release_approval", approval_names)
+
     def test_package_exports_release_verifier_for_automation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             release_dir = Path(tmp) / "release"
@@ -3294,6 +3300,23 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["status"], "pass")
             self.assertEqual(payload["summary"]["release_status"], "fail")
+
+            approval_report = verify_turn_release_pack(out_dir, require_release_pass=True)
+            approval_failed_names = {
+                check["name"] for check in approval_report["checks"] if check["status"] == "fail"
+            }
+            self.assertEqual(approval_report["status"], "fail")
+            self.assertIn("release_approval", approval_failed_names)
+
+            approval_stdout = StringIO()
+            with redirect_stdout(approval_stdout):
+                approval_code = cli_main(
+                    ["turns", "verify-release", str(out_dir), "--require-release-pass", "--json"]
+                )
+            approval_payload = json.loads(approval_stdout.getvalue())
+            self.assertEqual(approval_code, 1)
+            self.assertEqual(approval_payload["status"], "fail")
+            self.assertTrue(approval_payload["require_release_pass"])
 
     def test_turns_suggestions_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -296,7 +296,7 @@ def run_turn_release_check(
     return report
 
 
-def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
+def verify_turn_release_pack(path: Path | str, *, require_release_pass: bool = False) -> dict[str, Any]:
     """Verify a saved turn release-check evidence pack."""
 
     source = Path(path)
@@ -311,6 +311,8 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
         allowed_statuses={"pass", "warn", "fail"},
     )
     checks.append(release_check_payload_check)
+    if require_release_pass:
+        _append_release_approval_check(checks, release_check_path, release_check)
 
     outputs = release_check.get("outputs", {}) if release_check else {}
     _append_release_file_check(
@@ -425,10 +427,12 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
         "status": status,
         "source": str(source),
         "release_check_path": str(release_check_path),
+        "require_release_pass": require_release_pass,
         "summary": {
             "check_count": len(checks),
             "failed_check_count": len(failed_checks),
             "warning_count": len(warning_checks),
+            "release_pass_required": require_release_pass,
             "release_status": release_check.get("status") if release_check else None,
             "certification_status": certification.get("status") if certification else None,
             "doctor_status": doctor.get("status") if doctor else None,
@@ -459,6 +463,7 @@ def format_turn_release_verify_markdown(report: dict[str, Any]) -> str:
         f"- Status: `{report.get('status')}`",
         f"- Source: `{report.get('source')}`",
         f"- Release check: `{report.get('release_check_path')}`",
+        f"- Require release pass: `{report.get('require_release_pass')}`",
         f"- Checks: `{summary.get('check_count', 0)}`",
         f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
@@ -1141,6 +1146,31 @@ def _append_release_file_check(
         )
     )
     return True
+
+
+def _append_release_approval_check(
+    checks: list[dict[str, Any]],
+    release_check_path: Path,
+    release_check: dict[str, Any] | None,
+) -> None:
+    release_status = release_check.get("status") if release_check else None
+    approved = release_status == "pass"
+    checks.append(
+        _release_artifact_check(
+            "release_approval",
+            "pass" if approved else "fail",
+            required=True,
+            path=release_check_path,
+            message=(
+                "Release-check status is pass."
+                if approved
+                else f"Release-check status is {release_status!r}; approval requires `pass`."
+            ),
+            expected_schema=RELEASE_CHECK_SCHEMA_VERSION,
+            actual_schema=release_check.get("schema_version") if release_check else None,
+            artifact_status=release_status,
+        )
+    )
 
 
 def _append_release_directory_check(

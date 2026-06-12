@@ -660,6 +660,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Verify a saved release-check evidence pack.",
     )
     turns_verify_release.add_argument("pack", type=Path, help="Release-check output directory or release-check.json.")
+    turns_verify_release.add_argument(
+        "--require-release-pass",
+        action="store_true",
+        help="Fail verification unless the release-check status is pass.",
+    )
     turns_verify_release.add_argument("--out", type=Path, help="Write verification output to this file.")
     turns_verify_release.add_argument("--json", action="store_true", help="Print release verification JSON.")
 
@@ -1420,7 +1425,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "warn"} else 1
             if args.turns_command == "verify-release":
-                report = verify_turn_release_pack(args.pack)
+                report = verify_turn_release_pack(args.pack, require_release_pass=args.require_release_pass)
                 output = (
                     json.dumps(report, indent=2) + "\n"
                     if args.json
