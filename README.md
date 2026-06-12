@@ -655,7 +655,9 @@ Git work tree should have no tracked or untracked changes.
 `release-assets` verifies the release-candidate pack, stages the public release
 assets under `private-turns\release-assets`, writes `release-assets.json` and
 `release-assets.md`, and prints the exact `gh release upload` command. Add
-`--upload` only after reviewing those staged assets.
+`--update-verification-doc docs\release-verification.md` to refresh the
+generated release hash section from the staged asset report. Add `--upload`
+only after reviewing those staged assets and generated docs.
 
 Use `--skip-exact-tokenizer` only for local smoke checks where the tokenizer
 extra is intentionally not installed. Use the expanded form below when CI or

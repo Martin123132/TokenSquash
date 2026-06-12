@@ -282,6 +282,12 @@ def main(argv: list[str] | None = None) -> int:
     release_assets.add_argument("--upload", action="store_true", help="Run gh release upload after staging assets.")
     release_assets.add_argument("--clobber", action="store_true", help="Pass --clobber to gh release upload.")
     release_assets.add_argument("--gh", default="gh", help="GitHub CLI executable.")
+    release_assets.add_argument(
+        "--update-verification-doc",
+        type=Path,
+        help="Update a release-verification markdown doc from the staged asset report.",
+    )
+    release_assets.add_argument("--ci-run", help="Optional GitHub Actions run id to include in generated verification docs.")
     release_assets.add_argument("--json", action="store_true", help="Print release asset JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
@@ -1122,6 +1128,8 @@ def main(argv: list[str] | None = None) -> int:
                 upload=args.upload,
                 clobber=args.clobber,
                 gh_executable=args.gh,
+                verification_doc=args.update_verification_doc,
+                ci_run=args.ci_run,
             )
             output = json.dumps(report, indent=2) + "\n" if args.json else format_release_assets_markdown(report)
             print(output, end="")

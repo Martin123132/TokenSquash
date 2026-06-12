@@ -1140,6 +1140,16 @@ class TokenSquashCodecTests(unittest.TestCase):
             out_dir = Path(tmp) / "release-candidate"
             relocated_dir = Path(tmp) / "downloaded-release-candidate"
             asset_dir = Path(tmp) / "release-assets"
+            verification_doc = Path(tmp) / "release-verification.md"
+            verification_doc.write_text(
+                "# Release Verification\n\n"
+                "Intro.\n\n"
+                "<!-- tokensquash-release-assets:start -->\n"
+                "old generated section\n"
+                "<!-- tokensquash-release-assets:end -->\n\n"
+                "Tail.\n",
+                encoding="utf-8",
+            )
             with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
                 "tokensquash.candidate._run_wheel_build",
                 side_effect=self._fake_wheel_build,
@@ -1154,12 +1164,20 @@ class TokenSquashCodecTests(unittest.TestCase):
             shutil.copytree(out_dir, relocated_dir)
             shutil.rmtree(out_dir)
 
-            report = prepare_release_assets(relocated_dir, tag="v0.1.0", out_dir=asset_dir)
+            report = prepare_release_assets(
+                relocated_dir,
+                tag="v0.1.0",
+                out_dir=asset_dir,
+                verification_doc=verification_doc,
+                ci_run="12345",
+            )
 
             self.assertEqual(report["schema_version"], "tokensquash.release_assets.v1")
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["repo"], "Martin123132/TokenSquash")
             self.assertFalse(report["summary"]["uploaded"])
+            self.assertTrue(report["summary"]["verification_doc_updated"])
+            self.assertEqual(report["outputs"]["verification_doc"], str(verification_doc))
             self.assertIn("gh release upload v0.1.0", report["commands"]["upload"])
             asset_names = {asset["name"] for asset in report["assets"]}
             self.assertEqual(
@@ -1178,11 +1196,19 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((asset_dir / "release-assets.json").exists())
             self.assertTrue((asset_dir / "release-assets.md").exists())
             self.assertTrue((asset_dir / "verify-release-candidate.json").exists())
+            doc_text = verification_doc.read_text(encoding="utf-8")
+            self.assertIn("## v0.1.0 Assets", doc_text)
+            self.assertIn("GitHub Actions run: `12345`", doc_text)
+            self.assertIn("tokensquash-0.0.0-py3-none-any.whl", doc_text)
+            self.assertIn("verify-release-candidate.json", doc_text)
+            self.assertNotIn("old generated section", doc_text)
+            self.assertIn("Tail.", doc_text)
 
     def test_release_assets_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
             asset_dir = Path(tmp) / "release-assets"
+            verification_doc = Path(tmp) / "release-verification.md"
             stdout = StringIO()
             with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
                 "tokensquash.candidate._run_wheel_build",
@@ -1205,6 +1231,10 @@ class TokenSquashCodecTests(unittest.TestCase):
                         "v0.1.0",
                         "--out-dir",
                         str(asset_dir),
+                        "--update-verification-doc",
+                        str(verification_doc),
+                        "--ci-run",
+                        "12345",
                         "--json",
                     ]
                 )
@@ -1214,7 +1244,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["schema_version"], "tokensquash.release_assets.v1")
             self.assertEqual(payload["status"], "pass")
             self.assertEqual(payload["summary"]["asset_count"], 5)
+            self.assertTrue(payload["summary"]["verification_doc_updated"])
             self.assertTrue((asset_dir / "release-assets.json").exists())
+            self.assertIn("GitHub Actions run: `12345`", verification_doc.read_text(encoding="utf-8"))
 
     def _fake_wheel_build(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:
         wheel_dir.mkdir(parents=True, exist_ok=True)

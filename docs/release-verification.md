@@ -8,12 +8,13 @@ Future releases should stage their public assets from a verified
 release-candidate pack before upload:
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md
 ```
 
-Review `private-turns\release-assets\release-assets.json` before re-running the
-same command with `--upload`.
+Review `private-turns\release-assets\release-assets.json` and the generated
+section below before re-running the same command with `--upload`.
 
+<!-- tokensquash-release-assets:start -->
 ## v0.1.0 Assets
 
 The `v0.1.0` GitHub Release includes:
@@ -24,24 +25,31 @@ The `v0.1.0` GitHub Release includes:
 - `artifact-manifest.json`
 - `verify-release-candidate.json`
 
-Expected SHA-256 values from the tag CI run:
+Release URL: [v0.1.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.0)
+
+Expected SHA-256 values from the release asset report:
 
 | Asset | SHA-256 |
 |---|---|
 | `tokensquash-0.1.0-py3-none-any.whl` | `5e2118072de2c1e7a879238126afce252825c07c58b2b24c2d1376826e9b2e91` |
 | `tokensquash-0.1.0.tar.gz` | `fa991f10f999f3d121f4778cf842a73aad61cea4de6a549731283d6010776adb` |
+| `release-attestation.json` | `1aa0b166a99bc8361f5bf8887355db7b96ffb89fe5330e52e123b6f40b71081b` |
 | `artifact-manifest.json` | `f8a1539e3cca153afea5bbb8018f0b8eb0e9418f933e06939bbf78add84aa179` |
+| `verify-release-candidate.json` | `f51a60bfae867590ac78b0103b7041eba3d8d9db886c72f34c09c10609f1490e` |
 
 Release evidence:
 
 - tag: `v0.1.0`
 - release commit: `9583c296f4ada082c88b7bc8149b678ed1529a16`
-- tag CI run: `27437873313`
-- tag CI verifier status: `pass`
-- tag CI evidence hash:
-  `d5dd3482b253bbb38ecf805d1097d301700a2eab80daf149a6f2774354c043d8`
-- packaged license files: `LICENSE` and `COMMERCIAL-LICENSE.md` are present in
-  both the wheel and source distribution
+- release-candidate verifier status: `pass`
+- release-candidate status: `pass`
+- release attestation status: `pass`
+- release attestation evidence hash: `d5dd3482b253bbb38ecf805d1097d301700a2eab80daf149a6f2774354c043d8`
+- GitHub Actions run: `27437873313`
+- packaged license evidence: inspect `verify-release-candidate.json` for
+  `LICENSE` and `COMMERCIAL-LICENSE.md` checks on the wheel and source
+  distribution
+<!-- tokensquash-release-assets:end -->
 
 ## Download Assets
 
@@ -57,7 +65,9 @@ not be committed back to the repository.
 ```powershell
 Get-FileHash private-turns\download-v0.1.0\tokensquash-0.1.0-py3-none-any.whl -Algorithm SHA256
 Get-FileHash private-turns\download-v0.1.0\tokensquash-0.1.0.tar.gz -Algorithm SHA256
+Get-FileHash private-turns\download-v0.1.0\release-attestation.json -Algorithm SHA256
 Get-FileHash private-turns\download-v0.1.0\artifact-manifest.json -Algorithm SHA256
+Get-FileHash private-turns\download-v0.1.0\verify-release-candidate.json -Algorithm SHA256
 ```
 
 Each hash should match the expected value above and the `digest` shown by:

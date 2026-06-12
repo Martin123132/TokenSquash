@@ -523,6 +523,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "release-candidate-evidence",
             "docs/release-notes-v0.1.0.md",
             "docs/release-verification.md",
+            "--update-verification-doc",
             "Release-Prep Command Block",
             PUBLIC_LICENSE_PATH,
             COMMERCIAL_LICENSE_PATH,
@@ -537,6 +538,8 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
         ],
         "docs/release-verification.md": [
             "Release Verification",
+            "tokensquash-release-assets:start",
+            "--update-verification-doc",
             "tokensquash-0.1.0-py3-none-any.whl",
             "release-attestation.json",
             "verify-release-candidate.json",

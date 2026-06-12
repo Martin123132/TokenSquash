@@ -45,7 +45,7 @@ python -m tokensquash verify-readiness private-turns\readiness-release --require
 python -m tokensquash release-info --require-clean --json
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --json
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 ```
 
 ## 3. Run Product Gates
@@ -65,7 +65,7 @@ All commands above must pass before building release-candidate evidence.
 ```powershell
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --json
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 ```
 
 Inspect the saved pack before continuing:
@@ -96,6 +96,8 @@ Required release-candidate evidence:
 - staged release assets include the wheel, source distribution,
   `release-attestation.json`, `artifact-manifest.json`, and
   `verify-release-candidate.json`
+- `docs/release-verification.md` has been refreshed from the
+  `release-assets.json` report and reviewed before upload
 
 ## 5. Verify GitHub Actions
 
@@ -140,8 +142,9 @@ artifact provenance policy have been added and reviewed.
   `release-attestation.json`, `artifact-manifest.json`, and
   `verify-release-candidate.json`.
 - Prefer `python -m tokensquash release-assets private-turns\release-candidate
-  --tag <tag> --upload` for the upload after reviewing the staged
-  `release-assets.json` report.
+  --tag <tag> --update-verification-doc docs\release-verification.md --upload`
+  for the upload after reviewing the staged `release-assets.json` report and
+  generated verification doc section.
 - Update `docs/release-verification.md` with the final published asset hashes.
 - Keep private corpora under ignored `private-turns/` storage; do not attach
   raw private turns to public releases.

@@ -13,6 +13,8 @@ from .candidate import verify_release_candidate_pack
 
 RELEASE_ASSETS_SCHEMA_VERSION = "tokensquash.release_assets.v1"
 DEFAULT_RELEASE_ASSETS_OUT_DIR = Path("private-turns/release-assets")
+RELEASE_VERIFICATION_SECTION_START = "<!-- tokensquash-release-assets:start -->"
+RELEASE_VERIFICATION_SECTION_END = "<!-- tokensquash-release-assets:end -->"
 
 
 def prepare_release_assets(
@@ -25,6 +27,8 @@ def prepare_release_assets(
     upload: bool = False,
     clobber: bool = False,
     gh_executable: str = "gh",
+    verification_doc: Path | str | None = None,
+    ci_run: str | None = None,
     cwd: Path | str | None = None,
 ) -> dict[str, Any]:
     """Stage public release assets from a verified release-candidate pack."""
@@ -119,6 +123,21 @@ def prepare_release_assets(
         "errors": errors,
         "notes": notes,
     }
+    if verification_doc is not None and not errors:
+        doc_result = update_release_verification_doc(
+            report,
+            _resolve_path(root, Path(verification_doc)),
+            ci_run=ci_run,
+        )
+        report["outputs"]["verification_doc"] = doc_result["path"]
+        report["summary"]["verification_doc_updated"] = True
+        report["notes"].append(f"Release verification doc updated: {doc_result['path']}")
+    elif verification_doc is not None:
+        report["summary"]["verification_doc_updated"] = False
+        report["notes"].append("Release verification doc not updated because release asset staging failed.")
+    else:
+        report["summary"]["verification_doc_updated"] = False
+    report["status"] = "fail" if report["errors"] else "pass"
     write_release_assets_outputs(output_dir, report)
     return report
 
@@ -174,6 +193,121 @@ def format_release_assets_markdown(report: dict[str, Any]) -> str:
         lines.extend(["", "## Notes", ""])
         lines.extend(f"- {_markdown_cell(str(note))}" for note in report.get("notes", []))
     return "\n".join(lines).rstrip() + "\n"
+
+
+def update_release_verification_doc(
+    report: dict[str, Any],
+    path: Path | str,
+    *,
+    ci_run: str | None = None,
+) -> dict[str, Any]:
+    """Update a release-verification markdown doc from a release-assets report."""
+
+    doc_path = Path(path)
+    section = _wrapped_release_verification_section(report, ci_run=ci_run)
+    if doc_path.exists():
+        current = doc_path.read_text(encoding="utf-8")
+        updated = _replace_or_append_generated_section(current, section)
+    else:
+        updated = _default_release_verification_doc(section)
+    doc_path.parent.mkdir(parents=True, exist_ok=True)
+    doc_path.write_text(updated, encoding="utf-8")
+    return {
+        "path": str(doc_path),
+        "tag": report.get("tag"),
+        "asset_count": len(report.get("assets", [])),
+        "bytes": doc_path.stat().st_size,
+    }
+
+
+def format_release_verification_section(report: dict[str, Any], *, ci_run: str | None = None) -> str:
+    tag = str(report.get("tag") or "").strip()
+    if not tag:
+        raise ValueError("release-assets report is missing tag")
+    assets = report.get("assets")
+    if not isinstance(assets, list) or not assets:
+        raise ValueError("release-assets report has no assets")
+    repo = report.get("repo")
+    summary = report.get("summary") or {}
+    verification = report.get("verification") or {}
+    verification_summary = verification.get("summary") or {}
+    release_url = f"https://github.com/{repo}/releases/tag/{tag}" if repo else None
+    ci_run_value = ci_run or report.get("ci_run")
+    lines = [
+        f"## {tag} Assets",
+        "",
+        f"The `{tag}` GitHub Release includes:",
+        "",
+    ]
+    for asset in assets:
+        name = asset.get("name")
+        if name:
+            lines.append(f"- `{name}`")
+    if release_url:
+        lines.extend(["", f"Release URL: [{tag}]({release_url})"])
+    lines.extend(
+        [
+            "",
+            "Expected SHA-256 values from the release asset report:",
+            "",
+            "| Asset | SHA-256 |",
+            "|---|---|",
+        ]
+    )
+    for asset in assets:
+        lines.append(f"| `{_markdown_cell(str(asset.get('name', '')))}` | `{asset.get('sha256')}` |")
+    lines.extend(
+        [
+            "",
+            "Release evidence:",
+            "",
+            f"- tag: `{tag}`",
+            f"- release commit: `{summary.get('release_info_commit')}`",
+            f"- release-candidate verifier status: `{summary.get('verification_status')}`",
+            f"- release-candidate status: `{summary.get('release_candidate_status')}`",
+            f"- release attestation status: `{summary.get('release_attestation_status')}`",
+            f"- release attestation evidence hash: `{verification_summary.get('release_attestation_evidence_hash')}`",
+        ]
+    )
+    if ci_run_value:
+        lines.append(f"- GitHub Actions run: `{ci_run_value}`")
+    lines.extend(
+        [
+            "- packaged license evidence: inspect `verify-release-candidate.json` "
+            "for `LICENSE` and `COMMERCIAL-LICENSE.md` checks on the wheel and source distribution",
+        ]
+    )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _wrapped_release_verification_section(report: dict[str, Any], *, ci_run: str | None) -> str:
+    return (
+        RELEASE_VERIFICATION_SECTION_START
+        + "\n"
+        + format_release_verification_section(report, ci_run=ci_run).rstrip()
+        + "\n"
+        + RELEASE_VERIFICATION_SECTION_END
+        + "\n"
+    )
+
+
+def _replace_or_append_generated_section(current: str, section: str) -> str:
+    start = current.find(RELEASE_VERIFICATION_SECTION_START)
+    end = current.find(RELEASE_VERIFICATION_SECTION_END)
+    if start != -1 and end != -1 and start < end:
+        end += len(RELEASE_VERIFICATION_SECTION_END)
+        return current[:start].rstrip() + "\n\n" + section.rstrip() + "\n\n" + current[end:].lstrip()
+    return current.rstrip() + "\n\n" + section
+
+
+def _default_release_verification_doc(section: str) -> str:
+    return (
+        "# Release Verification\n\n"
+        "This guide explains how to inspect TokenSquash release assets and evidence.\n"
+        "Release assets are attached to GitHub Releases so reviewers do not need access\n"
+        "to local `private-turns/` storage or expired CI artifacts.\n\n"
+        + section
+    )
 
 
 def _stage_pack_assets(

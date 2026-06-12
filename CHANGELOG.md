@@ -11,6 +11,9 @@ is produced locally and in GitHub Actions.
 
 ### Added
 
+- `release-assets --update-verification-doc` now refreshes the generated
+  release asset hash section in `docs/release-verification.md` from the staged
+  asset report.
 - `ROADMAP.md` and `docs/v0.1.1-plan.md` now describe the public product
   direction, experimental boundaries, evidence bar, and next patch-release
   scope.
