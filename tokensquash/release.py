@@ -40,6 +40,26 @@ _RELEASE_BUDGET_INT_KEYS = (
     "max_history_failures",
     "max_doctor_warnings",
 )
+_CERTIFICATION_PACK_JSON_ARTIFACTS = (
+    ("report", "report", Path("report.json"), "tokensquash.turns.report.v1", {"pass"}),
+    ("gate", "gate", Path("gate.json"), "tokensquash.turns.gate.v1", {"pass"}),
+    ("suggestions", "suggestions", Path("suggestions.json"), "tokensquash.turns.suggestions.v1", {"pass", "empty"}),
+    ("evaluation", "evaluation", Path("evaluation") / "evaluation.json", "tokensquash.turns.evaluate.v1", {"pass"}),
+    ("evaluation_measure", "measure", Path("evaluation") / "measure.json", "tokensquash.turns.measure.v1", {"pass"}),
+    (
+        "evaluation_diagnose",
+        "diagnose",
+        Path("evaluation") / "diagnose.json",
+        "tokensquash.turns.diagnose.v1",
+        {"pass"},
+    ),
+)
+_CERTIFICATION_PACK_MARKDOWN_ARTIFACTS = (
+    ("markdown", "markdown", Path("certification.md")),
+    ("report_markdown", "report_markdown", Path("report.md")),
+    ("gate_markdown", "gate_markdown", Path("gate.md")),
+    ("suggestions_markdown", "suggestions_markdown", Path("suggestions.md")),
+)
 
 
 def run_turn_release_check(
@@ -257,6 +277,12 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
         allowed_statuses={"pass"},
     )
     checks.append(certification_check)
+    certification_dir = _resolve_release_artifact(
+        release_dir,
+        outputs.get("certification_dir"),
+        Path("certification"),
+    )
+    _append_release_certification_pack_checks(checks, "certification", certification_dir, certification)
 
     quality_budget, quality_budget_check = _verify_release_json_artifact(
         "quality_budget",
@@ -303,6 +329,22 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
         _resolve_release_artifact(release_dir, outputs.get("doctor_markdown"), Path("doctor.md")),
         required=True,
     )
+    doctor_strict = None
+    doctor_strict_dir = _resolve_release_artifact(
+        release_dir,
+        outputs.get("doctor_strict_dir"),
+        Path("doctor-strict"),
+    )
+    if _append_release_directory_check(checks, "doctor_strict_dir", doctor_strict_dir, required=True):
+        doctor_strict, doctor_strict_check = _verify_release_json_artifact(
+            "doctor_strict_certification",
+            _resolve_release_artifact(doctor_strict_dir, None, Path("certification.json")),
+            "tokensquash.turns.certify.v1",
+            required=True,
+            allowed_statuses={"pass"},
+        )
+        checks.append(doctor_strict_check)
+        _append_release_certification_pack_checks(checks, "doctor_strict", doctor_strict_dir, doctor_strict)
 
     history = None
     if outputs.get("history"):
@@ -335,6 +377,7 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
             "release_status": release_check.get("status") if release_check else None,
             "certification_status": certification.get("status") if certification else None,
             "doctor_status": doctor.get("status") if doctor else None,
+            "doctor_strict_certification_status": doctor_strict.get("status") if doctor_strict else None,
             "quality_budget_validation_status": quality_budget_validation.get("status")
             if quality_budget_validation
             else None,
@@ -347,6 +390,7 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
             "quality_budget": _release_artifact_reference(quality_budget),
             "quality_budget_validation": _release_artifact_reference(quality_budget_validation),
             "doctor": _release_artifact_reference(doctor),
+            "doctor_strict_certification": _release_artifact_reference(doctor_strict),
             "history": _release_artifact_reference(history),
         },
     }
@@ -366,6 +410,7 @@ def format_turn_release_verify_markdown(report: dict[str, Any]) -> str:
         f"- Release status: `{summary.get('release_status')}`",
         f"- Certification status: `{summary.get('certification_status')}`",
         f"- Doctor status: `{summary.get('doctor_status')}`",
+        f"- Doctor strict certification: `{summary.get('doctor_strict_certification_status')}`",
         f"- Quality budget validation: `{summary.get('quality_budget_validation_status')}`",
         "",
         "## Checks",
@@ -997,7 +1042,7 @@ def _append_release_file_check(
     path: Path,
     *,
     required: bool,
-) -> None:
+) -> bool:
     if not path.exists():
         checks.append(
             _release_artifact_check(
@@ -1008,7 +1053,7 @@ def _append_release_file_check(
                 message="Required artifact is missing." if required else "Optional artifact is missing.",
             )
         )
-        return
+        return False
     if not path.is_file():
         checks.append(
             _release_artifact_check(
@@ -1019,7 +1064,7 @@ def _append_release_file_check(
                 message="Artifact path is not a file.",
             )
         )
-        return
+        return False
     if path.stat().st_size == 0:
         checks.append(
             _release_artifact_check(
@@ -1030,7 +1075,7 @@ def _append_release_file_check(
                 message="Artifact file is empty.",
             )
         )
-        return
+        return False
     checks.append(
         _release_artifact_check(
             name,
@@ -1040,6 +1085,79 @@ def _append_release_file_check(
             message="Artifact is present and non-empty.",
         )
     )
+    return True
+
+
+def _append_release_directory_check(
+    checks: list[dict[str, Any]],
+    name: str,
+    path: Path,
+    *,
+    required: bool,
+) -> bool:
+    if not path.exists():
+        checks.append(
+            _release_artifact_check(
+                name,
+                "fail" if required else "warn",
+                required=required,
+                path=path,
+                message="Required artifact directory is missing."
+                if required
+                else "Optional artifact directory is missing.",
+            )
+        )
+        return False
+    if not path.is_dir():
+        checks.append(
+            _release_artifact_check(
+                name,
+                "fail",
+                required=required,
+                path=path,
+                message="Artifact path is not a directory.",
+            )
+        )
+        return False
+    checks.append(
+        _release_artifact_check(
+            name,
+            "pass",
+            required=required,
+            path=path,
+            message="Artifact directory is present.",
+        )
+    )
+    return True
+
+
+def _append_release_certification_pack_checks(
+    checks: list[dict[str, Any]],
+    prefix: str,
+    certification_dir: Path,
+    certification: dict[str, Any] | None,
+) -> None:
+    if certification is None:
+        return
+
+    outputs = certification.get("outputs", {})
+    for suffix, output_key, default_rel in _CERTIFICATION_PACK_MARKDOWN_ARTIFACTS:
+        _append_release_file_check(
+            checks,
+            f"{prefix}_{suffix}",
+            _resolve_release_artifact(certification_dir, outputs.get(output_key), default_rel),
+            required=True,
+        )
+
+    for suffix, output_key, default_rel, schema, allowed_statuses in _CERTIFICATION_PACK_JSON_ARTIFACTS:
+        _, check = _verify_release_json_artifact(
+            f"{prefix}_{suffix}",
+            _resolve_release_artifact(certification_dir, outputs.get(output_key), default_rel),
+            schema,
+            required=True,
+            allowed_statuses=allowed_statuses,
+        )
+        checks.append(check)
 
 
 def _release_artifact_check(
@@ -1077,14 +1195,14 @@ def _resolve_release_artifact(release_dir: Path, recorded: Any, default_rel: Pat
     recorded_path = Path(str(recorded))
     candidates: list[Path] = []
     if recorded_path.is_absolute():
-        candidates.extend([recorded_path, default_path])
+        candidates.extend([default_path, recorded_path])
     else:
         candidates.extend(
             [
                 release_dir / recorded_path,
-                recorded_path,
                 default_path,
                 release_dir / recorded_path.name,
+                recorded_path,
             ]
         )
     for candidate in candidates:

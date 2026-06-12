@@ -373,8 +373,9 @@ as a warning so first-run projects can still get a usable pack. The pack also
 writes `quality-budget.json` and `quality-budget-validation.json` so the exact
 effective release policy is preserved with the release evidence.
 `turns verify-release` audits a saved release-check directory or
-`release-check.json` file, verifies the required JSON schemas and markdown
-artifacts, and reports whether the evidence pack is complete enough to trust.
+`release-check.json` file, verifies the required top-level and nested JSON
+schemas plus markdown artifacts, and reports whether the evidence pack is
+complete enough to trust.
 Pass `--budget` with a `tokensquash.quality_budget.v1` JSON file to keep release
 thresholds in source control. The example in `examples\quality-budget.json`
 sets saved-percent, privacy, pass-through, raw-wire-loss, history, and doctor

@@ -3085,8 +3085,11 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["quality_budget_validation_status"], "pass")
             names = {check["name"] for check in report["checks"]}
             self.assertIn("release_check", names)
+            self.assertIn("certification_gate", names)
             self.assertIn("quality_budget_validation", names)
             self.assertIn("doctor_markdown", names)
+            self.assertIn("doctor_strict_certification", names)
+            self.assertIn("doctor_strict_gate", names)
             self.assertIn("history", names)
 
     def test_turns_verify_release_cli_json_fails_missing_required_artifact(self) -> None:
@@ -3105,6 +3108,24 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["schema_version"], "tokensquash.turns.release_verify.v1")
             self.assertEqual(payload["status"], "fail")
             self.assertIn("quality_budget_validation", failed_names)
+
+    def test_turns_verify_release_cli_json_fails_missing_nested_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            release_dir = Path(tmp) / "release"
+            run_turn_release_check(DEFAULT_DEMO_CORPUS, out_dir=release_dir, counter="chars")
+            (release_dir / "certification" / "report.json").unlink()
+            (release_dir / "doctor-strict" / "gate.json").unlink()
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "verify-release", str(release_dir), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            failed_names = {check["name"] for check in payload["checks"] if check["status"] == "fail"}
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["status"], "fail")
+            self.assertIn("certification_report", failed_names)
+            self.assertIn("doctor_strict_gate", failed_names)
 
     def test_turns_verify_release_cli_markdown_can_write_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
