@@ -23,6 +23,11 @@ is produced locally and in GitHub Actions.
   sdist hash in local release attestations.
 - A release checklist documents the manual steps required before tagging or
   sharing a release.
+- Contributor, security, and pull-request policy docs now describe setup,
+  quality gates, private-data rules, vulnerability reporting, and release
+  impact checks.
+- Release and contribution docs now call out that an owner-approved `LICENSE`
+  file is still required before external release or package publication.
 
 ### Changed
 

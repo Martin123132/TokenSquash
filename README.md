@@ -575,6 +575,14 @@ one step. `sidecar compare-evaluations` reports before/after token deltas
 alongside warning and failure deltas, so increased savings do not hide worse
 meaning-risk signals.
 
+## Contributing And Security
+
+Use [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, quality gates, privacy
+rules, and pull-request expectations.
+
+Use [SECURITY.md](SECURITY.md) for supported versions, responsible vulnerability
+reporting, and private-data handling rules.
+
 ## Install For Local Development
 
 ```powershell

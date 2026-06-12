@@ -9,6 +9,8 @@ candidate. It assumes the release is being prepared from `main`.
   target version section.
 - Confirm `pyproject.toml` contains the intended package version.
 - Confirm the README still describes the current command surface accurately.
+- Confirm a project-owner-approved `LICENSE` file exists before any external
+  release or package publication.
 - Keep the deterministic codec as the source of truth; sidecar model workflows
   must remain explicitly experimental.
 
