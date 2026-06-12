@@ -12,6 +12,7 @@ from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_tabl
 from tokensquash.cli import main as cli_main
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
+from tokensquash.demo import DEFAULT_DEMO_CORPUS, run_demo
 from tokensquash.metrics import (
     benchmark_prompts,
     benchmark_replies,
@@ -351,6 +352,47 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "improved")
             self.assertEqual(report["base"]["item_count"], 2)
             self.assertEqual(report["delta"]["saved_tokens"], 2)
+
+    def test_public_sample_turns_validate(self) -> None:
+        report = validate_turn_corpus(DEFAULT_DEMO_CORPUS)
+        example_report = validate_turn_corpus(Path("examples/sample-turns.jsonl"))
+
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["summary"]["turn_count"], 5)
+        self.assertEqual(report["summary"]["privacy_finding_count"], 0)
+        self.assertEqual(example_report["status"], "pass")
+        self.assertEqual(example_report["summary"]["turn_count"], 5)
+        self.assertEqual(
+            DEFAULT_DEMO_CORPUS.read_text(encoding="utf-8"),
+            Path("examples/sample-turns.jsonl").read_text(encoding="utf-8"),
+        )
+
+    def test_run_demo_reports_public_sample(self) -> None:
+        report = run_demo(counter="chars")
+
+        self.assertEqual(report["schema_version"], "tokensquash.demo.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["summary"]["turn_count"], 5)
+        self.assertEqual(report["summary"]["privacy_finding_count"], 0)
+        self.assertGreater(report["summary"]["saved_pct"], 0)
+        self.assertIn("turns evaluate", report["commands"]["evaluate"])
+
+    def test_demo_cli_writes_artifact_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "demo"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["demo", "--counter", "chars", "--out-dir", str(out_dir), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.demo.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertTrue((out_dir / "demo.json").exists())
+            self.assertTrue((out_dir / "demo.md").exists())
+            self.assertTrue((out_dir / "turn-evaluation" / "evaluation.json").exists())
+            self.assertIn("TokenSquash Demo", (out_dir / "demo.md").read_text(encoding="utf-8"))
 
     def test_sidecar_dry_run_cli_outputs_ollama_request(self) -> None:
         stdout = StringIO()

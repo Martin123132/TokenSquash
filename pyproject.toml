@@ -18,3 +18,6 @@ tokenizer = ["tiktoken"]
 
 [tool.setuptools.packages.find]
 include = ["tokensquash*"]
+
+[tool.setuptools.package-data]
+tokensquash = ["data/*.jsonl"]

@@ -31,6 +31,24 @@ Decode it back:
 python -m tokensquash decode 'ts1 f "login bug" c=sd v=t r=m,f'
 ```
 
+## Quick Demo
+
+Run the public paired-turn demo with no private data and no local model:
+
+```powershell
+python -m tokensquash demo
+```
+
+Write a reusable demo report pack:
+
+```powershell
+python -m tokensquash demo --counter chars --out-dir private-turns\demo-output --json
+```
+
+The default demo uses a packaged copy of the public sample corpus, with the same
+rows available for inspection at `examples\sample-turns.jsonl`. It runs the
+same deterministic turn-evaluation workflow used for private corpora.
+
 ## Compact Replies
 
 `tr1` is the matching compact format for agent replies. It keeps routine result
@@ -426,6 +444,7 @@ python -m unittest discover -s tests
 - Safe one-command turn capture with raw private storage and regenerated redacted corpora.
 - Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
+- Public paired-turn sample corpus and first-run deterministic demo command.
 - One-command turn evaluation report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.

@@ -15,6 +15,7 @@ from .corpus import (
     redact_corpus,
     validate_corpus,
 )
+from .demo import DEFAULT_DEMO_CORPUS, format_demo_markdown, run_demo, write_demo_outputs
 from .metrics import (
     benchmark_replies,
     benchmark_prompts,
@@ -120,6 +121,18 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("base", type=Path)
     compare.add_argument("target", type=Path)
     compare.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    demo = sub.add_parser("demo", help="Run the public deterministic TokenSquash demo workflow.")
+    demo.add_argument(
+        "--corpus",
+        type=Path,
+        default=DEFAULT_DEMO_CORPUS,
+        help="Public turn corpus to use for the demo.",
+    )
+    demo.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    demo.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    demo.add_argument("--out-dir", type=Path, help="Write demo.json, demo.md, and the turn evaluation pack.")
+    demo.add_argument("--json", action="store_true", help="Print demo JSON.")
 
     sidecar = sub.add_parser("sidecar", help="Experimental local-AI semantic translator sidecar.")
     sidecar_sub = sidecar.add_subparsers(dest="sidecar_command", required=True)
@@ -662,6 +675,19 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(format_benchmark_compare_markdown(report), end="")
             return 0
+
+        if args.command == "demo":
+            report = run_demo(
+                args.corpus,
+                counter=args.counter,
+                target_savings_pct=args.target,
+                out_dir=args.out_dir,
+            )
+            if args.out_dir:
+                write_demo_outputs(args.out_dir, report)
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_demo_markdown(report)
+            print(output, end="")
+            return 0 if report["status"] in {"pass", "warn"} else 1
 
         if args.command == "sidecar":
             if args.sidecar_command == "translate":
