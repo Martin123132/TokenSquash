@@ -54,11 +54,17 @@ python -m tokensquash verify-release-candidate private-turns\release-candidate -
 Use [docs/release-checklist.md](docs/release-checklist.md) before tagging or
 sharing a release candidate.
 
-## License Status
+## License
 
-This repository does not currently declare a license. Do not publish,
-redistribute, or package TokenSquash for external use until the project owner
-has chosen and committed a `LICENSE` file.
+TokenSquash is source-available for personal and non-commercial use under the
+PolyForm Noncommercial License 1.0.0 in [LICENSE](LICENSE). Commercial use is
+not included in the public license and requires a separate written license from
+TWO HANDS NETWORK LTD.
+
+Read [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) before publishing,
+redistributing, packaging, hosting, embedding, or using TokenSquash in a
+commercial AI system, commercial developer tool, paid product, hosted service,
+managed service, or commercial AI training/evaluation pipeline.
 
 ## Working With Corpora
 

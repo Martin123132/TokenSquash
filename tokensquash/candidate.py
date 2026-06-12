@@ -29,6 +29,7 @@ RELEASE_CANDIDATE_ATTESTATION_SCHEMA_VERSION = "tokensquash.release_candidate.at
 RELEASE_CANDIDATE_VERIFY_SCHEMA_VERSION = "tokensquash.release_candidate.verify.v1"
 DEFAULT_RELEASE_CANDIDATE_OUT_DIR = Path("private-turns/release-candidate")
 PACKAGED_DEMO_DATA_PATH = "tokensquash/data/sample-turns.jsonl"
+REQUIRED_PACKAGE_LICENSE_FILES = ("LICENSE", "COMMERCIAL-LICENSE.md")
 ARTIFACT_MANIFEST_FILENAMES = {
     "artifact-manifest.json",
     "artifact-manifest.md",
@@ -865,6 +866,7 @@ def _run_wheel_build(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
     wheels = sorted(wheel_dir.glob("tokensquash-*.whl"))
     wheel_path = wheels[-1] if wheels else None
     packaged_demo_data = _wheel_contains(wheel_path, PACKAGED_DEMO_DATA_PATH) if wheel_path else False
+    license_files = _package_license_files(wheel_path, _wheel_contains)
     wheel_metadata = _wheel_metadata(wheel_path)
     wheel_metadata_mismatches = _package_metadata_mismatches(
         wheel_metadata,
@@ -877,6 +879,8 @@ def _run_wheel_build(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
         f"exit_code={completed.returncode}\n"
         f"wheel={wheel_path or ''}\n"
         f"contains_{PACKAGED_DEMO_DATA_PATH}={packaged_demo_data}\n\n"
+        "## license files\n"
+        f"{json.dumps(license_files, indent=2, sort_keys=True)}\n\n"
         "## metadata\n"
         f"{json.dumps(wheel_metadata, indent=2, sort_keys=True)}\n"
         f"metadata_mismatches={json.dumps(wheel_metadata_mismatches, sort_keys=True)}\n\n"
@@ -895,18 +899,22 @@ def _run_wheel_build(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
     elif not packaged_demo_data:
         status = "fail"
         message = f"Wheel is missing packaged demo data: {PACKAGED_DEMO_DATA_PATH}."
+    elif not all(license_files.values()):
+        status = "fail"
+        message = f"Wheel is missing required license files: {', '.join(_missing_package_license_files(license_files))}."
     elif wheel_metadata_mismatches:
         status = "fail"
         message = "Wheel metadata does not match the release package metadata."
     else:
         status = "pass"
-        message = "Wheel built, metadata matches, and packaged demo data is present."
+        message = "Wheel built, metadata matches, packaged demo data is present, and license files are present."
     return status, message, {
         "wheel_dir": str(wheel_dir),
         "log": str(log_path),
         "returncode": completed.returncode,
         "wheel": str(wheel_path) if wheel_path else None,
         "packaged_demo_data": packaged_demo_data,
+        "license_files": license_files,
         "wheel_metadata": wheel_metadata,
         "wheel_metadata_mismatches": wheel_metadata_mismatches,
     }
@@ -1017,6 +1025,7 @@ def _run_sdist_build(root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str
     sdists = sorted(sdist_dir.glob("tokensquash-*.tar.gz"))
     sdist_path = sdists[-1] if sdists else None
     packaged_demo_data = _sdist_contains(sdist_path, PACKAGED_DEMO_DATA_PATH) if sdist_path else False
+    license_files = _package_license_files(sdist_path, _sdist_contains)
     sdist_metadata = _sdist_metadata(sdist_path)
     sdist_metadata_mismatches = _package_metadata_mismatches(
         sdist_metadata,
@@ -1029,6 +1038,8 @@ def _run_sdist_build(root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str
         f"exit_code={completed.returncode}\n"
         f"sdist={sdist_path or ''}\n"
         f"contains_{PACKAGED_DEMO_DATA_PATH}={packaged_demo_data}\n\n"
+        "## license files\n"
+        f"{json.dumps(license_files, indent=2, sort_keys=True)}\n\n"
         "## metadata\n"
         f"{json.dumps(sdist_metadata, indent=2, sort_keys=True)}\n"
         f"metadata_mismatches={json.dumps(sdist_metadata_mismatches, sort_keys=True)}\n\n"
@@ -1047,18 +1058,28 @@ def _run_sdist_build(root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str
     elif not packaged_demo_data:
         status = "fail"
         message = f"Source distribution is missing packaged demo data: {PACKAGED_DEMO_DATA_PATH}."
+    elif not all(license_files.values()):
+        status = "fail"
+        message = (
+            "Source distribution is missing required license files: "
+            f"{', '.join(_missing_package_license_files(license_files))}."
+        )
     elif sdist_metadata_mismatches:
         status = "fail"
         message = "Source distribution metadata does not match the release package metadata."
     else:
         status = "pass"
-        message = "Source distribution built, metadata matches, and packaged demo data is present."
+        message = (
+            "Source distribution built, metadata matches, packaged demo data is present, "
+            "and license files are present."
+        )
     data = {
         "sdist_dir": str(sdist_dir),
         "log": str(log_path),
         "returncode": completed.returncode,
         "sdist": str(sdist_path) if sdist_path else None,
         "packaged_demo_data": packaged_demo_data,
+        "license_files": license_files,
         "sdist_metadata": sdist_metadata,
         "sdist_metadata_mismatches": sdist_metadata_mismatches,
     }
@@ -1110,11 +1131,27 @@ def _venv_python(env_dir: Path) -> Path:
 def _wheel_contains(path: Path | None, member: str) -> bool:
     if path is None:
         return False
+    target = member.replace("\\", "/")
     try:
         with ZipFile(path) as archive:
-            return member in set(archive.namelist())
+            return any(
+                item.replace("\\", "/") == target
+                or item.replace("\\", "/").endswith(f"/{target}")
+                for item in archive.namelist()
+            )
     except (BadZipFile, OSError):
         return False
+
+
+def _package_license_files(
+    path: Path | None,
+    contains: Callable[[Path | None, str], bool],
+) -> dict[str, bool]:
+    return {filename: contains(path, filename) for filename in REQUIRED_PACKAGE_LICENSE_FILES}
+
+
+def _missing_package_license_files(license_files: dict[str, bool]) -> list[str]:
+    return [filename for filename in REQUIRED_PACKAGE_LICENSE_FILES if not license_files.get(filename)]
 
 
 def _wheel_metadata(path: Path | None) -> dict[str, Any]:
@@ -1859,6 +1896,7 @@ def _append_candidate_wheel_check(
         )
         return
     packaged_demo_data = _wheel_contains(path, PACKAGED_DEMO_DATA_PATH)
+    license_files = _package_license_files(path, _wheel_contains)
     project = release_info.get("project") if release_info else {}
     metadata = _wheel_metadata(path)
     metadata_mismatches = _package_metadata_mismatches(
@@ -1867,7 +1905,7 @@ def _append_candidate_wheel_check(
         expected_version=(project or {}).get("version"),
         expected_requires_python=(project or {}).get("requires_python"),
     )
-    passed = packaged_demo_data and not metadata_mismatches
+    passed = packaged_demo_data and all(license_files.values()) and not metadata_mismatches
     checks.append(
         _candidate_check(
             "wheel",
@@ -1875,13 +1913,15 @@ def _append_candidate_wheel_check(
             required=required,
             path=path,
             message=(
-                "Wheel exists, package metadata matches, and packaged demo data is present."
+                "Wheel exists, package metadata matches, packaged demo data is present, and license files are present."
                 if passed
-                else "Wheel is missing packaged data or metadata does not match release-info."
+                else "Wheel is missing packaged data, license files, or metadata does not match release-info."
             ),
             data={
                 "packaged_demo_data": packaged_demo_data,
                 "member": PACKAGED_DEMO_DATA_PATH,
+                "license_files": license_files,
+                "missing_license_files": _missing_package_license_files(license_files),
                 "metadata": metadata,
                 "metadata_mismatches": metadata_mismatches,
             },
@@ -1975,6 +2015,7 @@ def _append_candidate_sdist_check(
         )
         return
     packaged_demo_data = _sdist_contains(path, PACKAGED_DEMO_DATA_PATH)
+    license_files = _package_license_files(path, _sdist_contains)
     project = release_info.get("project") if release_info else {}
     metadata = _sdist_metadata(path)
     metadata_mismatches = _package_metadata_mismatches(
@@ -1983,7 +2024,7 @@ def _append_candidate_sdist_check(
         expected_version=(project or {}).get("version"),
         expected_requires_python=(project or {}).get("requires_python"),
     )
-    passed = packaged_demo_data and not metadata_mismatches
+    passed = packaged_demo_data and all(license_files.values()) and not metadata_mismatches
     checks.append(
         _candidate_check(
             "sdist",
@@ -1991,13 +2032,15 @@ def _append_candidate_sdist_check(
             required=required,
             path=path,
             message=(
-                "Source distribution exists, metadata matches, and packaged demo data is present."
+                "Source distribution exists, metadata matches, packaged demo data is present, and license files are present."
                 if passed
-                else "Source distribution is missing packaged data or metadata does not match release-info."
+                else "Source distribution is missing packaged data, license files, or metadata does not match release-info."
             ),
             data={
                 "packaged_demo_data": packaged_demo_data,
                 "member": PACKAGED_DEMO_DATA_PATH,
+                "license_files": license_files,
+                "missing_license_files": _missing_package_license_files(license_files),
                 "metadata": metadata,
                 "metadata_mismatches": metadata_mismatches,
             },

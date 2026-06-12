@@ -26,8 +26,8 @@ is produced locally and in GitHub Actions.
 - Contributor, security, and pull-request policy docs now describe setup,
   quality gates, private-data rules, vulnerability reporting, and release
   impact checks.
-- Release and contribution docs now call out that an owner-approved `LICENSE`
-  file is still required before external release or package publication.
+- TokenSquash now declares PolyForm Noncommercial License 1.0.0 terms, required
+  notices, and commercial licensing contact details for TWO HANDS NETWORK LTD.
 - Strict doctor and the product manifest now verify source-checkout governance
   docs as part of product-readiness evidence.
 
@@ -35,6 +35,8 @@ is produced locally and in GitHub Actions.
 
 - Release-candidate package checks now prove both installability from the wheel
   and source-package metadata integrity.
+- Release-candidate package checks now verify that public and commercial
+  licensing files are included in both wheel and source-distribution artifacts.
 - CI explicitly installs the build backend so package checks do not depend on
   whichever tools happen to be preinstalled on a runner image.
 

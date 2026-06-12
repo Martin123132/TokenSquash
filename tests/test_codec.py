@@ -525,12 +525,19 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
+        self.assertIn("LICENSE", governance_paths)
+        self.assertIn("COMMERCIAL-LICENSE.md", governance_paths)
         self.assertIn("CHANGELOG.md", governance_paths)
         self.assertIn("CONTRIBUTING.md", governance_paths)
         self.assertIn("SECURITY.md", governance_paths)
         self.assertIn("docs/release-checklist.md", governance_paths)
         self.assertIn(".github/PULL_REQUEST_TEMPLATE.md", governance_paths)
         self.assertEqual(report["counts"]["governance_document_count"], len(report["governance"]["documents"]))
+        self.assertEqual(report["governance"]["license"]["name"], "PolyForm Noncommercial License 1.0.0")
+        self.assertTrue(report["governance"]["license"]["present"])
+        self.assertTrue(report["governance"]["license"]["commercial_license_present"])
+        self.assertEqual(report["governance"]["license"]["licensor"], "TWO HANDS NETWORK LTD")
+        self.assertIn("glyn@twohandsnetwork.co.uk", report["governance"]["license"]["commercial_contact"])
         self.assertTrue(report["governance"]["license"]["required_before_external_release"])
 
     def test_about_cli_json_and_markdown(self) -> None:
@@ -677,6 +684,16 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(checks["governance_documents"]["data"]["missing_references"], [])
             self.assertTrue(
                 checks["governance_documents"]["data"]["license"]["required_before_external_release"]
+            )
+            self.assertTrue(checks["governance_documents"]["data"]["license"]["present"])
+            self.assertTrue(checks["governance_documents"]["data"]["license"]["commercial_license_present"])
+            self.assertEqual(
+                checks["governance_documents"]["data"]["license"]["licensor"],
+                "TWO HANDS NETWORK LTD",
+            )
+            self.assertIn(
+                "glyn@twohandsnetwork.co.uk",
+                checks["governance_documents"]["data"]["license"]["commercial_contact"],
             )
             self.assertTrue((out_dir / "certification.json").exists())
             self.assertTrue((out_dir / "evaluation" / "evaluation.json").exists())
@@ -935,6 +952,11 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn(report["summary"]["release_info_status"], {"pass", "warn"})
             self.assertEqual(report["summary"]["nested_readiness_verify_status"], "pass")
             self.assertEqual(report["summary"]["baseline_verify_status"], "partial")
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(checks["wheel"]["data"]["license_files"]["LICENSE"], True)
+            self.assertEqual(checks["wheel"]["data"]["license_files"]["COMMERCIAL-LICENSE.md"], True)
+            self.assertEqual(checks["sdist"]["data"]["license_files"]["LICENSE"], True)
+            self.assertEqual(checks["sdist"]["data"]["license_files"]["COMMERCIAL-LICENSE.md"], True)
             attestation_path = out_dir / "release-attestation.json"
             self.assertTrue(attestation_path.exists())
             self.assertTrue((out_dir / "release-attestation.md").exists())
@@ -1105,6 +1127,11 @@ class TokenSquashCodecTests(unittest.TestCase):
         wheel_path = wheel_dir / "tokensquash-0.0.0-py3-none-any.whl"
         with ZipFile(wheel_path, "w") as archive:
             archive.writestr("tokensquash/data/sample-turns.jsonl", "{}\n")
+            archive.writestr("tokensquash-0.1.0.dist-info/licenses/LICENSE", "license\n")
+            archive.writestr(
+                "tokensquash-0.1.0.dist-info/licenses/COMMERCIAL-LICENSE.md",
+                "commercial license\n",
+            )
             archive.writestr(
                 "tokensquash-0.1.0.dist-info/METADATA",
                 "Metadata-Version: 2.1\n"
@@ -1120,6 +1147,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             "returncode": 0,
             "wheel": str(wheel_path),
             "packaged_demo_data": True,
+            "license_files": {"LICENSE": True, "COMMERCIAL-LICENSE.md": True},
         }
 
     def _fake_sdist_build(self, root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str, str, dict[str, object]]:
@@ -1134,6 +1162,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             "returncode": 0,
             "sdist": str(sdist_path),
             "packaged_demo_data": True,
+            "license_files": {"LICENSE": True, "COMMERCIAL-LICENSE.md": True},
             "sdist_metadata": {
                 "present": True,
                 "metadata_path": "tokensquash-0.1.0/PKG-INFO",
@@ -1156,6 +1185,8 @@ class TokenSquashCodecTests(unittest.TestCase):
                 f"Version: {version}\n"
                 "Requires-Python: >=3.10\n",
             )
+            self._tar_write_text(archive, f"{root}/LICENSE", "license\n")
+            self._tar_write_text(archive, f"{root}/COMMERCIAL-LICENSE.md", "commercial license\n")
             self._tar_write_text(archive, f"{root}/tokensquash/data/sample-turns.jsonl", "{}\n")
 
     def _tar_write_text(self, archive: tarfile.TarFile, name: str, text: str) -> None:

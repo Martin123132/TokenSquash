@@ -88,7 +88,9 @@ python -m tokensquash verify-release-candidate private-turns\release-candidate -
 ```
 
 Use [docs/release-checklist.md](docs/release-checklist.md) as the release
-runbook and record user-facing changes in [CHANGELOG.md](CHANGELOG.md).
+runbook, confirm the [LICENSE](LICENSE) and
+[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) terms, and record user-facing
+changes in [CHANGELOG.md](CHANGELOG.md).
 
 Add `--check-ollama` when you want the doctor to query a local Ollama server
 for the experimental sidecar path.
@@ -584,6 +586,21 @@ rules, and pull-request expectations.
 Use [SECURITY.md](SECURITY.md) for supported versions, responsible vulnerability
 reporting, and private-data handling rules.
 
+## License
+
+TokenSquash is source-available for personal and non-commercial use under the
+[PolyForm Noncommercial License 1.0.0](LICENSE).
+
+Commercial use is not included in the public license. A separate written
+commercial license from TWO HANDS NETWORK LTD is required before using
+TokenSquash in a paid product, hosted service, managed service, enterprise
+product, commercial developer tool, commercial AI system, commercial AI
+coding/agent product, or commercial AI training/evaluation pipeline.
+
+See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) for commercial-use examples
+and request details. Commercial enquiries should go through TWO HANDS NETWORK
+LTD, contact name Glyn Evans, at glyn@twohandsnetwork.co.uk.
+
 ## Install For Local Development
 
 ```powershell
@@ -611,7 +628,8 @@ baselines, builds the package wheel and source distribution, installs that
 wheel in a temporary environment, runs the installed `about` and `demo`
 commands, and writes a SHA-256 artifact manifest so the verifier can detect
 changed evidence files. It also verifies wheel and source-distribution
-metadata against the release metadata.
+metadata against the release metadata and confirms the public and commercial
+license files are packaged with the wheel and source distribution.
 The verifier also writes a compact release attestation tying the Git commit,
 wheel hash, source-distribution hash, artifact-manifest hash, and verification
 status together:
@@ -681,7 +699,7 @@ For a tag or external release, follow
 - Release metadata report for package version, Git commit, dirty state, Python runtime, and platform details.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
-- Strict source-checkout doctor verification for contributor, security, changelog, release checklist, and pull-request template docs.
+- Strict source-checkout doctor verification for license, commercial licensing, contributor, security, changelog, release checklist, and pull-request template docs.
 - One-command product readiness evidence pack and verifier for tests, strict doctor, demo, certification, release-check, and release verification.
 - One-command release-candidate gate and verifier for readiness verification, benchmark baseline freshness, exact-tokenizer baselines, wheel/source-distribution metadata, package/install smoke evidence, artifact hash integrity, and local release attestations.
 - One-command turn evaluation, certification, comparison, history, release-check, and release-verification report packs for real-corpus measurement.

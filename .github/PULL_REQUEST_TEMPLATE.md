@@ -14,6 +14,7 @@
 - [ ] `README.md` updated when command behavior or workflows changed
 - [ ] `CHANGELOG.md` updated for user-facing changes
 - [ ] `docs/release-checklist.md` updated when release evidence changed
+- [ ] `LICENSE` and `COMMERCIAL-LICENSE.md` reviewed when licensing or distribution terms changed
 - [ ] release-candidate gate run when packaging, baselines, or release evidence changed
 
 ## Privacy And Security

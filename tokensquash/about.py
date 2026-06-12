@@ -12,6 +12,11 @@ from .workspace import GITIGNORE_PATTERNS, WORKSPACE_INIT_SCHEMA_VERSION
 MANIFEST_SCHEMA_VERSION = "tokensquash.product.manifest.v1"
 PROJECT_NAME = "tokensquash"
 PROJECT_DESCRIPTION = "Compact AI-agent intent codec and token-savings benchmark tools."
+PUBLIC_LICENSE_NAME = "PolyForm Noncommercial License 1.0.0"
+PUBLIC_LICENSE_PATH = "LICENSE"
+COMMERCIAL_LICENSE_PATH = "COMMERCIAL-LICENSE.md"
+LICENSOR = "TWO HANDS NETWORK LTD"
+COMMERCIAL_CONTACT = "Glyn Evans <glyn@twohandsnetwork.co.uk>"
 
 COMMAND_GROUPS = {
     "core": [
@@ -159,6 +164,11 @@ PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)
 
 GOVERNANCE_DOCUMENTS = [
     {"path": "README.md", "purpose": "Project overview, examples, readiness commands, and contributor links."},
+    {"path": PUBLIC_LICENSE_PATH, "purpose": "Public source-available non-commercial license terms and required notices."},
+    {
+        "path": COMMERCIAL_LICENSE_PATH,
+        "purpose": "Commercial-use examples, request details, licensor, and approved contact channel.",
+    },
     {"path": "CHANGELOG.md", "purpose": "User-facing change history and release notes."},
     {"path": "CONTRIBUTING.md", "purpose": "Contributor setup, quality gates, privacy rules, and release expectations."},
     {"path": "SECURITY.md", "purpose": "Security support, vulnerability reporting, and private-data handling policy."},
@@ -224,8 +234,13 @@ def build_product_manifest(*, cwd: Path | str | None = None) -> dict[str, Any]:
                 for document in GOVERNANCE_DOCUMENTS
             ],
             "license": {
-                "path": "LICENSE",
-                "present": (root / "LICENSE").exists(),
+                "name": PUBLIC_LICENSE_NAME,
+                "path": PUBLIC_LICENSE_PATH,
+                "present": (root / PUBLIC_LICENSE_PATH).exists(),
+                "commercial_license_path": COMMERCIAL_LICENSE_PATH,
+                "commercial_license_present": (root / COMMERCIAL_LICENSE_PATH).exists(),
+                "licensor": LICENSOR,
+                "commercial_contact": COMMERCIAL_CONTACT,
                 "required_before_external_release": True,
             },
         },
@@ -289,6 +304,9 @@ def format_product_manifest_markdown(report: dict[str, Any]) -> str:
         lines.append(
             "- "
             f"`{license_info.get('path')}`: present `{license_info.get('present')}`, "
+            f"license `{license_info.get('name')}`, "
+            f"commercial terms `{license_info.get('commercial_license_path')}` present "
+            f"`{license_info.get('commercial_license_present')}`, "
             f"required before external release `{license_info.get('required_before_external_release')}`"
         )
     lines.extend(["", "## Schemas", ""])

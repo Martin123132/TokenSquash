@@ -8,7 +8,16 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from .about import GOVERNANCE_DOCUMENTS, MANIFEST_SCHEMA_VERSION, build_product_manifest
+from .about import (
+    COMMERCIAL_CONTACT,
+    COMMERCIAL_LICENSE_PATH,
+    GOVERNANCE_DOCUMENTS,
+    LICENSOR,
+    MANIFEST_SCHEMA_VERSION,
+    PUBLIC_LICENSE_NAME,
+    PUBLIC_LICENSE_PATH,
+    build_product_manifest,
+)
 from .demo import DEFAULT_DEMO_CORPUS, run_demo
 from .turns import certify_turn_corpus, write_turn_certification_outputs
 from .workspace import WORKSPACE_INIT_SCHEMA_VERSION, initialize_workspace
@@ -360,6 +369,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
     commands = {item.get("command") for item in manifest.get("commands", [])}
     governance = manifest.get("governance") or {}
     governance_docs = governance.get("documents") or []
+    license_info = governance.get("license") or {}
     source_checkout = (cwd / "pyproject.toml").exists()
     missing_governance_docs = sorted(
         str(item.get("path"))
@@ -412,6 +422,8 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         and schema_count >= 40
         and governance_document_count >= len(GOVERNANCE_DOCUMENTS)
         and (not source_checkout or not missing_governance_docs)
+        and (not source_checkout or bool(license_info.get("present")))
+        and (not source_checkout or bool(license_info.get("commercial_license_present")))
         and not missing_schemas
         and not missing_commands
         and bool((manifest.get("data") or {}).get("packaged_demo_corpus_exists"))
@@ -433,6 +445,16 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
             "missing_schemas": missing_schemas,
             "missing_governance_docs": missing_governance_docs,
             "source_checkout": source_checkout,
+            "license": {
+                "name": license_info.get("name"),
+                "path": license_info.get("path"),
+                "present": license_info.get("present"),
+                "commercial_license_path": license_info.get("commercial_license_path"),
+                "commercial_license_present": license_info.get("commercial_license_present"),
+                "licensor": license_info.get("licensor"),
+                "commercial_contact": license_info.get("commercial_contact"),
+                "required_before_external_release": license_info.get("required_before_external_release"),
+            },
             "packaged_demo_corpus_exists": (manifest.get("data") or {}).get("packaged_demo_corpus_exists"),
         },
     )
@@ -457,14 +479,22 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "SECURITY.md",
             "CHANGELOG.md",
             "docs/release-checklist.md",
+            PUBLIC_LICENSE_PATH,
+            COMMERCIAL_LICENSE_PATH,
+            PUBLIC_LICENSE_NAME,
         ],
         "CHANGELOG.md": [
             "Contributor, security, and pull-request policy docs",
+            PUBLIC_LICENSE_NAME,
+            LICENSOR,
         ],
         "CONTRIBUTING.md": [
             "private-turns/",
             "docs/release-checklist.md",
-            "LICENSE",
+            PUBLIC_LICENSE_PATH,
+            COMMERCIAL_LICENSE_PATH,
+            PUBLIC_LICENSE_NAME,
+            LICENSOR,
         ],
         "SECURITY.md": [
             "Report a vulnerability",
@@ -472,12 +502,28 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
         ],
         "docs/release-checklist.md": [
             "release-candidate-evidence",
-            "LICENSE",
+            PUBLIC_LICENSE_PATH,
+            COMMERCIAL_LICENSE_PATH,
         ],
         ".github/PULL_REQUEST_TEMPLATE.md": [
             "README.md",
             "CHANGELOG.md",
+            PUBLIC_LICENSE_PATH,
             "no raw private prompts",
+        ],
+        PUBLIC_LICENSE_PATH: [
+            "Required Notice: Copyright (c) 2026 TWO HANDS NETWORK LTD.",
+            "TokenSquash is source-available",
+            PUBLIC_LICENSE_NAME,
+            "https://polyformproject.org/licenses/noncommercial/1.0.0",
+        ],
+        COMMERCIAL_LICENSE_PATH: [
+            "TokenSquash is available for personal and non-commercial use",
+            LICENSOR,
+            "Glyn Evans",
+            "glyn@twohandsnetwork.co.uk",
+            "commercial AI",
+            "No commercial license is granted",
         ],
     }
 
@@ -494,16 +540,17 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             if needle not in text:
                 missing_references.append({"path": relative, "text": needle})
 
-    license_path = cwd / "LICENSE"
+    license_path = cwd / PUBLIC_LICENSE_PATH
+    commercial_license_path = cwd / COMMERCIAL_LICENSE_PATH
     passed = not missing and not empty and not missing_references
     return _doctor_check(
         "governance_documents",
         "pass" if passed else "fail",
         required=True,
         message=(
-            "Governance docs are present, non-empty, and linked from the main docs."
+            "Governance and licensing docs are present, non-empty, and linked from the main docs."
             if passed
-            else "Governance docs are missing, empty, or not linked from the main docs."
+            else "Governance or licensing docs are missing, empty, or not linked from the main docs."
         ),
         data={
             "document_count": len(GOVERNANCE_DOCUMENTS),
@@ -511,8 +558,13 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "empty": empty,
             "missing_references": missing_references,
             "license": {
+                "name": PUBLIC_LICENSE_NAME,
                 "path": str(license_path),
                 "present": license_path.exists(),
+                "commercial_license_path": str(commercial_license_path),
+                "commercial_license_present": commercial_license_path.exists(),
+                "licensor": LICENSOR,
+                "commercial_contact": COMMERCIAL_CONTACT,
                 "required_before_external_release": True,
             },
         },

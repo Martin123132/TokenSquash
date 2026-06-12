@@ -9,8 +9,9 @@ candidate. It assumes the release is being prepared from `main`.
   target version section.
 - Confirm `pyproject.toml` contains the intended package version.
 - Confirm the README still describes the current command surface accurately.
-- Confirm a project-owner-approved `LICENSE` file exists before any external
-  release or package publication.
+- Confirm the project-owner-approved `LICENSE` and `COMMERCIAL-LICENSE.md`
+  files match the intended non-commercial and commercial-use terms before any
+  external release or package publication.
 - Keep the deterministic codec as the source of truth; sidecar model workflows
   must remain explicitly experimental.
 
@@ -64,6 +65,7 @@ Required release-candidate evidence:
 - wheel build is `pass`
 - wheel smoke test is `pass`
 - source distribution build is `pass`
+- wheel and source distribution include `LICENSE` and `COMMERCIAL-LICENSE.md`
 - artifact-manifest integrity is `pass`
 - release attestation contains wheel, sdist, and artifact-manifest SHA-256
   hashes

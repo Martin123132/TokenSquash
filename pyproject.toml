@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,6 +9,8 @@ description = "Compact AI-agent intent codec and token-savings benchmark tools."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Martin Ollett" }]
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE", "COMMERCIAL-LICENSE.md"]
 
 [project.scripts]
 tokensquash = "tokensquash.cli:main"
