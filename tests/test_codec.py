@@ -931,6 +931,35 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("wheel", failed_names)
             self.assertIn("artifact_manifest_integrity", failed_names)
 
+    def test_verify_release_candidate_pack_fails_on_wheel_metadata_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            wheel = next((out_dir / "wheel").glob("tokensquash-*.whl"))
+            with ZipFile(wheel, "w") as archive:
+                archive.writestr("tokensquash/data/sample-turns.jsonl", "{}\n")
+                archive.writestr(
+                    "tokensquash-9.9.9.dist-info/METADATA",
+                    "Metadata-Version: 2.1\n"
+                    "Name: tokensquash\n"
+                    "Version: 9.9.9\n"
+                    "Requires-Python: >=3.10\n",
+                )
+
+            report = verify_release_candidate_pack(out_dir)
+
+            self.assertEqual(report["status"], "fail")
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(checks["wheel"]["status"], "fail")
+            self.assertEqual(checks["wheel"]["data"]["metadata_mismatches"][0]["field"], "Version")
+
     def test_verify_release_candidate_pack_fails_on_tampered_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
@@ -1002,6 +1031,13 @@ class TokenSquashCodecTests(unittest.TestCase):
         wheel_path = wheel_dir / "tokensquash-0.0.0-py3-none-any.whl"
         with ZipFile(wheel_path, "w") as archive:
             archive.writestr("tokensquash/data/sample-turns.jsonl", "{}\n")
+            archive.writestr(
+                "tokensquash-0.1.0.dist-info/METADATA",
+                "Metadata-Version: 2.1\n"
+                "Name: tokensquash\n"
+                "Version: 0.1.0\n"
+                "Requires-Python: >=3.10\n",
+            )
         log_path = output_dir / "wheel-build.txt"
         log_path.write_text("fake wheel build\n", encoding="utf-8")
         return "pass", "Wheel build faked for unit test.", {

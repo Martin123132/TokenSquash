@@ -6,10 +6,12 @@ import subprocess
 import sys
 import tempfile
 import time
+from email.parser import Parser
 from pathlib import Path
 from typing import Any, Callable
 from zipfile import BadZipFile, ZipFile
 
+from .about import PROJECT_NAME, package_requires_python, package_version
 from .baselines import format_benchmark_baseline_verify_markdown, verify_benchmark_baselines
 from .readiness import (
     format_product_readiness_verify_markdown,
@@ -546,7 +548,7 @@ def verify_release_candidate_pack(
     _append_candidate_file_check(checks, "wheel_log", wheel_log, required=True)
     wheel_path = _candidate_wheel_path(wheel_dir, candidate)
     if _append_candidate_directory_check(checks, "wheel_dir", wheel_dir, required=True):
-        _append_candidate_wheel_check(checks, wheel_path, required=True)
+        _append_candidate_wheel_check(checks, wheel_path, release_info=release_info, required=True)
     _append_candidate_file_check(
         checks,
         "wheel_smoke_log",
@@ -834,11 +836,21 @@ def _run_wheel_build(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
     wheels = sorted(wheel_dir.glob("tokensquash-*.whl"))
     wheel_path = wheels[-1] if wheels else None
     packaged_demo_data = _wheel_contains(wheel_path, PACKAGED_DEMO_DATA_PATH) if wheel_path else False
+    wheel_metadata = _wheel_metadata(wheel_path)
+    wheel_metadata_mismatches = _wheel_metadata_mismatches(
+        wheel_metadata,
+        expected_name=PROJECT_NAME,
+        expected_version=package_version(root),
+        expected_requires_python=package_requires_python(root),
+    )
     log_text = (
         f"$ {' '.join(command)}\n"
         f"exit_code={completed.returncode}\n"
         f"wheel={wheel_path or ''}\n"
         f"contains_{PACKAGED_DEMO_DATA_PATH}={packaged_demo_data}\n\n"
+        "## metadata\n"
+        f"{json.dumps(wheel_metadata, indent=2, sort_keys=True)}\n"
+        f"metadata_mismatches={json.dumps(wheel_metadata_mismatches, sort_keys=True)}\n\n"
         "## stdout\n"
         f"{completed.stdout}\n"
         "## stderr\n"
@@ -854,15 +866,20 @@ def _run_wheel_build(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
     elif not packaged_demo_data:
         status = "fail"
         message = f"Wheel is missing packaged demo data: {PACKAGED_DEMO_DATA_PATH}."
+    elif wheel_metadata_mismatches:
+        status = "fail"
+        message = "Wheel metadata does not match the release package metadata."
     else:
         status = "pass"
-        message = "Wheel built and packaged demo data is present."
+        message = "Wheel built, metadata matches, and packaged demo data is present."
     return status, message, {
         "wheel_dir": str(wheel_dir),
         "log": str(log_path),
         "returncode": completed.returncode,
         "wheel": str(wheel_path) if wheel_path else None,
         "packaged_demo_data": packaged_demo_data,
+        "wheel_metadata": wheel_metadata,
+        "wheel_metadata_mismatches": wheel_metadata_mismatches,
     }
 
 
@@ -1006,6 +1023,73 @@ def _wheel_contains(path: Path | None, member: str) -> bool:
             return member in set(archive.namelist())
     except (BadZipFile, OSError):
         return False
+
+
+def _wheel_metadata(path: Path | None) -> dict[str, Any]:
+    base = {
+        "present": False,
+        "metadata_path": None,
+        "name": None,
+        "version": None,
+        "requires_python": None,
+    }
+    if path is None:
+        return {**base, "message": "No wheel path was resolved."}
+    try:
+        with ZipFile(path) as archive:
+            metadata_members = [
+                member
+                for member in archive.namelist()
+                if member.endswith(".dist-info/METADATA")
+            ]
+            if not metadata_members:
+                return {**base, "message": "Wheel METADATA file was not found."}
+            metadata_path = sorted(metadata_members)[0]
+            text = archive.read(metadata_path).decode("utf-8", errors="replace")
+    except (BadZipFile, OSError, KeyError) as exc:
+        return {**base, "message": f"Wheel metadata could not be read: {exc}"}
+
+    parsed = Parser().parsestr(text)
+    return {
+        **base,
+        "present": True,
+        "metadata_path": metadata_path,
+        "name": parsed.get("Name"),
+        "version": parsed.get("Version"),
+        "requires_python": parsed.get("Requires-Python"),
+        "message": "Wheel metadata captured.",
+    }
+
+
+def _wheel_metadata_mismatches(
+    metadata: dict[str, Any],
+    *,
+    expected_name: str | None,
+    expected_version: str | None,
+    expected_requires_python: str | None,
+) -> list[dict[str, Any]]:
+    mismatches: list[dict[str, Any]] = []
+    if not metadata.get("present"):
+        return [{"field": "METADATA", "expected": "present", "actual": metadata.get("message")}]
+
+    actual_name = metadata.get("name")
+    if expected_name and str(actual_name).lower() != expected_name.lower():
+        mismatches.append({"field": "Name", "expected": expected_name, "actual": actual_name})
+
+    actual_version = metadata.get("version")
+    if expected_version and actual_version != expected_version:
+        mismatches.append({"field": "Version", "expected": expected_version, "actual": actual_version})
+
+    actual_requires = metadata.get("requires_python")
+    if expected_requires_python and actual_requires != expected_requires_python:
+        mismatches.append(
+            {
+                "field": "Requires-Python",
+                "expected": expected_requires_python,
+                "actual": actual_requires,
+            }
+        )
+    return mismatches
 
 
 def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: dict[str, Any]) -> list[Path]:
@@ -1576,7 +1660,13 @@ def _append_baseline_expectation_check(
     )
 
 
-def _append_candidate_wheel_check(checks: list[dict[str, Any]], path: Path | None, *, required: bool) -> None:
+def _append_candidate_wheel_check(
+    checks: list[dict[str, Any]],
+    path: Path | None,
+    *,
+    release_info: dict[str, Any] | None,
+    required: bool,
+) -> None:
     if path is None:
         checks.append(
             _candidate_check(
@@ -1600,18 +1690,32 @@ def _append_candidate_wheel_check(checks: list[dict[str, Any]], path: Path | Non
         )
         return
     packaged_demo_data = _wheel_contains(path, PACKAGED_DEMO_DATA_PATH)
+    project = release_info.get("project") if release_info else {}
+    metadata = _wheel_metadata(path)
+    metadata_mismatches = _wheel_metadata_mismatches(
+        metadata,
+        expected_name=(project or {}).get("name") or PROJECT_NAME,
+        expected_version=(project or {}).get("version"),
+        expected_requires_python=(project or {}).get("requires_python"),
+    )
+    passed = packaged_demo_data and not metadata_mismatches
     checks.append(
         _candidate_check(
             "wheel",
-            "pass" if packaged_demo_data else "fail",
+            "pass" if passed else "fail",
             required=required,
             path=path,
             message=(
-                "Wheel exists and packaged demo data is present."
-                if packaged_demo_data
-                else f"Wheel is missing packaged demo data: {PACKAGED_DEMO_DATA_PATH}."
+                "Wheel exists, package metadata matches, and packaged demo data is present."
+                if passed
+                else "Wheel is missing packaged data or metadata does not match release-info."
             ),
-            data={"packaged_demo_data": packaged_demo_data, "member": PACKAGED_DEMO_DATA_PATH},
+            data={
+                "packaged_demo_data": packaged_demo_data,
+                "member": PACKAGED_DEMO_DATA_PATH,
+                "metadata": metadata,
+                "metadata_mismatches": metadata_mismatches,
+            },
         )
     )
 
