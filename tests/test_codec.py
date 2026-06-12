@@ -8,6 +8,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+import tokensquash
 from tokensquash.about import build_product_manifest
 from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
 from tokensquash.cli import main as cli_main
@@ -3094,6 +3095,17 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("doctor_strict_evaluation_bench", names)
             self.assertIn("doctor_strict_gate", names)
             self.assertIn("history", names)
+
+    def test_package_exports_release_verifier_for_automation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            release_dir = Path(tmp) / "release"
+            run_turn_release_check(DEFAULT_DEMO_CORPUS, out_dir=release_dir, counter="chars")
+
+            report = tokensquash.verify_turn_release_pack(release_dir)
+
+            self.assertIn("verify_turn_release_pack", tokensquash.__all__)
+            self.assertEqual(report["schema_version"], "tokensquash.turns.release_verify.v1")
+            self.assertEqual(report["summary"]["certification_status"], "pass")
 
     def test_turns_verify_release_cli_json_fails_missing_required_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

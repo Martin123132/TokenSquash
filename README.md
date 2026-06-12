@@ -376,6 +376,15 @@ effective release policy is preserved with the release evidence.
 `release-check.json` file, verifies the required top-level and nested JSON
 schemas plus markdown artifacts, and reports whether the evidence pack is
 complete enough to trust.
+Python automation can use the same release verifier through the package root:
+
+```python
+import tokensquash
+
+report = tokensquash.verify_turn_release_pack("private-turns/release-check")
+assert report["status"] in {"pass", "warn"}
+```
+
 Pass `--budget` with a `tokensquash.quality_budget.v1` JSON file to keep release
 thresholds in source control. The example in `examples\quality-budget.json`
 sets saved-percent, privacy, pass-through, raw-wire-loss, history, and doctor
