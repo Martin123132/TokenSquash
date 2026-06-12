@@ -41,6 +41,7 @@ from tokensquash.turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     capture_turn_record,
+    certify_turn_corpus,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
     gate_turn_report,
@@ -2584,6 +2585,58 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("max_pass_through_rows", output)
             self.assertTrue(out.exists())
             self.assertEqual(out.read_text(encoding="utf-8"), output)
+
+    def test_turns_certify_corpus_builds_artifacts(self) -> None:
+        report = certify_turn_corpus(DEFAULT_DEMO_CORPUS, counter="chars")
+
+        self.assertEqual(report["schema_version"], "tokensquash.turns.certify.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertTrue(report["summary"]["passed"])
+        self.assertGreater(report["summary"]["saved_pct"], 0.5)
+        self.assertEqual(report["artifacts"]["evaluation"]["schema_version"], "tokensquash.turns.evaluate.v1")
+        self.assertEqual(report["artifacts"]["report"]["schema_version"], "tokensquash.turns.report.v1")
+        self.assertEqual(report["artifacts"]["gate"]["schema_version"], "tokensquash.turns.gate.v1")
+        self.assertEqual(report["artifacts"]["suggestions"]["schema_version"], "tokensquash.turns.suggestions.v1")
+
+    def test_turns_certify_cli_writes_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "certification"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "certify",
+                        str(DEFAULT_DEMO_CORPUS),
+                        "--counter",
+                        "chars",
+                        "--out-dir",
+                        str(out_dir),
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.certify.v1")
+            self.assertEqual(payload["status"], "pass")
+            for filename in (
+                "certification.json",
+                "certification.md",
+                "report.json",
+                "report.md",
+                "gate.json",
+                "gate.md",
+                "suggestions.json",
+                "suggestions.md",
+                "evaluation/evaluation.json",
+                "evaluation/measure.json",
+                "evaluation/diagnose.json",
+            ):
+                self.assertTrue((out_dir / filename).exists(), filename)
+            self.assertEqual(json.loads((out_dir / "gate.json").read_text(encoding="utf-8"))["status"], "pass")
+            self.assertIn("certification", payload["outputs"])
 
     def test_turns_suggestions_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

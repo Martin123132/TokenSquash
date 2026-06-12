@@ -1080,50 +1080,15 @@ def report_turn_corpus(
         min_saved_tokens=min_saved_tokens,
         base_aliases=base_aliases,
     )
-    measure_summary = (evaluation.get("measure") or {}).get("summary", {})
-    measure_benchmark_summary = ((evaluation.get("measure") or {}).get("benchmark") or {}).get("summary", {})
-    diagnosis = evaluation.get("diagnose") or {}
-    mine = evaluation.get("mine") or {}
-    alias_impact = evaluation.get("alias_impact") or {}
-    validation = evaluation.get("validation") or {}
-    validation_summary = validation.get("summary", {})
-    return {
-        "schema_version": "tokensquash.turns.report.v1",
-        "status": evaluation.get("status", "fail"),
-        "path": source,
-        "counter": counter,
-        "target_savings_pct": target_savings_pct,
-        "adaptive": adaptive,
-        "limit": limit,
-        "summary": {
-            "turn_count": measure_summary.get("turn_count", validation_summary.get("turn_count", 0)),
-            "original_tokens": measure_summary.get("original_tokens", 0),
-            "wire_tokens": measure_benchmark_summary.get("wire_tokens", 0),
-            "squashed_tokens": measure_summary.get("squashed_tokens", 0),
-            "saved_tokens": measure_summary.get("saved_tokens", 0),
-            "saved_pct": measure_summary.get("saved_pct", 0.0),
-            "prompt_saved_pct": measure_summary.get("prompt_saved_pct", 0.0),
-            "reply_saved_pct": measure_summary.get("reply_saved_pct", 0.0),
-            "privacy_finding_count": validation_summary.get("privacy_finding_count", 0),
-            "selected_path_prefix_count": alias_impact.get("summary", {}).get("selected_path_prefix_count", 0),
-            "selected_field_value_count": alias_impact.get("summary", {}).get("selected_field_value_count", 0),
-            "alias_saved_tokens_delta": alias_impact.get("summary", {}).get("saved_tokens_delta", 0),
-            "alias_saved_pct_delta": alias_impact.get("summary", {}).get("saved_pct_delta", 0.0),
-            "break_even_corpora": alias_impact.get("summary", {}).get("break_even_corpora"),
-            "elapsed_seconds": round(time.time() - started, 4),
-        },
-        "top_wins": list((diagnosis.get("largest_wins", []) or [])[:limit]),
-        "top_raw_wire_losses": list((diagnosis.get("largest_losses", []) or [])[:limit]),
-        "top_path_candidates": list((mine.get("path_patterns", []) or [])[:limit]),
-        "top_field_candidates": list((mine.get("top_candidates", []) or [])[:limit]),
-        "validation": validation,
-        "measure": evaluation.get("measure"),
-        "diagnose": evaluation.get("diagnose"),
-        "mine": evaluation.get("mine"),
-        "aliases": evaluation.get("aliases"),
-        "alias_impact": alias_impact,
-        "bench": evaluation.get("bench"),
-    }
+    return _turn_report_from_evaluation(
+        evaluation,
+        source=source,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        limit=limit,
+        elapsed_seconds=round(time.time() - started, 4),
+    )
 
 
 def compare_turn_reports(base: Path | str, target: Path | str) -> dict[str, Any]:
@@ -1184,55 +1149,122 @@ def gate_turn_report(
     """Apply pass/fail quality thresholds to a saved turn report or evaluation."""
 
     source_report, input_type, input_schema = _load_turn_gate_report(report_path)
-    gate_summary = _turn_gate_summary(source_report)
-    checks = [
-        _turn_gate_check("min_saved_pct", gate_summary["saved_pct"], min_saved_pct, ">="),
-        _turn_gate_check(
-            "max_privacy_findings",
-            gate_summary["privacy_finding_count"],
-            max(0, int(max_privacy_findings)),
-            "<=",
-        ),
-        _turn_gate_check(
-            "max_pass_through_rows",
-            gate_summary["pass_through_rows"],
-            max(0, int(max_pass_through_rows)),
-            "<=",
-        ),
-        _turn_gate_check(
-            "max_raw_wire_loss_turns",
-            gate_summary["raw_wire_loss_turns"],
-            max(0, int(max_raw_wire_loss_turns)),
-            "<=",
-        ),
-    ]
-    failures = [check for check in checks if check.get("status") == "fail"]
-    status = "pass" if not failures else "fail"
+    return _gate_turn_report_payload(
+        source_report,
+        source=str(Path(report_path)),
+        input_type=input_type,
+        input_schema=input_schema,
+        min_saved_pct=min_saved_pct,
+        max_privacy_findings=max_privacy_findings,
+        max_pass_through_rows=max_pass_through_rows,
+        max_raw_wire_loss_turns=max_raw_wire_loss_turns,
+    )
+
+
+def certify_turn_corpus(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+    min_count: int = 2,
+    limit: int = 10,
+    max_path_prefixes: int = 8,
+    max_field_values: int = 8,
+    min_saved_tokens: int = 1,
+    base_aliases: AliasTable | dict[str, Any] | None = None,
+    min_saved_pct: float = 0.5,
+    max_privacy_findings: int = 0,
+    max_pass_through_rows: int = 0,
+    max_raw_wire_loss_turns: int = 0,
+    suggestion_limit: int = 5,
+    suggestion_min_saved_tokens: int = 1,
+) -> dict[str, Any]:
+    """Build an evaluation, gate, and suggestions pack for one turn corpus."""
+
+    started = time.time()
+    source = str(Path(path))
+    capped_limit = max(1, int(limit))
+    evaluation = evaluate_turn_corpus(
+        path,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        guess_reply_fields=guess_reply_fields,
+        min_count=min_count,
+        limit=capped_limit,
+        max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
+        min_saved_tokens=min_saved_tokens,
+        base_aliases=base_aliases,
+    )
+    report = _turn_report_from_evaluation(
+        evaluation,
+        source=source,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        adaptive=adaptive,
+        limit=capped_limit,
+        elapsed_seconds=round(time.time() - started, 4),
+    )
+    gate = _gate_turn_report_payload(
+        report,
+        source="report.json",
+        input_type="report",
+        input_schema="tokensquash.turns.report.v1",
+        min_saved_pct=min_saved_pct,
+        max_privacy_findings=max_privacy_findings,
+        max_pass_through_rows=max_pass_through_rows,
+        max_raw_wire_loss_turns=max_raw_wire_loss_turns,
+    )
+    suggestions = _suggest_turn_improvements_from_report(
+        report,
+        report_path="report.json",
+        limit=suggestion_limit,
+        min_saved_tokens=suggestion_min_saved_tokens,
+    )
+    gate_summary = gate.get("summary", {})
+    suggestions_summary = suggestions.get("summary", {})
+    status = "pass" if gate.get("status") == "pass" else "fail"
     return {
-        "schema_version": "tokensquash.turns.gate.v1",
+        "schema_version": "tokensquash.turns.certify.v1",
         "status": status,
-        "source": str(Path(report_path)),
-        "input_type": input_type,
-        "input_schema_version": input_schema,
-        "report": {
-            **_turn_report_identity(report_path, source_report),
-            "schema_version": input_schema,
+        "path": source,
+        "counter": counter,
+        "adaptive": adaptive,
+        "target_savings_pct": target_savings_pct,
+        "parameters": {
+            "min_count": max(1, int(min_count)),
+            "limit": capped_limit,
+            "max_path_prefixes": max(0, int(max_path_prefixes)),
+            "max_field_values": max(0, int(max_field_values)),
+            "min_saved_tokens": max(0, int(min_saved_tokens)),
+            "suggestion_limit": max(1, int(suggestion_limit)),
+            "suggestion_min_saved_tokens": max(0, int(suggestion_min_saved_tokens)),
         },
-        "thresholds": {
-            "min_saved_pct": float(min_saved_pct),
-            "max_privacy_findings": max(0, int(max_privacy_findings)),
-            "max_pass_through_rows": max(0, int(max_pass_through_rows)),
-            "max_raw_wire_loss_turns": max(0, int(max_raw_wire_loss_turns)),
-        },
+        "thresholds": gate.get("thresholds", {}),
         "summary": {
-            **gate_summary,
             "status": status,
             "passed": status == "pass",
-            "check_count": len(checks),
-            "failed_check_count": len(failures),
+            "turn_count": gate_summary.get("turn_count", 0),
+            "saved_tokens": gate_summary.get("saved_tokens", 0),
+            "saved_pct": gate_summary.get("saved_pct", 0.0),
+            "prompt_saved_pct": gate_summary.get("prompt_saved_pct", 0.0),
+            "reply_saved_pct": gate_summary.get("reply_saved_pct", 0.0),
+            "privacy_finding_count": gate_summary.get("privacy_finding_count", 0),
+            "pass_through_rows": gate_summary.get("pass_through_rows", 0),
+            "raw_wire_loss_turns": gate_summary.get("raw_wire_loss_turns", 0),
+            "failed_check_count": gate_summary.get("failed_check_count", 0),
+            "suggestion_count": suggestions_summary.get("suggestion_count", 0),
+            "elapsed_seconds": round(time.time() - started, 4),
         },
-        "checks": checks,
-        "failures": failures,
+        "artifacts": {
+            "evaluation": evaluation,
+            "report": report,
+            "gate": gate,
+            "suggestions": suggestions,
+        },
     }
 
 
@@ -1245,6 +1277,21 @@ def suggest_turn_improvements(
     """Rank concrete next improvement ideas from a saved turn report."""
 
     source_report = _load_turn_report(report_path)
+    return _suggest_turn_improvements_from_report(
+        source_report,
+        report_path=report_path,
+        limit=limit,
+        min_saved_tokens=min_saved_tokens,
+    )
+
+
+def _suggest_turn_improvements_from_report(
+    source_report: dict[str, Any],
+    *,
+    report_path: Path | str,
+    limit: int,
+    min_saved_tokens: int,
+) -> dict[str, Any]:
     summary = source_report.get("summary", {})
     limit = max(1, int(limit))
     min_saved_tokens = max(0, int(min_saved_tokens))
@@ -1814,6 +1861,73 @@ def format_turn_gate_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_turn_certification_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    artifacts = report.get("artifacts", {})
+    gate = artifacts.get("gate", {})
+    suggestions = artifacts.get("suggestions", {})
+    outputs = report.get("outputs", {})
+    lines = [
+        "# TokenSquash Turn Certification",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Adaptive: `{report.get('adaptive')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Prompt saved percent: `{summary.get('prompt_saved_pct', 0.0)}%`",
+        f"- Reply saved percent: `{summary.get('reply_saved_pct', 0.0)}%`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        f"- Pass-through rows: `{summary.get('pass_through_rows', 0)}`",
+        f"- Raw wire loss turns: `{summary.get('raw_wire_loss_turns', 0)}`",
+        f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
+        f"- Suggestions: `{summary.get('suggestion_count', 0)}`",
+        "",
+        "## Gate",
+        "",
+        f"- Status: `{gate.get('status')}`",
+        f"- Failed checks: `{(gate.get('summary') or {}).get('failed_check_count', 0)}`",
+        "",
+        "| Check | Actual | Limit | Result |",
+        "|---|---:|---:|---|",
+    ]
+    for check in gate.get("checks", []):
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(check.get('name', '')))} | "
+            f"{check.get('actual')} | "
+            f"{check.get('operator')} {check.get('limit')} | "
+            f"`{check.get('status')}` |"
+        )
+    suggestion_items = suggestions.get("suggestions", []) or []
+    lines.extend(
+        [
+            "",
+            "## Suggestions",
+            "",
+            f"- Status: `{suggestions.get('status')}`",
+            f"- Count: `{(suggestions.get('summary') or {}).get('suggestion_count', 0)}`",
+        ]
+    )
+    if suggestion_items:
+        lines.extend(["", "| Rank | Type | Estimated saved | Suggestion |", "|---:|---|---:|---|"])
+        for item in suggestion_items[:10]:
+            lines.append(
+                "| "
+                f"{item.get('rank')} | "
+                f"`{_markdown_cell(str(item.get('type', '')))}` | "
+                f"{item.get('estimated_saved_tokens', 0)} | "
+                f"{_markdown_cell(str(item.get('title', '')))} |"
+            )
+    if outputs:
+        lines.extend(["", "## Outputs", ""])
+        for key, path in sorted(outputs.items()):
+            lines.append(f"- `{key}`: `{path}`")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_turn_suggestions_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     source = report.get("report", {})
@@ -1913,6 +2027,63 @@ def _load_turn_gate_report(path: Path | str) -> tuple[dict[str, Any], str, str]:
     raise ValueError(f"not a TokenSquash turn report or evaluation: {source}")
 
 
+def _turn_report_from_evaluation(
+    evaluation: dict[str, Any],
+    *,
+    source: str,
+    counter: str,
+    target_savings_pct: float,
+    adaptive: bool,
+    limit: int,
+    elapsed_seconds: float,
+) -> dict[str, Any]:
+    measure_summary = (evaluation.get("measure") or {}).get("summary", {})
+    measure_benchmark_summary = ((evaluation.get("measure") or {}).get("benchmark") or {}).get("summary", {})
+    diagnosis = evaluation.get("diagnose") or {}
+    mine = evaluation.get("mine") or {}
+    alias_impact = evaluation.get("alias_impact") or {}
+    validation = evaluation.get("validation") or {}
+    validation_summary = validation.get("summary", {})
+    capped_limit = max(1, int(limit))
+    return {
+        "schema_version": "tokensquash.turns.report.v1",
+        "status": evaluation.get("status", "fail"),
+        "path": source,
+        "counter": counter,
+        "target_savings_pct": target_savings_pct,
+        "adaptive": adaptive,
+        "limit": capped_limit,
+        "summary": {
+            "turn_count": measure_summary.get("turn_count", validation_summary.get("turn_count", 0)),
+            "original_tokens": measure_summary.get("original_tokens", 0),
+            "wire_tokens": measure_benchmark_summary.get("wire_tokens", 0),
+            "squashed_tokens": measure_summary.get("squashed_tokens", 0),
+            "saved_tokens": measure_summary.get("saved_tokens", 0),
+            "saved_pct": measure_summary.get("saved_pct", 0.0),
+            "prompt_saved_pct": measure_summary.get("prompt_saved_pct", 0.0),
+            "reply_saved_pct": measure_summary.get("reply_saved_pct", 0.0),
+            "privacy_finding_count": validation_summary.get("privacy_finding_count", 0),
+            "selected_path_prefix_count": alias_impact.get("summary", {}).get("selected_path_prefix_count", 0),
+            "selected_field_value_count": alias_impact.get("summary", {}).get("selected_field_value_count", 0),
+            "alias_saved_tokens_delta": alias_impact.get("summary", {}).get("saved_tokens_delta", 0),
+            "alias_saved_pct_delta": alias_impact.get("summary", {}).get("saved_pct_delta", 0.0),
+            "break_even_corpora": alias_impact.get("summary", {}).get("break_even_corpora"),
+            "elapsed_seconds": elapsed_seconds,
+        },
+        "top_wins": list((diagnosis.get("largest_wins", []) or [])[:capped_limit]),
+        "top_raw_wire_losses": list((diagnosis.get("largest_losses", []) or [])[:capped_limit]),
+        "top_path_candidates": list((mine.get("path_patterns", []) or [])[:capped_limit]),
+        "top_field_candidates": list((mine.get("top_candidates", []) or [])[:capped_limit]),
+        "validation": validation,
+        "measure": evaluation.get("measure"),
+        "diagnose": evaluation.get("diagnose"),
+        "mine": evaluation.get("mine"),
+        "aliases": evaluation.get("aliases"),
+        "alias_impact": alias_impact,
+        "bench": evaluation.get("bench"),
+    }
+
+
 def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary", {})
     return {
@@ -1935,6 +2106,69 @@ def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str,
         "alias_saved_tokens_delta": summary.get("alias_saved_tokens_delta"),
         "alias_saved_pct_delta": summary.get("alias_saved_pct_delta"),
         "break_even_corpora": summary.get("break_even_corpora"),
+    }
+
+
+def _gate_turn_report_payload(
+    source_report: dict[str, Any],
+    *,
+    source: str,
+    input_type: str,
+    input_schema: str,
+    min_saved_pct: float,
+    max_privacy_findings: int,
+    max_pass_through_rows: int,
+    max_raw_wire_loss_turns: int,
+) -> dict[str, Any]:
+    gate_summary = _turn_gate_summary(source_report)
+    checks = [
+        _turn_gate_check("min_saved_pct", gate_summary["saved_pct"], min_saved_pct, ">="),
+        _turn_gate_check(
+            "max_privacy_findings",
+            gate_summary["privacy_finding_count"],
+            max(0, int(max_privacy_findings)),
+            "<=",
+        ),
+        _turn_gate_check(
+            "max_pass_through_rows",
+            gate_summary["pass_through_rows"],
+            max(0, int(max_pass_through_rows)),
+            "<=",
+        ),
+        _turn_gate_check(
+            "max_raw_wire_loss_turns",
+            gate_summary["raw_wire_loss_turns"],
+            max(0, int(max_raw_wire_loss_turns)),
+            "<=",
+        ),
+    ]
+    failures = [check for check in checks if check.get("status") == "fail"]
+    status = "pass" if not failures else "fail"
+    return {
+        "schema_version": "tokensquash.turns.gate.v1",
+        "status": status,
+        "source": source,
+        "input_type": input_type,
+        "input_schema_version": input_schema,
+        "report": {
+            **_turn_report_identity(source, source_report),
+            "schema_version": input_schema,
+        },
+        "thresholds": {
+            "min_saved_pct": float(min_saved_pct),
+            "max_privacy_findings": max(0, int(max_privacy_findings)),
+            "max_pass_through_rows": max(0, int(max_pass_through_rows)),
+            "max_raw_wire_loss_turns": max(0, int(max_raw_wire_loss_turns)),
+        },
+        "summary": {
+            **gate_summary,
+            "status": status,
+            "passed": status == "pass",
+            "check_count": len(checks),
+            "failed_check_count": len(failures),
+        },
+        "checks": checks,
+        "failures": failures,
     }
 
 
@@ -2688,6 +2922,63 @@ def _append_report_candidates(
 
 def _side_summary(side: dict[str, Any]) -> str:
     return f"{side.get('mode')} raw {side.get('wire_saved_tokens')} saved {side.get('saved_tokens')}"
+
+
+def write_turn_certification_outputs(target: Path | str, report: dict[str, Any]) -> None:
+    target_path = Path(target)
+    target_path.mkdir(parents=True, exist_ok=True)
+    artifacts = report.get("artifacts", {})
+    evaluation = artifacts.get("evaluation", {})
+    turn_report = artifacts.get("report", {})
+    gate = artifacts.get("gate", {})
+    suggestions = artifacts.get("suggestions", {})
+
+    evaluation_dir = target_path / "evaluation"
+    report_path = target_path / "report.json"
+    report_markdown_path = target_path / "report.md"
+    gate_path = target_path / "gate.json"
+    gate_markdown_path = target_path / "gate.md"
+    suggestions_path = target_path / "suggestions.json"
+    suggestions_markdown_path = target_path / "suggestions.md"
+    certification_path = target_path / "certification.json"
+    certification_markdown_path = target_path / "certification.md"
+
+    if evaluation:
+        _write_turn_evaluation_outputs(evaluation_dir, evaluation)
+    turn_report.setdefault("outputs", {})
+    turn_report["outputs"]["report"] = str(report_path)
+    turn_report["outputs"]["markdown"] = str(report_markdown_path)
+    gate.setdefault("outputs", {})
+    gate["outputs"]["gate"] = str(gate_path)
+    gate["outputs"]["markdown"] = str(gate_markdown_path)
+    suggestions.setdefault("outputs", {})
+    suggestions["outputs"]["suggestions"] = str(suggestions_path)
+    suggestions["outputs"]["markdown"] = str(suggestions_markdown_path)
+    report.setdefault("outputs", {})
+    report["outputs"].update(
+        {
+            "output_dir": str(target_path),
+            "certification": str(certification_path),
+            "markdown": str(certification_markdown_path),
+            "evaluation_dir": str(evaluation_dir),
+            "evaluation": str(evaluation_dir / "evaluation.json"),
+            "report": str(report_path),
+            "report_markdown": str(report_markdown_path),
+            "gate": str(gate_path),
+            "gate_markdown": str(gate_markdown_path),
+            "suggestions": str(suggestions_path),
+            "suggestions_markdown": str(suggestions_markdown_path),
+        }
+    )
+
+    report_markdown_path.write_text(format_turn_report_markdown(turn_report), encoding="utf-8")
+    _write_json_report(report_path, turn_report)
+    gate_markdown_path.write_text(format_turn_gate_markdown(gate), encoding="utf-8")
+    _write_json_report(gate_path, gate)
+    suggestions_markdown_path.write_text(format_turn_suggestions_markdown(suggestions), encoding="utf-8")
+    _write_json_report(suggestions_path, suggestions)
+    certification_markdown_path.write_text(format_turn_certification_markdown(report), encoding="utf-8")
+    _write_json_report(certification_path, report)
 
 
 def _write_turn_evaluation_outputs(target: Path, report: dict[str, Any]) -> None:

@@ -61,6 +61,7 @@ from .turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     capture_turn_record,
+    certify_turn_corpus,
     compare_turn_reports,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
@@ -68,6 +69,7 @@ from .turns import (
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
     format_turn_capture_markdown,
+    format_turn_certification_markdown,
     format_turn_diagnose_markdown,
     format_turn_report_markdown,
     format_turn_report_compare_markdown,
@@ -91,6 +93,7 @@ from .turns import (
     split_turn_corpus,
     turn_stats,
     validate_turn_corpus,
+    write_turn_certification_outputs,
 )
 
 
@@ -487,6 +490,41 @@ def main(argv: list[str] | None = None) -> int:
     turns_gate.add_argument("--max-raw-wire-loss-turns", type=int, default=0, help="Maximum rows where raw wire is longer.")
     turns_gate.add_argument("--out", type=Path, help="Write gate output to this file.")
     turns_gate.add_argument("--json", action="store_true", help="Print gate JSON.")
+
+    turns_certify = turns_sub.add_parser(
+        "certify",
+        help="Write an evaluation, gate, and suggestions evidence pack for one turn corpus.",
+    )
+    turns_certify.add_argument(
+        "corpus",
+        nargs="?",
+        type=Path,
+        default=Path("private-turns/real.redacted-turns.jsonl"),
+        help="Redacted turn corpus to certify.",
+    )
+    turns_certify.add_argument("--out-dir", type=Path, default=Path("private-turns/certification"))
+    turns_certify.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_certify.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_certify.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_certify.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_certify.add_argument("--min-count", type=int, default=2, help="Minimum alias/pattern occurrences before selection.")
+    turns_certify.add_argument("--limit", type=int, default=10, help="Rows to show per diagnostic or mining section.")
+    turns_certify.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
+    turns_certify.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to select.")
+    turns_certify.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per alias.")
+    turns_certify.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    turns_certify.add_argument("--min-saved-pct", type=float, default=0.5, help="Minimum saved percent required.")
+    turns_certify.add_argument("--max-privacy-findings", type=int, default=0, help="Maximum privacy findings allowed.")
+    turns_certify.add_argument("--max-pass-through-rows", type=int, default=0, help="Maximum adaptive pass-through rows allowed.")
+    turns_certify.add_argument("--max-raw-wire-loss-turns", type=int, default=0, help="Maximum rows where raw wire is longer.")
+    turns_certify.add_argument("--suggestion-limit", type=int, default=5, help="Maximum suggestions to include.")
+    turns_certify.add_argument(
+        "--suggestion-min-saved-tokens",
+        type=int,
+        default=1,
+        help="Minimum estimated saved tokens for suggestions.",
+    )
+    turns_certify.add_argument("--json", action="store_true", help="Print certification JSON.")
 
     turns_suggestions = turns_sub.add_parser("suggestions", help="Suggest next codec improvements from a turn report JSON.")
     turns_suggestions.add_argument("report", type=Path)
@@ -1097,6 +1135,34 @@ def main(argv: list[str] | None = None) -> int:
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)
                     args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] == "pass" else 1
+            if args.turns_command == "certify":
+                report = certify_turn_corpus(
+                    args.corpus,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                    min_count=args.min_count,
+                    limit=args.limit,
+                    max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
+                    min_saved_tokens=args.min_saved_tokens,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                    min_saved_pct=args.min_saved_pct,
+                    max_privacy_findings=args.max_privacy_findings,
+                    max_pass_through_rows=args.max_pass_through_rows,
+                    max_raw_wire_loss_turns=args.max_raw_wire_loss_turns,
+                    suggestion_limit=args.suggestion_limit,
+                    suggestion_min_saved_tokens=args.suggestion_min_saved_tokens,
+                )
+                write_turn_certification_outputs(args.out_dir, report)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_certification_markdown(report)
+                )
                 print(output, end="")
                 return 0 if report["status"] == "pass" else 1
             if args.turns_command == "suggestions":

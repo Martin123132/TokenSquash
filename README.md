@@ -246,6 +246,13 @@ Gate a saved report or evaluation when you want a CI-style pass/fail signal:
 python -m tokensquash turns gate private-turns\eval-real\evaluation.json --min-saved-pct 0.5 --max-privacy-findings 0 --json
 ```
 
+Certify a redacted corpus when you want one folder containing evaluation,
+gate, suggestions, and a top-level certification summary:
+
+```powershell
+python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification --json
+```
+
 Turn a saved report into a prioritized codec-improvement checklist:
 
 ```powershell
@@ -268,7 +275,8 @@ Use this loop:
 5. Save a before/after report around codec changes.
 6. Run `turns compare-reports` to check whether saved percent improved.
 7. Run `turns gate` on the saved report/evaluation before treating it as passing.
-8. Keep iterating with more capture turns.
+8. Run `turns certify` when you need a durable evidence pack.
+9. Keep iterating with more capture turns.
 
 ```powershell
 python -m tokensquash turns validate private-turns\real.jsonl
@@ -277,6 +285,7 @@ python -m tokensquash turns redact private-turns\real.jsonl --out private-turns\
 python -m tokensquash turns split private-turns\real.redacted-turns.jsonl --prompts-out prompts\real.prompts.jsonl --replies-out prompts\real.replies.jsonl
 python -m tokensquash turns evaluate private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\eval-real
 python -m tokensquash turns gate private-turns\eval-real\evaluation.json --min-saved-pct 0.5 --max-privacy-findings 0
+python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification
 python -m tokensquash turns measure private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --target 0
 python -m tokensquash turns diagnose private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns mine private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
@@ -296,6 +305,9 @@ alias-impact, and benchmark JSON files.
 `turns gate` turns a saved `turns report` JSON or `turns evaluate` output into
 a thresholded pass/fail result for saved percent, privacy findings,
 pass-through rows, and raw-wire-loss turns.
+`turns certify` runs the deterministic evaluation once, derives the compact
+report, applies the gate, writes suggestions, and stores the full evidence pack
+under one output directory.
 `turns measure` validates the corpus, summarizes it, and reports combined
 savings plus prompt-side and reply-side savings. `turns diagnose` shows the
 largest wins, raw wire losses, and adaptive pass-through rows so the next codec
