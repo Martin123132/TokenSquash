@@ -42,7 +42,7 @@ jobs:
       - name: Run public demo release check
         run: python -m tokensquash turns release-check examples/sample-turns.jsonl --counter chars --budget examples/quality-budget.json --history /tmp/tokensquash-certification --out-dir /tmp/tokensquash-release-check
       - name: Verify public demo release evidence
-        run: python -m tokensquash turns verify-release /tmp/tokensquash-release-check
+        run: python -m tokensquash turns verify-release /tmp/tokensquash-release-check --require-release-pass
       - name: Build package wheel
         run: python -m pip wheel . --no-deps -w /tmp/tokensquash-wheel
       - name: Check packaged demo data

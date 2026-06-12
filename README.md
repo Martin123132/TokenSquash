@@ -337,7 +337,7 @@ python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --co
 python -m tokensquash turns compare-certifications private-turns\cert-before\certification.json private-turns\cert-after\certification.json
 python -m tokensquash turns certification-history private-turns\cert-before private-turns\cert-after private-turns\cert-latest
 python -m tokensquash turns release-check private-turns\real.redacted-turns.jsonl --budget examples\quality-budget.json --history private-turns\cert-before --counter tiktoken:cl100k_base --out-dir private-turns\release-check
-python -m tokensquash turns verify-release private-turns\release-check
+python -m tokensquash turns verify-release private-turns\release-check --require-release-pass
 python -m tokensquash turns measure private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --target 0
 python -m tokensquash turns diagnose private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns mine private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
@@ -569,8 +569,8 @@ python -m tokensquash budget validate examples\quality-budget.json
 python -m tokensquash doctor --strict
 python -m tokensquash demo --counter chars --out-dir private-turns\demo-output
 python -m tokensquash turns certify examples\sample-turns.jsonl --counter chars --out-dir private-turns\certification
-python -m tokensquash turns release-check examples\sample-turns.jsonl --counter chars --budget examples\quality-budget.json --out-dir private-turns\release-check
-python -m tokensquash turns verify-release private-turns\release-check
+python -m tokensquash turns release-check examples\sample-turns.jsonl --counter chars --budget examples\quality-budget.json --history private-turns\certification --out-dir private-turns\release-check
+python -m tokensquash turns verify-release private-turns\release-check --require-release-pass
 ```
 
 `doctor --strict` writes its certification evidence to

@@ -419,6 +419,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertRegex(report["project"]["version"], r"^\d+\.\d+\.\d+")
         commands = {item["command"] for item in report["commands"]}
         schemas = {item["schema_version"] for item in report["schemas"]}
+        readiness_commands = report["readiness"]["commands"]
         self.assertIn("about", commands)
         self.assertIn("budget init", commands)
         self.assertIn("budget validate", commands)
@@ -440,6 +441,9 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.turns.release_check.v1", schemas)
         self.assertIn("tokensquash.turns.release_verify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
+        self.assertTrue(
+            any("turns verify-release" in command and "--require-release-pass" in command for command in readiness_commands)
+        )
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
 
     def test_about_cli_json_and_markdown(self) -> None:

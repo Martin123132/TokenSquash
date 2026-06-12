@@ -122,8 +122,8 @@ READINESS_COMMANDS = [
     "python -m tokensquash doctor --strict",
     "python -m tokensquash demo --counter chars --out-dir private-turns\\demo-output",
     "python -m tokensquash turns certify examples\\sample-turns.jsonl --counter chars --out-dir private-turns\\certification",
-    "python -m tokensquash turns release-check examples\\sample-turns.jsonl --counter chars --budget examples\\quality-budget.json --out-dir private-turns\\release-check",
-    "python -m tokensquash turns verify-release private-turns\\release-check",
+    "python -m tokensquash turns release-check examples\\sample-turns.jsonl --counter chars --budget examples\\quality-budget.json --history private-turns\\certification --out-dir private-turns\\release-check",
+    "python -m tokensquash turns verify-release private-turns\\release-check --require-release-pass",
 ]
 
 PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)
