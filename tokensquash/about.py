@@ -14,7 +14,18 @@ PROJECT_NAME = "tokensquash"
 PROJECT_DESCRIPTION = "Compact AI-agent intent codec and token-savings benchmark tools."
 
 COMMAND_GROUPS = {
-    "core": ["encode", "decode", "bench", "compare", "init", "demo", "doctor", "readiness", "about"],
+    "core": [
+        "encode",
+        "decode",
+        "bench",
+        "compare",
+        "init",
+        "demo",
+        "doctor",
+        "readiness",
+        "verify-readiness",
+        "about",
+    ],
     "quality_budget": ["budget init", "budget validate"],
     "corpus": ["corpus stats", "corpus validate", "corpus redact"],
     "reply": ["reply encode", "reply decode", "reply bench", "reply mine", "reply aliases"],
@@ -73,6 +84,7 @@ SUPPORTED_SCHEMAS = [
     ("product", "tokensquash.demo.v1", "Public deterministic demo report."),
     ("product", "tokensquash.doctor.v1", "Install and readiness doctor report."),
     ("product", "tokensquash.readiness.v1", "One-command product-readiness evidence report."),
+    ("product", "tokensquash.readiness.verify.v1", "Product-readiness evidence verification report."),
     ("product", MANIFEST_SCHEMA_VERSION, "Product manifest report."),
     ("product", "tokensquash.quality_budget.v1", "Project quality budget for release checks."),
     ("product", "tokensquash.quality_budget.init.v1", "Quality budget initializer report."),
@@ -117,6 +129,7 @@ SUPPORTED_SCHEMAS = [
 
 READINESS_COMMANDS = [
     "python -m tokensquash readiness --out-dir private-turns\\readiness",
+    "python -m tokensquash verify-readiness private-turns\\readiness --require-readiness-pass",
     "python -m unittest discover -s tests",
     "python -m tokensquash init --dry-run",
     "python -m tokensquash budget init --out private-turns\\quality-budget.json --dry-run --json",

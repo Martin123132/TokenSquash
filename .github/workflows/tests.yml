@@ -45,6 +45,8 @@ jobs:
         run: python -m tokensquash turns verify-release /tmp/tokensquash-release-check --require-release-pass
       - name: Run product readiness evidence pack
         run: python -m tokensquash readiness --skip-tests --out-dir /tmp/tokensquash-readiness --json
+      - name: Verify product readiness evidence pack
+        run: python -m tokensquash verify-readiness /tmp/tokensquash-readiness --require-readiness-pass --json
       - name: Build package wheel
         run: python -m pip wheel . --no-deps -w /tmp/tokensquash-wheel
       - name: Check packaged demo data

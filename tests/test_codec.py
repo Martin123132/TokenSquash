@@ -33,7 +33,7 @@ from tokensquash.release import (
     validate_quality_budget,
     verify_turn_release_pack,
 )
-from tokensquash.readiness import run_product_readiness
+from tokensquash.readiness import run_product_readiness, verify_product_readiness_pack
 from tokensquash.sidecar import (
     certify_sidecar_report,
     compact_semantic_payload,
@@ -426,6 +426,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("budget validate", commands)
         self.assertIn("init", commands)
         self.assertIn("readiness", commands)
+        self.assertIn("verify-readiness", commands)
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
@@ -434,6 +435,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.readiness.v1", schemas)
+        self.assertIn("tokensquash.readiness.verify.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
         self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
@@ -448,6 +450,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             any("turns verify-release" in command and "--require-release-pass" in command for command in readiness_commands)
         )
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
+        self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
 
     def test_about_cli_json_and_markdown(self) -> None:
@@ -626,6 +629,47 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["status"], "pass")
             self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
             self.assertTrue((out_dir / "readiness.md").exists())
+
+    def test_verify_product_readiness_pack_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "readiness"
+            run_product_readiness(out_dir=out_dir, skip_tests=True)
+
+            report = verify_product_readiness_pack(out_dir, require_readiness_pass=True)
+
+            self.assertEqual(report["schema_version"], "tokensquash.readiness.verify.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["readiness_status"], "pass")
+            self.assertEqual(report["summary"]["release_check_verify_status"], "pass")
+            self.assertEqual(report["summary"]["release_verify_status"], "pass")
+
+    def test_verify_product_readiness_pack_fails_on_missing_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "readiness"
+            run_product_readiness(out_dir=out_dir, skip_tests=True)
+            (out_dir / "readiness.md").unlink()
+
+            report = verify_product_readiness_pack(out_dir)
+
+            self.assertEqual(report["schema_version"], "tokensquash.readiness.verify.v1")
+            self.assertEqual(report["status"], "fail")
+            failed_names = {check["name"] for check in report["checks"] if check["status"] == "fail"}
+            self.assertIn("readiness_markdown", failed_names)
+
+    def test_verify_product_readiness_cli_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "readiness"
+            stdout = StringIO()
+            run_product_readiness(out_dir=out_dir, skip_tests=True)
+
+            with redirect_stdout(stdout):
+                code = cli_main(["verify-readiness", str(out_dir), "--require-readiness-pass", "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.readiness.verify.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertTrue(payload["require_readiness_pass"])
 
     def test_doctor_ollama_check_can_pass_with_mock(self) -> None:
         class FakeResponse:

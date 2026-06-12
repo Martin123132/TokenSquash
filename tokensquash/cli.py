@@ -40,7 +40,12 @@ from .release import (
     validate_quality_budget,
     verify_turn_release_pack,
 )
-from .readiness import format_product_readiness_markdown, run_product_readiness
+from .readiness import (
+    format_product_readiness_markdown,
+    format_product_readiness_verify_markdown,
+    run_product_readiness,
+    verify_product_readiness_pack,
+)
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -189,6 +194,16 @@ def main(argv: list[str] | None = None) -> int:
     readiness.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
     readiness.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
     readiness.add_argument("--json", action="store_true", help="Print readiness JSON.")
+
+    verify_readiness = sub.add_parser("verify-readiness", help="Verify a saved product-readiness evidence pack.")
+    verify_readiness.add_argument("pack", type=Path, help="Readiness output directory or readiness.json.")
+    verify_readiness.add_argument(
+        "--require-readiness-pass",
+        action="store_true",
+        help="Fail verification unless the readiness status is pass.",
+    )
+    verify_readiness.add_argument("--out", type=Path, help="Write verification output to this file.")
+    verify_readiness.add_argument("--json", action="store_true", help="Print readiness verification JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -942,6 +957,22 @@ def main(argv: list[str] | None = None) -> int:
                 ollama_timeout=args.ollama_timeout,
             )
             output = json.dumps(report, indent=2) + "\n" if args.json else format_product_readiness_markdown(report)
+            print(output, end="")
+            return 0 if report["status"] in {"pass", "warn"} else 1
+
+        if args.command == "verify-readiness":
+            report = verify_product_readiness_pack(
+                args.pack,
+                require_readiness_pass=args.require_readiness_pass,
+            )
+            output = (
+                json.dumps(report, indent=2) + "\n"
+                if args.json
+                else format_product_readiness_verify_markdown(report)
+            )
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
             print(output, end="")
             return 0 if report["status"] in {"pass", "warn"} else 1
 

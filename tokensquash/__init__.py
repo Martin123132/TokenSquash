@@ -16,7 +16,7 @@ from .release import (
     validate_quality_budget,
     verify_turn_release_pack,
 )
-from .readiness import run_product_readiness
+from .readiness import run_product_readiness, verify_product_readiness_pack
 from .turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
@@ -89,5 +89,6 @@ __all__ = [
     "validate_quality_budget",
     "validate_corpus",
     "validate_turn_corpus",
+    "verify_product_readiness_pack",
     "verify_turn_release_pack",
 ]
