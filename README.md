@@ -37,6 +37,12 @@ Show the machine-readable product manifest:
 python -m tokensquash about --json
 ```
 
+Prepare local private folders and `.gitignore` rules for real corpora:
+
+```powershell
+python -m tokensquash init
+```
+
 ## Quick Demo
 
 Run the public paired-turn demo with no private data and no local model:
@@ -483,6 +489,7 @@ checks that do not depend on API keys or a local model:
 ```powershell
 python -m unittest discover -s tests
 python -m tokensquash about --json
+python -m tokensquash init --dry-run
 python -m tokensquash doctor --strict
 python -m tokensquash demo --counter chars --out-dir private-turns\demo-output
 python -m tokensquash turns certify examples\sample-turns.jsonl --counter chars --out-dir private-turns\certification
@@ -508,6 +515,7 @@ release process needs the evidence somewhere else.
 - Alias-impact reports for learned session dictionaries.
 - Public paired-turn sample corpus and first-run deterministic demo command.
 - Machine-readable product manifest for version, commands, schemas, protocols, and readiness checks.
+- Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
 - One-command turn evaluation report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.

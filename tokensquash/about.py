@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .demo import DEFAULT_DEMO_CORPUS
+from .workspace import GITIGNORE_PATTERNS, WORKSPACE_INIT_SCHEMA_VERSION
 
 
 MANIFEST_SCHEMA_VERSION = "tokensquash.product.manifest.v1"
@@ -13,7 +14,7 @@ PROJECT_NAME = "tokensquash"
 PROJECT_DESCRIPTION = "Compact AI-agent intent codec and token-savings benchmark tools."
 
 COMMAND_GROUPS = {
-    "core": ["encode", "decode", "bench", "compare", "demo", "doctor", "about"],
+    "core": ["encode", "decode", "bench", "compare", "init", "demo", "doctor", "about"],
     "corpus": ["corpus stats", "corpus validate", "corpus redact"],
     "reply": ["reply encode", "reply decode", "reply bench", "reply mine", "reply aliases"],
     "turns": [
@@ -67,6 +68,7 @@ SUPPORTED_SCHEMAS = [
     ("product", "tokensquash.demo.v1", "Public deterministic demo report."),
     ("product", "tokensquash.doctor.v1", "Install and readiness doctor report."),
     ("product", MANIFEST_SCHEMA_VERSION, "Product manifest report."),
+    ("product", WORKSPACE_INIT_SCHEMA_VERSION, "Local private workspace initialization report."),
     ("turns", "tokensquash.turns.validate.v1", "Turn corpus validation report."),
     ("turns", "tokensquash.turns.stats.v1", "Turn corpus statistics report."),
     ("turns", "tokensquash.turns.redact.v1", "Turn corpus redaction report."),
@@ -102,21 +104,13 @@ SUPPORTED_SCHEMAS = [
 
 READINESS_COMMANDS = [
     "python -m unittest discover -s tests",
+    "python -m tokensquash init --dry-run",
     "python -m tokensquash doctor --strict",
     "python -m tokensquash demo --counter chars --out-dir private-turns\\demo-output",
     "python -m tokensquash turns certify examples\\sample-turns.jsonl --counter chars --out-dir private-turns\\certification",
 ]
 
-PRIVATE_STORAGE_PATTERNS = [
-    "prompts/",
-    "private-prompts/",
-    "turns/",
-    "private-turns/",
-    "aliases/",
-    "private-aliases/",
-    "*.redacted.jsonl",
-    "*.redacted-turns.jsonl",
-]
+PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)
 
 
 def build_product_manifest(*, cwd: Path | str | None = None) -> dict[str, Any]:

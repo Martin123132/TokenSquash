@@ -96,6 +96,7 @@ from .turns import (
     validate_turn_corpus,
     write_turn_certification_outputs,
 )
+from .workspace import format_workspace_init_markdown, initialize_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -128,6 +129,14 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("base", type=Path)
     compare.add_argument("target", type=Path)
     compare.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    init = sub.add_parser("init", help="Prepare local private TokenSquash workspace storage.")
+    init.add_argument("--root", type=Path, default=Path("."), help="Workspace root to initialize.")
+    init.add_argument("--dry-run", action="store_true", help="Show planned setup without writing files.")
+    init.add_argument("--no-dirs", action="store_true", help="Do not create private workspace directories.")
+    init.add_argument("--no-gitignore", action="store_true", help="Do not create or update .gitignore.")
+    init.add_argument("--out", type=Path, help="Write init report output to this file.")
+    init.add_argument("--json", action="store_true", help="Print init JSON.")
 
     about = sub.add_parser("about", help="Show the TokenSquash product manifest.")
     about.add_argument("--out", type=Path, help="Write product manifest output to this file.")
@@ -742,6 +751,20 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(format_benchmark_compare_markdown(report), end="")
             return 0
+
+        if args.command == "init":
+            report = initialize_workspace(
+                args.root,
+                create_dirs=not args.no_dirs,
+                update_gitignore=not args.no_gitignore,
+                dry_run=args.dry_run,
+            )
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_workspace_init_markdown(report)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
+            print(output, end="")
+            return 0 if report["status"] != "fail" else 1
 
         if args.command == "demo":
             report = run_demo(

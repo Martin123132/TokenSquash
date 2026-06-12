@@ -11,6 +11,7 @@ from urllib.request import urlopen
 from .about import MANIFEST_SCHEMA_VERSION, build_product_manifest
 from .demo import DEFAULT_DEMO_CORPUS, run_demo
 from .turns import certify_turn_corpus, write_turn_certification_outputs
+from .workspace import WORKSPACE_INIT_SCHEMA_VERSION, initialize_workspace
 
 
 STRICT_CERTIFICATION_FILES = (
@@ -55,6 +56,7 @@ def run_doctor(
             [
                 _check_sample_corpus_copy(root),
                 _check_console_script_metadata(root),
+                _check_workspace_init_dry_run(root),
                 _check_product_manifest(root),
                 _check_turn_certification_workflow(strict_dir),
             ]
@@ -307,6 +309,39 @@ def _check_console_script_metadata(cwd: Path) -> dict[str, Any]:
     )
 
 
+def _check_workspace_init_dry_run(cwd: Path) -> dict[str, Any]:
+    try:
+        report = initialize_workspace(cwd, dry_run=True)
+    except Exception as exc:  # pragma: no cover - exercised through failure path in CLI use.
+        return _doctor_check(
+            "workspace_init_dry_run",
+            "fail",
+            required=True,
+            message=f"Workspace init dry-run failed: {exc}",
+        )
+    passed = (
+        report.get("schema_version") == WORKSPACE_INIT_SCHEMA_VERSION
+        and report.get("status") == "dry-run"
+        and int((report.get("summary") or {}).get("directory_count", 0)) >= 3
+        and bool((report.get("gitignore") or {}).get("required_patterns"))
+    )
+    return _doctor_check(
+        "workspace_init_dry_run",
+        "pass" if passed else "fail",
+        required=True,
+        message=(
+            "Workspace init dry-run produced the expected private directory and gitignore plan."
+            if passed
+            else "Workspace init dry-run did not produce the expected setup plan."
+        ),
+        data={
+            "status": report.get("status"),
+            "directory_count": (report.get("summary") or {}).get("directory_count", 0),
+            "added_gitignore_pattern_count": (report.get("summary") or {}).get("added_gitignore_pattern_count", 0),
+        },
+    )
+
+
 def _check_product_manifest(cwd: Path) -> dict[str, Any]:
     try:
         manifest = build_product_manifest(cwd=cwd)
@@ -323,11 +358,12 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
     commands = {item.get("command") for item in manifest.get("commands", [])}
     required_schemas = {
         MANIFEST_SCHEMA_VERSION,
+        WORKSPACE_INIT_SCHEMA_VERSION,
         "tokensquash.doctor.v1",
         "tokensquash.turns.certify.v1",
         "tokensquash.sidecar.certify.v1",
     }
-    required_commands = {"about", "doctor", "turns certify", "sidecar certify"}
+    required_commands = {"about", "init", "doctor", "turns certify", "sidecar certify"}
     missing_schemas = sorted(required_schemas - schemas)
     missing_commands = sorted(required_commands - commands)
     passed = (

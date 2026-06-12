@@ -19,6 +19,8 @@ jobs:
         run: python -m unittest discover -s tests
       - name: Show product manifest
         run: python -m tokensquash about --json
+      - name: Initialize sample workspace
+        run: python -m tokensquash init --root /tmp/tokensquash-workspace --json
       - name: Run install doctor
         run: python -m tokensquash doctor
       - name: Run strict install doctor

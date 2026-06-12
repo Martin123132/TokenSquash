@@ -55,6 +55,7 @@ from tokensquash.turns import (
     split_turn_corpus,
     validate_turn_corpus,
 )
+from tokensquash.workspace import initialize_workspace
 
 
 class TokenSquashCodecTests(unittest.TestCase):
@@ -408,9 +409,11 @@ class TokenSquashCodecTests(unittest.TestCase):
         commands = {item["command"] for item in report["commands"]}
         schemas = {item["schema_version"] for item in report["schemas"]}
         self.assertIn("about", commands)
+        self.assertIn("init", commands)
         self.assertIn("turns certify", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
+        self.assertIn("tokensquash.workspace.init.v1", schemas)
         self.assertIn("tokensquash.turns.certify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
@@ -437,6 +440,63 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["schema_version"], "tokensquash.product.manifest.v1")
             self.assertGreaterEqual(payload["counts"]["command_count"], 40)
+
+    def test_workspace_init_dry_run_does_not_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+
+            report = initialize_workspace(root, dry_run=True)
+
+            self.assertEqual(report["schema_version"], "tokensquash.workspace.init.v1")
+            self.assertEqual(report["status"], "dry-run")
+            self.assertFalse((root / "private-turns").exists())
+            self.assertFalse((root / ".gitignore").exists())
+            self.assertEqual(report["summary"]["directory_count"], 3)
+
+    def test_workspace_init_creates_private_storage_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+
+            first = initialize_workspace(root)
+            second = initialize_workspace(root)
+
+            self.assertEqual(first["status"], "changed")
+            self.assertEqual(second["status"], "ready")
+            self.assertTrue((root / "private-turns").is_dir())
+            self.assertTrue((root / "private-prompts").is_dir())
+            self.assertTrue((root / "private-aliases").is_dir())
+            ignore_text = (root / ".gitignore").read_text(encoding="utf-8")
+            self.assertIn("private-turns/", ignore_text.splitlines())
+            self.assertEqual(second["summary"]["added_gitignore_pattern_count"], 0)
+
+    def test_workspace_init_reports_conflicting_private_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            root.mkdir()
+            (root / "private-turns").write_text("not a directory", encoding="utf-8")
+
+            report = initialize_workspace(root)
+
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["summary"]["conflict_count"], 1)
+            private_turns = next(item for item in report["directories"] if item["name"] == "private-turns")
+            self.assertEqual(private_turns["action"], "conflict")
+
+    def test_workspace_init_cli_json_writes_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "workspace"
+            out = Path(tmp) / "init.json"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["init", "--root", str(root), "--out", str(out), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.workspace.init.v1")
+            self.assertEqual(payload["status"], "changed")
+            self.assertTrue(out.exists())
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["status"], "changed")
 
     def test_run_doctor_reports_required_checks(self) -> None:
         report = run_doctor()
@@ -473,6 +533,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             checks = {check["name"]: check for check in report["checks"]}
             self.assertEqual(checks["sample_corpus_copy"]["status"], "pass")
             self.assertEqual(checks["console_script_metadata"]["status"], "pass")
+            self.assertEqual(checks["workspace_init_dry_run"]["status"], "pass")
             self.assertEqual(checks["product_manifest"]["status"], "pass")
             self.assertEqual(checks["turn_certification_workflow"]["status"], "pass")
             self.assertTrue((out_dir / "certification.json").exists())

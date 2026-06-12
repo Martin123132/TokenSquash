@@ -26,6 +26,7 @@ from .turns import (
     turn_stats,
     validate_turn_corpus,
 )
+from .workspace import initialize_workspace
 
 __version__ = package_version()
 
@@ -51,6 +52,7 @@ __all__ = [
     "encode_reply",
     "evaluate_turn_corpus",
     "import_turn_corpus",
+    "initialize_workspace",
     "load_prompt_records",
     "load_alias_table",
     "load_reply_records",
