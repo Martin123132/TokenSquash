@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible TokenSquash bug using synthetic or redacted data.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve TokenSquash. Do not include raw private prompts, replies, corpora, API keys, credentials, local release evidence, or secrets in a public issue.
+  - type: input
+    id: command
+    attributes:
+      label: Command or workflow
+      description: Which command, workflow, or module failed?
+      placeholder: python -m tokensquash doctor --strict
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Use synthetic or redacted output only.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide a minimal reproduction using public, synthetic, or redacted data.
+      placeholder: |
+        1. Run ...
+        2. Use fixture ...
+        3. See ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - deterministic codec
+        - reply codec
+        - turn corpus workflow
+        - sidecar experimental workflow
+        - release/readiness evidence
+        - packaging
+        - docs
+        - other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0, commit hash, or main
+  - type: input
+    id: python
+    attributes:
+      label: Python and OS
+      placeholder: Python 3.13 on Windows 11
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Public issue safety
+      options:
+        - label: I have removed raw private prompts, replies, corpora, credentials, secrets, and local private evidence.
+          required: true

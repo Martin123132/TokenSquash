@@ -173,7 +173,19 @@ GOVERNANCE_DOCUMENTS = [
     {"path": "CONTRIBUTING.md", "purpose": "Contributor setup, quality gates, privacy rules, and release expectations."},
     {"path": "SECURITY.md", "purpose": "Security support, vulnerability reporting, and private-data handling policy."},
     {"path": "docs/release-checklist.md", "purpose": "Manual release runbook and evidence checklist."},
+    {"path": "docs/release-notes-v0.1.0.md", "purpose": "Draft v0.1.0 scope, evidence, and release notes."},
     {"path": ".github/PULL_REQUEST_TEMPLATE.md", "purpose": "Pull-request verification and privacy checklist."},
+    {"path": ".github/ISSUE_TEMPLATE/config.yml", "purpose": "Issue-template routing and private contact links."},
+    {"path": ".github/ISSUE_TEMPLATE/bug_report.yml", "purpose": "Public-safe bug report form."},
+    {"path": ".github/ISSUE_TEMPLATE/feature_request.yml", "purpose": "Benchmark-first feature request form."},
+    {
+        "path": ".github/ISSUE_TEMPLATE/commercial_licensing.yml",
+        "purpose": "Commercial licensing enquiry form and public-safety warning.",
+    },
+    {
+        "path": ".github/ISSUE_TEMPLATE/private_data_security.yml",
+        "purpose": "Private-data and security contact request form.",
+    },
 ]
 
 

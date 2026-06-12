@@ -28,6 +28,10 @@ is produced locally and in GitHub Actions.
   impact checks.
 - TokenSquash now declares PolyForm Noncommercial License 1.0.0 terms, required
   notices, and commercial licensing contact details for TWO HANDS NETWORK LTD.
+- Draft v0.1.0 release notes now summarize scope, evidence, private-data
+  boundaries, license terms, and the release-prep command block.
+- GitHub issue forms now guide public-safe bug reports, feature requests,
+  commercial licensing enquiries, and private-data/security contact requests.
 - Strict doctor and the product manifest now verify source-checkout governance
   docs as part of product-readiness evidence.
 

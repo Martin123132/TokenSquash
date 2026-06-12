@@ -1,0 +1,49 @@
+name: Private-data or security concern
+description: Request private coordination for a security, privacy, or private-data concern.
+title: "[Security contact request]: "
+labels:
+  - security
+  - privacy
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prefer GitHub private vulnerability reporting from the repository Security tab when available. If you use this public issue form, do not include exploit details, raw prompts, raw replies, private corpus rows, credentials, secrets, local private evidence, or sensitive logs.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - redaction
+        - private-turns storage
+        - private-prompts storage
+        - private-aliases storage
+        - release artifacts
+        - CLI path handling
+        - package metadata or packaged data
+        - sidecar network call
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Public-safe summary
+      description: Describe the affected area and impact shape without sensitive details.
+      placeholder: The issue may expose redacted corpus rows under a specific synthetic workflow.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version, commit, or evidence pack
+      placeholder: commit hash, tag, or release-candidate evidence pack name
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public issue safety
+      options:
+        - label: I have not included exploit details, raw private data, credentials, secrets, or sensitive logs.
+          required: true
+        - label: I can provide a synthetic reproduction or wait for a private coordination channel.
+          required: true

@@ -90,7 +90,8 @@ python -m tokensquash verify-release-candidate private-turns\release-candidate -
 Use [docs/release-checklist.md](docs/release-checklist.md) as the release
 runbook, confirm the [LICENSE](LICENSE) and
 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) terms, and record user-facing
-changes in [CHANGELOG.md](CHANGELOG.md).
+changes in [CHANGELOG.md](CHANGELOG.md). The draft first-release notes live at
+[docs/release-notes-v0.1.0.md](docs/release-notes-v0.1.0.md).
 
 Add `--check-ollama` when you want the doctor to query a local Ollama server
 for the experimental sidecar path.
@@ -586,6 +587,12 @@ rules, and pull-request expectations.
 Use [SECURITY.md](SECURITY.md) for supported versions, responsible vulnerability
 reporting, and private-data handling rules.
 
+Use the GitHub issue templates under `.github/ISSUE_TEMPLATE/` for public-safe
+bug reports, feature requests, commercial licensing enquiries, and
+private-data/security contact requests. Do not put raw private prompts, replies,
+corpora, credentials, secrets, or commercially sensitive material in public
+issues.
+
 ## License
 
 TokenSquash is source-available for personal and non-commercial use under the
@@ -677,7 +684,9 @@ artifact for inspection after each run.
 
 For a tag or external release, follow
 [docs/release-checklist.md](docs/release-checklist.md) and update
-[CHANGELOG.md](CHANGELOG.md) before building the clean release-candidate pack.
+[CHANGELOG.md](CHANGELOG.md) plus
+[docs/release-notes-v0.1.0.md](docs/release-notes-v0.1.0.md) before building
+the clean release-candidate pack.
 
 ## Current Scope
 
@@ -699,7 +708,7 @@ For a tag or external release, follow
 - Release metadata report for package version, Git commit, dirty state, Python runtime, and platform details.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
-- Strict source-checkout doctor verification for license, commercial licensing, contributor, security, changelog, release checklist, and pull-request template docs.
+- Strict source-checkout doctor verification for license, commercial licensing, contributor, security, changelog, release checklist, release notes, pull-request template, and issue-template docs.
 - One-command product readiness evidence pack and verifier for tests, strict doctor, demo, certification, release-check, and release verification.
 - One-command release-candidate gate and verifier for readiness verification, benchmark baseline freshness, exact-tokenizer baselines, wheel/source-distribution metadata, package/install smoke evidence, artifact hash integrity, and local release attestations.
 - One-command turn evaluation, certification, comparison, history, release-check, and release-verification report packs for real-corpus measurement.

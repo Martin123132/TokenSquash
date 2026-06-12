@@ -1,0 +1,67 @@
+name: Commercial licensing enquiry
+description: Start a public-safe commercial licensing enquiry for TokenSquash.
+title: "[Commercial]: "
+labels:
+  - commercial-licensing
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TokenSquash is available for personal and non-commercial use under the PolyForm Noncommercial License 1.0.0.
+
+        Commercial use requires a separate written license from TWO HANDS NETWORK LTD. Do not include confidential plans, proprietary code, customer names, private prompts, private corpora, secrets, or commercially sensitive material in a public issue. For private commercial discussion, contact Glyn Evans at glyn@twohandsnetwork.co.uk.
+  - type: input
+    id: organisation
+    attributes:
+      label: Organisation
+      description: Public-safe organisation or team name.
+  - type: dropdown
+    id: use_type
+    attributes:
+      label: Intended use
+      options:
+        - internal evaluation
+        - internal production use
+        - paid product
+        - hosted service
+        - managed service
+        - enterprise product
+        - commercial developer tool
+        - commercial AI system
+        - commercial AI coding/agent product
+        - commercial AI training/evaluation pipeline
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Public-safe summary
+      description: Briefly describe the use without confidential details.
+    validations:
+      required: true
+  - type: input
+    id: scale
+    attributes:
+      label: Expected scale
+      description: Public-safe estimate of users, customers, seats, agents, or automated workflows.
+      placeholder: e.g. 10 internal users, 1 hosted product, 1000 customers
+  - type: checkboxes
+    id: topics
+    attributes:
+      label: Topics involved
+      options:
+        - label: hosted or managed service
+        - label: embedded code, schemas, tests, pack format, prompts, or reports
+        - label: commercial AI model training, fine-tuning, distillation, evaluation, benchmarking, or improvement
+        - label: redistribution or modified commercial version
+        - label: attribution, warranty, support, redistribution, or private-data review terms
+  - type: checkboxes
+    id: acknowledgement
+    attributes:
+      label: Acknowledgement
+      options:
+        - label: I understand no commercial license is granted unless agreed in writing by TWO HANDS NETWORK LTD.
+          required: true
+        - label: I have not included confidential, proprietary, private-data, or secret material in this public issue.
+          required: true

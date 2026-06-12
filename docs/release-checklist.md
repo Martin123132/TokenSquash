@@ -7,6 +7,8 @@ candidate. It assumes the release is being prepared from `main`.
 
 - Read `CHANGELOG.md` and move any completed items from `Unreleased` into the
   target version section.
+- Review `docs/release-notes-v0.1.0.md` and fill the release evidence fields
+  after the final local and GitHub release-candidate evidence passes.
 - Confirm `pyproject.toml` contains the intended package version.
 - Confirm the README still describes the current command surface accurately.
 - Confirm the project-owner-approved `LICENSE` and `COMMERCIAL-LICENSE.md`
@@ -28,6 +30,22 @@ The `release-info` command must report:
 - `require_clean`: `true`
 - `summary.dirty`: `false`
 - a concrete Git commit
+
+## 2a. Release-Prep Command Block
+
+Use this command block for a clean local release-prep pass:
+
+```powershell
+python -m pip install -e ".[tokenizer]"
+python -m unittest discover -s tests
+python -m tokensquash doctor --strict --strict-out-dir private-turns\doctor-release
+python -m tokensquash baselines verify --include-exact-tokenizer --json
+python -m tokensquash readiness --out-dir private-turns\readiness-release --json
+python -m tokensquash verify-readiness private-turns\readiness-release --require-readiness-pass --json
+python -m tokensquash release-info --require-clean --json
+python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
+python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
+```
 
 ## 3. Run Product Gates
 
@@ -85,6 +103,9 @@ The workflow must show:
 Download or inspect the `release-candidate-evidence` artifact if the release is
 being reviewed outside the local machine.
 
+Record the final commit, GitHub Actions run, evidence artifact, and hashes in
+`docs/release-notes-v0.1.0.md` before tagging.
+
 ## 6. Tag Or Publish
 
 Only tag or publish after local and GitHub release evidence both pass.
@@ -103,6 +124,6 @@ artifact provenance policy have been added and reviewed.
 
 - Add a new `Unreleased` section to `CHANGELOG.md`.
 - Record the released tag, GitHub Actions run, and release-candidate evidence
-  location in the release notes.
+  location in `docs/release-notes-v0.1.0.md`.
 - Keep private corpora under ignored `private-turns/` storage; do not attach
   raw private turns to public releases.

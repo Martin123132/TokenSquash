@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest a TokenSquash improvement or experiment.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TokenSquash is benchmark-first. The strongest feature requests explain the workflow, expected measurement, and how meaning preservation can be checked.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What workflow or product-standard gap should this improve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the exact behavior, command, schema, or report you would like.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - deterministic codec
+        - reply codec
+        - turn corpus workflow
+        - sidecar experimental workflow
+        - release/readiness evidence
+        - packaging
+        - docs/governance
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Measurement or acceptance evidence
+      description: What would prove the feature is useful and meaning-safe?
+      placeholder: token delta, warning count, round-trip review, release gate, synthetic fixture
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: This request does not require raw private corpora or secrets in the repository.
+          required: true
+        - label: If this touches the sidecar, token savings alone will not be treated as success.
+          required: false
