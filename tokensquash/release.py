@@ -45,6 +45,14 @@ _CERTIFICATION_PACK_JSON_ARTIFACTS = (
     ("gate", "gate", Path("gate.json"), "tokensquash.turns.gate.v1", {"pass"}),
     ("suggestions", "suggestions", Path("suggestions.json"), "tokensquash.turns.suggestions.v1", {"pass", "empty"}),
     ("evaluation", "evaluation", Path("evaluation") / "evaluation.json", "tokensquash.turns.evaluate.v1", {"pass"}),
+    (
+        "evaluation_validation",
+        "validation",
+        Path("evaluation") / "validation.json",
+        "tokensquash.turns.validate.v1",
+        {"pass", "warn"},
+    ),
+    ("evaluation_stats", "stats", Path("evaluation") / "stats.json", "tokensquash.turns.stats.v1", None),
     ("evaluation_measure", "measure", Path("evaluation") / "measure.json", "tokensquash.turns.measure.v1", {"pass"}),
     (
         "evaluation_diagnose",
@@ -52,6 +60,29 @@ _CERTIFICATION_PACK_JSON_ARTIFACTS = (
         Path("evaluation") / "diagnose.json",
         "tokensquash.turns.diagnose.v1",
         {"pass"},
+    ),
+    ("evaluation_mine", "mine", Path("evaluation") / "mine.json", "tokensquash.turns.mine.v1", {"pass", "warn", "empty"}),
+    (
+        "evaluation_alias_impact",
+        "alias_impact",
+        Path("evaluation") / "alias-impact.json",
+        "tokensquash.turns.alias_impact.v1",
+        {"improved", "same", "regressed", "warn", "empty"},
+    ),
+    ("evaluation_bench", "bench", Path("evaluation") / "bench.json", "tokensquash.turns.bench.v1", {"pass", "miss", "empty"}),
+    (
+        "evaluation_aliases_report",
+        "aliases_report",
+        Path("evaluation") / "aliases-report.json",
+        "tokensquash.aliases.v1",
+        {"pass", "empty"},
+    ),
+    (
+        "evaluation_alias_table",
+        "alias_table",
+        Path("evaluation") / "aliases.json",
+        "tokensquash.aliases.v1",
+        None,
     ),
 )
 _CERTIFICATION_PACK_MARKDOWN_ARTIFACTS = (
