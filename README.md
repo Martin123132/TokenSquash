@@ -64,7 +64,8 @@ python -m tokensquash doctor
 ```
 
 Run the stricter product-readiness check when you want the deterministic demo,
-package metadata, sample corpus, and certification workflow verified together:
+package metadata, sample corpus, governance docs, and certification workflow
+verified together:
 
 ```powershell
 python -m tokensquash doctor --strict
@@ -680,6 +681,7 @@ For a tag or external release, follow
 - Release metadata report for package version, Git commit, dirty state, Python runtime, and platform details.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
+- Strict source-checkout doctor verification for contributor, security, changelog, release checklist, and pull-request template docs.
 - One-command product readiness evidence pack and verifier for tests, strict doctor, demo, certification, release-check, and release verification.
 - One-command release-candidate gate and verifier for readiness verification, benchmark baseline freshness, exact-tokenizer baselines, wheel/source-distribution metadata, package/install smoke evidence, artifact hash integrity, and local release attestations.
 - One-command turn evaluation, certification, comparison, history, release-check, and release-verification report packs for real-corpus measurement.

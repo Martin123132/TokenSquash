@@ -157,6 +157,15 @@ READINESS_COMMANDS = [
 
 PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)
 
+GOVERNANCE_DOCUMENTS = [
+    {"path": "README.md", "purpose": "Project overview, examples, readiness commands, and contributor links."},
+    {"path": "CHANGELOG.md", "purpose": "User-facing change history and release notes."},
+    {"path": "CONTRIBUTING.md", "purpose": "Contributor setup, quality gates, privacy rules, and release expectations."},
+    {"path": "SECURITY.md", "purpose": "Security support, vulnerability reporting, and private-data handling policy."},
+    {"path": "docs/release-checklist.md", "purpose": "Manual release runbook and evidence checklist."},
+    {"path": ".github/PULL_REQUEST_TEMPLATE.md", "purpose": "Pull-request verification and privacy checklist."},
+]
+
 
 def build_product_manifest(*, cwd: Path | str | None = None) -> dict[str, Any]:
     """Return the public product manifest for the installed TokenSquash package."""
@@ -206,6 +215,20 @@ def build_product_manifest(*, cwd: Path | str | None = None) -> dict[str, Any]:
             "commands": READINESS_COMMANDS,
             "private_storage_patterns": PRIVATE_STORAGE_PATTERNS,
         },
+        "governance": {
+            "documents": [
+                {
+                    **document,
+                    "present": (root / document["path"]).exists(),
+                }
+                for document in GOVERNANCE_DOCUMENTS
+            ],
+            "license": {
+                "path": "LICENSE",
+                "present": (root / "LICENSE").exists(),
+                "required_before_external_release": True,
+            },
+        },
         "data": {
             "packaged_demo_corpus": str(DEFAULT_DEMO_CORPUS),
             "packaged_demo_corpus_exists": DEFAULT_DEMO_CORPUS.exists(),
@@ -214,6 +237,7 @@ def build_product_manifest(*, cwd: Path | str | None = None) -> dict[str, Any]:
             "command_count": sum(len(commands) for commands in COMMAND_GROUPS.values()),
             "schema_count": len(SUPPORTED_SCHEMAS),
             "readiness_command_count": len(READINESS_COMMANDS),
+            "governance_document_count": len(GOVERNANCE_DOCUMENTS),
         },
     }
 
@@ -252,6 +276,21 @@ def format_product_manifest_markdown(report: dict[str, Any]) -> str:
     lines.extend(["", "## Readiness", ""])
     for command in (report.get("readiness") or {}).get("commands", []):
         lines.append(f"- `{command}`")
+    lines.extend(["", "## Governance", ""])
+    for document in (report.get("governance") or {}).get("documents", []):
+        lines.append(
+            "- "
+            f"`{document.get('path')}`: "
+            f"{document.get('purpose')} "
+            f"(present: `{document.get('present')}`)"
+        )
+    license_info = (report.get("governance") or {}).get("license") or {}
+    if license_info:
+        lines.append(
+            "- "
+            f"`{license_info.get('path')}`: present `{license_info.get('present')}`, "
+            f"required before external release `{license_info.get('required_before_external_release')}`"
+        )
     lines.extend(["", "## Schemas", ""])
     for item in report.get("schemas", []):
         lines.append(

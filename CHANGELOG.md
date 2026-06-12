@@ -28,6 +28,8 @@ is produced locally and in GitHub Actions.
   impact checks.
 - Release and contribution docs now call out that an owner-approved `LICENSE`
   file is still required before external release or package publication.
+- Strict doctor and the product manifest now verify source-checkout governance
+  docs as part of product-readiness evidence.
 
 ### Changed
 

@@ -8,7 +8,7 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
-from .about import MANIFEST_SCHEMA_VERSION, build_product_manifest
+from .about import GOVERNANCE_DOCUMENTS, MANIFEST_SCHEMA_VERSION, build_product_manifest
 from .demo import DEFAULT_DEMO_CORPUS, run_demo
 from .turns import certify_turn_corpus, write_turn_certification_outputs
 from .workspace import WORKSPACE_INIT_SCHEMA_VERSION, initialize_workspace
@@ -57,6 +57,7 @@ def run_doctor(
                 _check_sample_corpus_copy(root),
                 _check_console_script_metadata(root),
                 _check_workspace_init_dry_run(root),
+                _check_governance_documents(root),
                 _check_product_manifest(root),
                 _check_turn_certification_workflow(strict_dir),
             ]
@@ -354,8 +355,17 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         )
     command_count = int((manifest.get("counts") or {}).get("command_count", 0))
     schema_count = int((manifest.get("counts") or {}).get("schema_count", 0))
+    governance_document_count = int((manifest.get("counts") or {}).get("governance_document_count", 0))
     schemas = {item.get("schema_version") for item in manifest.get("schemas", [])}
     commands = {item.get("command") for item in manifest.get("commands", [])}
+    governance = manifest.get("governance") or {}
+    governance_docs = governance.get("documents") or []
+    source_checkout = (cwd / "pyproject.toml").exists()
+    missing_governance_docs = sorted(
+        str(item.get("path"))
+        for item in governance_docs
+        if isinstance(item, dict) and not item.get("present")
+    )
     required_schemas = {
         MANIFEST_SCHEMA_VERSION,
         WORKSPACE_INIT_SCHEMA_VERSION,
@@ -400,6 +410,8 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         and manifest.get("status") == "pass"
         and command_count >= 40
         and schema_count >= 40
+        and governance_document_count >= len(GOVERNANCE_DOCUMENTS)
+        and (not source_checkout or not missing_governance_docs)
         and not missing_schemas
         and not missing_commands
         and bool((manifest.get("data") or {}).get("packaged_demo_corpus_exists"))
@@ -416,9 +428,93 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         data={
             "command_count": command_count,
             "schema_count": schema_count,
+            "governance_document_count": governance_document_count,
             "missing_commands": missing_commands,
             "missing_schemas": missing_schemas,
+            "missing_governance_docs": missing_governance_docs,
+            "source_checkout": source_checkout,
             "packaged_demo_corpus_exists": (manifest.get("data") or {}).get("packaged_demo_corpus_exists"),
+        },
+    )
+
+
+def _check_governance_documents(cwd: Path) -> dict[str, Any]:
+    if not (cwd / "pyproject.toml").exists():
+        return _doctor_check(
+            "governance_documents",
+            "skip",
+            required=False,
+            message="Source governance document check skipped outside a source checkout.",
+            data={"source_checkout": False},
+        )
+
+    missing: list[str] = []
+    empty: list[str] = []
+    missing_references: list[dict[str, str]] = []
+    required_references = {
+        "README.md": [
+            "CONTRIBUTING.md",
+            "SECURITY.md",
+            "CHANGELOG.md",
+            "docs/release-checklist.md",
+        ],
+        "CHANGELOG.md": [
+            "Contributor, security, and pull-request policy docs",
+        ],
+        "CONTRIBUTING.md": [
+            "private-turns/",
+            "docs/release-checklist.md",
+            "LICENSE",
+        ],
+        "SECURITY.md": [
+            "Report a vulnerability",
+            "private-turns/",
+        ],
+        "docs/release-checklist.md": [
+            "release-candidate-evidence",
+            "LICENSE",
+        ],
+        ".github/PULL_REQUEST_TEMPLATE.md": [
+            "README.md",
+            "CHANGELOG.md",
+            "no raw private prompts",
+        ],
+    }
+
+    for document in GOVERNANCE_DOCUMENTS:
+        relative = str(document["path"])
+        path = cwd / relative
+        if not path.exists() or not path.is_file():
+            missing.append(relative)
+            continue
+        text = path.read_text(encoding="utf-8-sig")
+        if not text.strip():
+            empty.append(relative)
+        for needle in required_references.get(relative, []):
+            if needle not in text:
+                missing_references.append({"path": relative, "text": needle})
+
+    license_path = cwd / "LICENSE"
+    passed = not missing and not empty and not missing_references
+    return _doctor_check(
+        "governance_documents",
+        "pass" if passed else "fail",
+        required=True,
+        message=(
+            "Governance docs are present, non-empty, and linked from the main docs."
+            if passed
+            else "Governance docs are missing, empty, or not linked from the main docs."
+        ),
+        data={
+            "document_count": len(GOVERNANCE_DOCUMENTS),
+            "missing": missing,
+            "empty": empty,
+            "missing_references": missing_references,
+            "license": {
+                "path": str(license_path),
+                "present": license_path.exists(),
+                "required_before_external_release": True,
+            },
         },
     )
 

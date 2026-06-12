@@ -479,6 +479,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         commands = {item["command"] for item in report["commands"]}
         schemas = {item["schema_version"] for item in report["schemas"]}
         readiness_commands = report["readiness"]["commands"]
+        governance_paths = {item["path"] for item in report["governance"]["documents"]}
         self.assertIn("about", commands)
         self.assertIn("budget init", commands)
         self.assertIn("budget validate", commands)
@@ -524,6 +525,13 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
+        self.assertIn("CHANGELOG.md", governance_paths)
+        self.assertIn("CONTRIBUTING.md", governance_paths)
+        self.assertIn("SECURITY.md", governance_paths)
+        self.assertIn("docs/release-checklist.md", governance_paths)
+        self.assertIn(".github/PULL_REQUEST_TEMPLATE.md", governance_paths)
+        self.assertEqual(report["counts"]["governance_document_count"], len(report["governance"]["documents"]))
+        self.assertTrue(report["governance"]["license"]["required_before_external_release"])
 
     def test_about_cli_json_and_markdown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -536,6 +544,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             output = stdout.getvalue()
             self.assertEqual(code, 0)
             self.assertIn("# TokenSquash Product Manifest", output)
+            self.assertIn("## Governance", output)
             self.assertIn("tokensquash.turns.certify.v1", output)
             self.assertTrue(out.exists())
 
@@ -661,8 +670,14 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(checks["sample_corpus_copy"]["status"], "pass")
             self.assertEqual(checks["console_script_metadata"]["status"], "pass")
             self.assertEqual(checks["workspace_init_dry_run"]["status"], "pass")
+            self.assertEqual(checks["governance_documents"]["status"], "pass")
             self.assertEqual(checks["product_manifest"]["status"], "pass")
             self.assertEqual(checks["turn_certification_workflow"]["status"], "pass")
+            self.assertEqual(checks["governance_documents"]["data"]["missing"], [])
+            self.assertEqual(checks["governance_documents"]["data"]["missing_references"], [])
+            self.assertTrue(
+                checks["governance_documents"]["data"]["license"]["required_before_external_release"]
+            )
             self.assertTrue((out_dir / "certification.json").exists())
             self.assertTrue((out_dir / "evaluation" / "evaluation.json").exists())
             self.assertEqual(
