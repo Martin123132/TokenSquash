@@ -86,6 +86,9 @@ python -m tokensquash release-candidate --out-dir private-turns\release-candidat
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass
 ```
 
+Use [docs/release-checklist.md](docs/release-checklist.md) as the release
+runbook and record user-facing changes in [CHANGELOG.md](CHANGELOG.md).
+
 Add `--check-ollama` when you want the doctor to query a local Ollama server
 for the experimental sidecar path.
 
@@ -644,6 +647,10 @@ checks both wheel and source-distribution packaging, and runs the exact-tokenize
 release-candidate gate on Python 3.13. That release job uploads the saved
 release-candidate pack and verifier JSON as the `release-candidate-evidence`
 artifact for inspection after each run.
+
+For a tag or external release, follow
+[docs/release-checklist.md](docs/release-checklist.md) and update
+[CHANGELOG.md](CHANGELOG.md) before building the clean release-candidate pack.
 
 ## Current Scope
 
