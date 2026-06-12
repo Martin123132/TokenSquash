@@ -516,6 +516,8 @@ def format_turn_release_check_markdown(report: dict[str, Any]) -> str:
             f"- Release check: `{outputs.get('release_check')}`",
             f"- Markdown: `{outputs.get('markdown')}`",
             f"- Certification: `{outputs.get('certification')}`",
+            f"- Quality budget: `{outputs.get('quality_budget')}`",
+            f"- Quality budget validation: `{outputs.get('quality_budget_validation')}`",
             f"- Doctor: `{outputs.get('doctor')}`",
         ]
     )
@@ -543,6 +545,22 @@ def write_turn_release_check_outputs(target: Path | str, report: dict[str, Any])
     target_path.mkdir(parents=True, exist_ok=True)
     artifacts = report.get("artifacts", {})
     outputs = report.setdefault("outputs", {})
+
+    quality_budget = _quality_budget_payload_from_effective(report.get("quality_budget") or {})
+    quality_budget_path = target_path / "quality-budget.json"
+    quality_budget_validation_path = target_path / "quality-budget-validation.json"
+    quality_budget_validation_markdown_path = target_path / "quality-budget-validation.md"
+    quality_budget_validation = _validate_quality_budget_payload(quality_budget, quality_budget_path)
+    _write_json_report(quality_budget_path, quality_budget)
+    _write_json_report(quality_budget_validation_path, quality_budget_validation)
+    quality_budget_validation_markdown_path.write_text(
+        format_quality_budget_validation_markdown(quality_budget_validation),
+        encoding="utf-8",
+    )
+    outputs["quality_budget"] = str(quality_budget_path)
+    outputs["quality_budget_validation"] = str(quality_budget_validation_path)
+    outputs["quality_budget_validation_markdown"] = str(quality_budget_validation_markdown_path)
+    artifacts["quality_budget_validation"] = quality_budget_validation
 
     doctor = artifacts.get("doctor")
     if doctor:
@@ -718,6 +736,14 @@ def _path_list(paths: Iterable[Path | str] | Path | str | None) -> list[Path]:
     if isinstance(paths, (str, Path)):
         return [Path(paths)]
     return [Path(path) for path in paths]
+
+
+def _quality_budget_payload_from_effective(effective: dict[str, Any]) -> dict[str, Any]:
+    release_budget = dict(effective.get("release_check") or DEFAULT_RELEASE_BUDGET)
+    return {
+        "schema_version": QUALITY_BUDGET_SCHEMA_VERSION,
+        "turns": {"release_check": release_budget},
+    }
 
 
 def _validate_release_budget_values(

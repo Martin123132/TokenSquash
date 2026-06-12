@@ -361,7 +361,9 @@ fallen below the best observed result.
 `turns release-check` writes a release evidence pack that runs `turns certify`,
 strict `doctor`, and optional certification history in one command. A supplied
 history regression fails the release check; no history is allowed but reported
-as a warning so first-run projects can still get a usable pack.
+as a warning so first-run projects can still get a usable pack. The pack also
+writes `quality-budget.json` and `quality-budget-validation.json` so the exact
+effective release policy is preserved with the release evidence.
 Pass `--budget` with a `tokensquash.quality_budget.v1` JSON file to keep release
 thresholds in source control. The example in `examples\quality-budget.json`
 sets saved-percent, privacy, pass-through, raw-wire-loss, history, and doctor

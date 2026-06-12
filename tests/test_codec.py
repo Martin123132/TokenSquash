@@ -3010,8 +3010,16 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((release_dir / "release-check.json").exists())
             self.assertTrue((release_dir / "release-check.md").exists())
             self.assertTrue((release_dir / "certification" / "certification.json").exists())
+            self.assertTrue((release_dir / "quality-budget.json").exists())
+            self.assertTrue((release_dir / "quality-budget-validation.json").exists())
+            self.assertTrue((release_dir / "quality-budget-validation.md").exists())
             self.assertTrue((release_dir / "doctor.json").exists())
             self.assertTrue((release_dir / "history.json").exists())
+            self.assertIn("quality_budget", report["outputs"])
+            self.assertEqual(
+                json.loads((release_dir / "quality-budget-validation.json").read_text(encoding="utf-8"))["status"],
+                "pass",
+            )
 
     def test_turns_release_check_cli_json_writes_warn_pack_without_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3042,6 +3050,8 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "release-check.json").exists())
             self.assertTrue((out_dir / "release-check.md").exists())
             self.assertTrue((out_dir / "certification" / "certification.json").exists())
+            self.assertTrue((out_dir / "quality-budget.json").exists())
+            self.assertTrue((out_dir / "quality-budget-validation.json").exists())
             self.assertTrue((out_dir / "doctor.json").exists())
             self.assertFalse((out_dir / "history.json").exists())
 
