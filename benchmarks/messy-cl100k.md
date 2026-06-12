@@ -7,14 +7,14 @@
 - Target savings: `0.5%`
 - Prompts: `72`
 - Original tokens: `1370`
-- Raw wire tokens: `1316`
-- Squashed tokens: `1267`
-- Raw wire saved: `54 (3.9416%)`
-- Saved tokens: `103`
-- Saved percent: `7.5182%`
-- Raw wire wins/losses/ties: `41/18/13`
-- Adaptive wins/losses/ties: `41/0/31`
-- Pass-through rows: `31`
+- Raw wire tokens: `1312`
+- Squashed tokens: `1266`
+- Raw wire saved: `58 (4.2336%)`
+- Saved tokens: `104`
+- Saved percent: `7.5912%`
+- Raw wire wins/losses/ties: `42/16/14`
+- Adaptive wins/losses/ties: `42/0/30`
+- Pass-through rows: `30`
 
 ## Rows
 
@@ -28,7 +28,7 @@
 | 6 | compact | 28 | 26 | 26 | 2 (7.1429%) |
 | 7 | compact | 26 | 23 | 23 | 3 (11.5385%) |
 | 8 | passthrough | 20 | 20 | 20 | 0 (0.0%) |
-| 9 | passthrough | 26 | 27 | 26 | 0 (0.0%) |
+| 9 | compact | 26 | 25 | 25 | 1 (3.8462%) |
 | 10 | passthrough | 17 | 18 | 17 | 0 (0.0%) |
 | 11 | compact | 25 | 20 | 20 | 5 (20.0%) |
 | 12 | compact | 24 | 22 | 22 | 2 (8.3333%) |
@@ -86,7 +86,7 @@
 | 64 | passthrough | 22 | 22 | 22 | 0 (0.0%) |
 | 65 | passthrough | 22 | 22 | 22 | 0 (0.0%) |
 | 66 | compact | 15 | 14 | 14 | 1 (6.6667%) |
-| 67 | passthrough | 19 | 21 | 19 | 0 (0.0%) |
+| 67 | passthrough | 19 | 19 | 19 | 0 (0.0%) |
 | 68 | passthrough | 16 | 17 | 16 | 0 (0.0%) |
 | 69 | passthrough | 12 | 13 | 12 | 0 (0.0%) |
 | 70 | compact | 17 | 12 | 12 | 5 (29.4118%) |

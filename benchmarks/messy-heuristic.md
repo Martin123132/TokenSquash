@@ -7,14 +7,14 @@
 - Target savings: `0.5%`
 - Prompts: `72`
 - Original tokens: `1954`
-- Raw wire tokens: `1781`
-- Squashed tokens: `1756`
-- Raw wire saved: `173 (8.8536%)`
-- Saved tokens: `198`
-- Saved percent: `10.1331%`
-- Raw wire wins/losses/ties: `56/8/8`
-- Adaptive wins/losses/ties: `56/0/16`
-- Pass-through rows: `16`
+- Raw wire tokens: `1778`
+- Squashed tokens: `1752`
+- Raw wire saved: `176 (9.0072%)`
+- Saved tokens: `202`
+- Saved percent: `10.3378%`
+- Raw wire wins/losses/ties: `57/8/7`
+- Adaptive wins/losses/ties: `57/0/15`
+- Pass-through rows: `15`
 
 ## Rows
 
@@ -28,7 +28,7 @@
 | 6 | compact | 37 | 32 | 32 | 5 (13.5135%) |
 | 7 | compact | 38 | 32 | 32 | 6 (15.7895%) |
 | 8 | compact | 28 | 26 | 26 | 2 (7.1429%) |
-| 9 | compact | 38 | 37 | 37 | 1 (2.6316%) |
+| 9 | compact | 38 | 35 | 35 | 3 (7.8947%) |
 | 10 | passthrough | 21 | 21 | 21 | 0 (0.0%) |
 | 11 | compact | 36 | 26 | 26 | 10 (27.7778%) |
 | 12 | compact | 36 | 32 | 32 | 4 (11.1111%) |
@@ -47,7 +47,7 @@
 | 25 | compact | 28 | 25 | 25 | 3 (10.7143%) |
 | 26 | compact | 33 | 29 | 29 | 4 (12.1212%) |
 | 27 | compact | 30 | 26 | 26 | 4 (13.3333%) |
-| 28 | compact | 35 | 33 | 33 | 2 (5.7143%) |
+| 28 | compact | 35 | 32 | 32 | 3 (8.5714%) |
 | 29 | compact | 27 | 24 | 24 | 3 (11.1111%) |
 | 30 | compact | 32 | 30 | 30 | 2 (6.25%) |
 | 31 | compact | 26 | 22 | 22 | 4 (15.3846%) |
@@ -74,7 +74,7 @@
 | 52 | passthrough | 21 | 22 | 21 | 0 (0.0%) |
 | 53 | compact | 29 | 25 | 25 | 4 (13.7931%) |
 | 54 | compact | 28 | 26 | 26 | 2 (7.1429%) |
-| 55 | passthrough | 24 | 25 | 24 | 0 (0.0%) |
+| 55 | passthrough | 24 | 26 | 24 | 0 (0.0%) |
 | 56 | passthrough | 28 | 29 | 28 | 0 (0.0%) |
 | 57 | compact | 25 | 24 | 24 | 1 (4.0%) |
 | 58 | compact | 24 | 21 | 21 | 3 (12.5%) |
@@ -86,7 +86,7 @@
 | 64 | compact | 28 | 27 | 27 | 1 (3.5714%) |
 | 65 | compact | 33 | 31 | 31 | 2 (6.0606%) |
 | 66 | compact | 23 | 21 | 21 | 2 (8.6957%) |
-| 67 | passthrough | 26 | 26 | 26 | 0 (0.0%) |
+| 67 | compact | 26 | 25 | 25 | 1 (3.8462%) |
 | 68 | passthrough | 25 | 25 | 25 | 0 (0.0%) |
 | 69 | passthrough | 18 | 18 | 18 | 0 (0.0%) |
 | 70 | compact | 20 | 12 | 12 | 8 (40.0%) |

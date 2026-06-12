@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .about import READINESS_COMMANDS
+from .baselines import format_benchmark_baseline_verify_markdown, verify_benchmark_baselines
 from .demo import DEFAULT_DEMO_CORPUS, run_demo, write_demo_outputs
 from .doctor import format_doctor_markdown, run_doctor
 from .release import (
@@ -78,6 +79,13 @@ def run_product_readiness(
         command=f"{sys.executable} -m tokensquash budget validate {quality_budget_path}",
         required=True,
         action=lambda: _run_quality_budget_validate(quality_budget_path, output_dir),
+    )
+    _run_readiness_step(
+        steps,
+        "benchmark_baselines",
+        command=f"{sys.executable} -m tokensquash baselines verify",
+        required=True,
+        action=lambda: _run_benchmark_baselines(output_dir, root),
     )
     _run_readiness_step(
         steps,
@@ -163,6 +171,8 @@ def run_product_readiness(
             "workspace_init": str(output_dir / "workspace-init.json"),
             "quality_budget_init": str(output_dir / "quality-budget-init.json"),
             "quality_budget_validation": str(output_dir / "quality-budget-validation.json"),
+            "baseline_verify": str(output_dir / "baseline-verify.json"),
+            "baseline_verify_markdown": str(output_dir / "baseline-verify.md"),
             "doctor": str(output_dir / "doctor.json"),
             "doctor_markdown": str(output_dir / "doctor.md"),
             "doctor_strict_dir": str(doctor_strict_dir),
@@ -252,6 +262,24 @@ def verify_product_readiness_pack(path: Path | str, *, require_readiness_pass: b
         allowed_statuses={"pass", "warn", "fail"},
     )
     checks.append(quality_budget_validation_check)
+    baseline_verify, baseline_verify_check = _verify_readiness_json_artifact(
+        "baseline_verify",
+        _resolve_readiness_artifact(readiness_dir, outputs.get("baseline_verify"), Path("baseline-verify.json")),
+        "tokensquash.baselines.verify.v1",
+        required=True,
+        allowed_statuses={"pass", "partial", "fail"},
+    )
+    checks.append(baseline_verify_check)
+    _append_readiness_file_check(
+        checks,
+        "baseline_verify_markdown",
+        _resolve_readiness_artifact(
+            readiness_dir,
+            outputs.get("baseline_verify_markdown"),
+            Path("baseline-verify.md"),
+        ),
+        required=True,
+    )
 
     doctor, doctor_check = _verify_readiness_json_artifact(
         "doctor",
@@ -369,6 +397,7 @@ def verify_product_readiness_pack(path: Path | str, *, require_readiness_pass: b
             "quality_budget_validation_status": quality_budget_validation.get("status")
             if quality_budget_validation
             else None,
+            "baseline_verify_status": baseline_verify.get("status") if baseline_verify else None,
         },
         "checks": checks,
         "artifacts": {
@@ -376,6 +405,7 @@ def verify_product_readiness_pack(path: Path | str, *, require_readiness_pass: b
             "workspace_init": _readiness_artifact_reference(workspace_init),
             "quality_budget_init": _readiness_artifact_reference(quality_budget_init),
             "quality_budget_validation": _readiness_artifact_reference(quality_budget_validation),
+            "baseline_verify": _readiness_artifact_reference(baseline_verify),
             "doctor": _readiness_artifact_reference(doctor),
             "doctor_strict_certification": _readiness_artifact_reference(doctor_strict),
             "demo": _readiness_artifact_reference(demo),
@@ -551,6 +581,24 @@ def _run_quality_budget_validate(path: Path, output_dir: Path) -> tuple[str, str
         "report": str(json_path),
         "markdown": str(markdown_path),
         "source": str(path),
+    }
+
+
+def _run_benchmark_baselines(output_dir: Path, root: Path) -> tuple[str, str, dict[str, Any]]:
+    report = verify_benchmark_baselines(root=root)
+    json_path = output_dir / "baseline-verify.json"
+    markdown_path = output_dir / "baseline-verify.md"
+    _write_json(json_path, report)
+    markdown_path.write_text(format_benchmark_baseline_verify_markdown(report), encoding="utf-8")
+    failed_count = int((report.get("summary") or {}).get("failed_count", 0))
+    status = "pass" if failed_count == 0 else "fail"
+    skipped_count = int((report.get("summary") or {}).get("skipped_count", 0))
+    return status, f"Benchmark baseline verification returned {report.get('status')}.", {
+        "report": str(json_path),
+        "markdown": str(markdown_path),
+        "failed_count": failed_count,
+        "skipped_count": skipped_count,
+        "verified_count": (report.get("summary") or {}).get("verified_count", 0),
     }
 
 
@@ -929,6 +977,7 @@ def _append_readiness_steps_check(
         "workspace_init_dry_run",
         "quality_budget_init_dry_run",
         "quality_budget_validate",
+        "benchmark_baselines",
         "strict_doctor",
         "demo",
         "turn_certification",

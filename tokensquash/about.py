@@ -26,6 +26,7 @@ COMMAND_GROUPS = {
         "verify-readiness",
         "about",
     ],
+    "benchmark_baselines": ["baselines verify"],
     "quality_budget": ["budget init", "budget validate"],
     "corpus": ["corpus stats", "corpus validate", "corpus redact"],
     "reply": ["reply encode", "reply decode", "reply bench", "reply mine", "reply aliases"],
@@ -75,6 +76,7 @@ SUPPORTED_SCHEMAS = [
     ("core", "tokensquash.bench.v1", "Prompt benchmark report."),
     ("core", "tokensquash.reply.bench.v1", "Reply benchmark report."),
     ("core", "tokensquash.bench.compare.v1", "Benchmark comparison report."),
+    ("core", "tokensquash.baselines.verify.v1", "Committed benchmark baseline verification report."),
     ("core", "tokensquash.aliases.v1", "Session alias table and learner report."),
     ("core", "tokensquash.patterns.mine.v1", "Repeated reply-pattern mining report."),
     ("corpus", "tokensquash.corpus.validate.v1", "Prompt corpus validation report."),
@@ -130,6 +132,7 @@ SUPPORTED_SCHEMAS = [
 READINESS_COMMANDS = [
     "python -m tokensquash readiness --out-dir private-turns\\readiness",
     "python -m tokensquash verify-readiness private-turns\\readiness --require-readiness-pass",
+    "python -m tokensquash baselines verify",
     "python -m unittest discover -s tests",
     "python -m tokensquash init --dry-run",
     "python -m tokensquash budget init --out private-turns\\quality-budget.json --dry-run --json",

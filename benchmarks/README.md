@@ -9,10 +9,10 @@ They are regression baselines, not proof of production-wide savings.
 
 | Counter | Raw wire saved | Adaptive saved | Pass-through rows |
 |---|---:|---:|---:|
-| `heuristic` | `8.8536%` | `10.1331%` | `16` |
-| `char4` | `17.4501%` | `17.8613%` | `3` |
-| `tiktoken:cl100k_base` | `3.9416%` | `7.5182%` | `31` |
-| `tiktoken:o200k_base` | `4.0639%` | `7.6197%` | `30` |
+| `heuristic` | `9.0072%` | `10.3378%` | `15` |
+| `char4` | `17.8026%` | `18.2139%` | `3` |
+| `tiktoken:cl100k_base` | `4.2336%` | `7.5912%` | `30` |
+| `tiktoken:o200k_base` | `4.3541%` | `7.6923%` | `29` |
 
 ## Reply Baselines
 
@@ -30,4 +30,11 @@ python -m tokensquash bench examples\messy-coding-prompts.jsonl --counter tiktok
 python -m tokensquash bench examples\messy-coding-prompts.jsonl --counter tiktoken:o200k_base --json --out benchmarks\messy-o200k.json
 python -m tokensquash reply bench examples\agent-replies.jsonl --counter tiktoken:cl100k_base --json --out benchmarks\replies-cl100k.json
 python -m tokensquash reply bench examples\agent-replies.jsonl --counter tiktoken:o200k_base --json --out benchmarks\replies-o200k.json
+```
+
+Verify committed baselines against freshly regenerated outputs:
+
+```powershell
+python -m tokensquash baselines verify
+python -m tokensquash baselines verify --include-exact-tokenizer
 ```

@@ -8,12 +8,12 @@
   "summary": {
     "prompt_count": 72,
     "original_tokens": 1702,
-    "wire_tokens": 1405,
-    "squashed_tokens": 1398,
-    "wire_saved_tokens": 297,
-    "wire_saved_pct": 17.4501,
-    "saved_tokens": 304,
-    "saved_pct": 17.8613,
+    "wire_tokens": 1399,
+    "squashed_tokens": 1392,
+    "wire_saved_tokens": 303,
+    "wire_saved_pct": 17.8026,
+    "saved_tokens": 310,
+    "saved_pct": 18.2139,
     "wire_wins": 69,
     "wire_losses": 1,
     "wire_ties": 2,
@@ -21,7 +21,7 @@
     "losses": 0,
     "ties": 3,
     "passthroughs": 3,
-    "elapsed_seconds": 0.0619
+    "elapsed_seconds": 0.0325
   },
   "rows": [
     {
@@ -102,8 +102,8 @@
     {
       "index": 6,
       "original": "Add a CSV export button to src/components/ReportTable.tsx, match existing style, run the tests, and tell me what changed.",
-      "wire": "ts1 a \"CSV export button what changed\" c=me v=t r=m p=src/components/ReportTable.tsx",
-      "payload": "ts1 a \"CSV export button what changed\" c=me v=t r=m p=src/components/ReportTable.tsx",
+      "wire": "ts1 a \"CSV export button what changed\" c=me v=t r=m p=@s/components/ReportTable.tsx",
+      "payload": "ts1 a \"CSV export button what changed\" c=me v=t r=m p=@s/components/ReportTable.tsx",
       "mode": "compact",
       "op": "add",
       "original_tokens": 31,
@@ -147,17 +147,17 @@
     {
       "index": 9,
       "original": "Refactor duplicated validation logic in tokensquash/codec.py without adding dependencies, run lint, and give me a short summary.",
-      "wire": "ts1 rf \"duplicated validation logic without adding dependencies\" c=nd v=l r=m p=tokensquash/codec.py",
-      "payload": "ts1 rf \"duplicated validation logic without adding dependencies\" c=nd v=l r=m p=tokensquash/codec.py",
+      "wire": "ts1 rf \"duplicated validation logic without adding dependencies\" c=nd v=l r=m p=@t/codec.py",
+      "payload": "ts1 rf \"duplicated validation logic without adding dependencies\" c=nd v=l r=m p=@t/codec.py",
       "mode": "compact",
       "op": "refactor",
       "original_tokens": 32,
-      "wire_tokens": 25,
-      "squashed_tokens": 25,
-      "wire_saved_tokens": 7,
-      "wire_saved_pct": 21.875,
-      "saved_tokens": 7,
-      "saved_pct": 21.875
+      "wire_tokens": 23,
+      "squashed_tokens": 23,
+      "wire_saved_tokens": 9,
+      "wire_saved_pct": 28.125,
+      "saved_tokens": 9,
+      "saved_pct": 28.125
     },
     {
       "index": 10,
@@ -207,8 +207,8 @@
     {
       "index": 13,
       "original": "Add type hints to the public helper functions in src/utils/date.ts, run typecheck, and avoid changing runtime behavior.",
-      "wire": "ts1 a \"type hints public helper functions avoid changing runtime behavior\" v=tc p=src/utils/date.ts",
-      "payload": "ts1 a \"type hints public helper functions avoid changing runtime behavior\" v=tc p=src/utils/date.ts",
+      "wire": "ts1 a \"type hints public helper functions avoid changing runtime behavior\" v=tc p=@s/utils/date.ts",
+      "payload": "ts1 a \"type hints public helper functions avoid changing runtime behavior\" v=tc p=@s/utils/date.ts",
       "mode": "compact",
       "op": "add",
       "original_tokens": 30,
@@ -282,8 +282,8 @@
     {
       "index": 18,
       "original": "Fix failing lint in src/api/client.ts. No new dependencies. Return the commands you ran.",
-      "wire": "ts1 f \"failing commands you ran\" c=nd v=l r=c p=src/api/client.ts.",
-      "payload": "ts1 f \"failing commands you ran\" c=nd v=l r=c p=src/api/client.ts.",
+      "wire": "ts1 f \"failing commands you ran\" c=nd v=l r=c p=@s/api/client.ts.",
+      "payload": "ts1 f \"failing commands you ran\" c=nd v=l r=c p=@s/api/client.ts.",
       "mode": "compact",
       "op": "fix",
       "original_tokens": 22,
@@ -432,17 +432,17 @@
     {
       "index": 28,
       "original": "Please look at examples/coding-prompts.jsonl and add more realistic prompts, including short ones that should pass through.",
-      "wire": "ts1 a \"look at more realistic prompts including ones that should pass through\" p=examples/coding-prompts.jsonl",
-      "payload": "ts1 a \"look at more realistic prompts including ones that should pass through\" p=examples/coding-prompts.jsonl",
+      "wire": "ts1 a \"look at more realistic prompts including ones that should pass through\" p=@e/coding-prompts.jsonl",
+      "payload": "ts1 a \"look at more realistic prompts including ones that should pass through\" p=@e/coding-prompts.jsonl",
       "mode": "compact",
       "op": "add",
       "original_tokens": 31,
-      "wire_tokens": 28,
-      "squashed_tokens": 28,
-      "wire_saved_tokens": 3,
-      "wire_saved_pct": 9.6774,
-      "saved_tokens": 3,
-      "saved_pct": 9.6774
+      "wire_tokens": 26,
+      "squashed_tokens": 26,
+      "wire_saved_tokens": 5,
+      "wire_saved_pct": 16.129,
+      "saved_tokens": 5,
+      "saved_pct": 16.129
     },
     {
       "index": 29,
@@ -837,8 +837,8 @@
     {
       "index": 55,
       "original": "Fix path extraction for src/App.test.tsx and package-lock.json, then run tests.",
-      "wire": "ts1 f \"path extraction\" v=t p=src/App.test.tsx,package-lock.json",
-      "payload": "ts1 f \"path extraction\" v=t p=src/App.test.tsx,package-lock.json",
+      "wire": "ts1 f \"path extraction\" v=t p=@s/App.test.tsx,package-lock.json",
+      "payload": "ts1 f \"path extraction\" v=t p=@s/App.test.tsx,package-lock.json",
       "mode": "compact",
       "op": "fix",
       "original_tokens": 20,
@@ -1017,17 +1017,17 @@
     {
       "index": 67,
       "original": "Inspect tokensquash/__init__.py and ensure the public API exports the useful functions only.",
-      "wire": "ts1 rv \"ensure public API exports useful functions only\" p=tokensquash/__init__.py",
-      "payload": "ts1 rv \"ensure public API exports useful functions only\" p=tokensquash/__init__.py",
+      "wire": "ts1 rv \"ensure public API exports useful functions only\" p=@t/__init__.py",
+      "payload": "ts1 rv \"ensure public API exports useful functions only\" p=@t/__init__.py",
       "mode": "compact",
       "op": "review",
       "original_tokens": 23,
-      "wire_tokens": 21,
-      "squashed_tokens": 21,
-      "wire_saved_tokens": 2,
-      "wire_saved_pct": 8.6957,
-      "saved_tokens": 2,
-      "saved_pct": 8.6957
+      "wire_tokens": 19,
+      "squashed_tokens": 19,
+      "wire_saved_tokens": 4,
+      "wire_saved_pct": 17.3913,
+      "saved_tokens": 4,
+      "saved_pct": 17.3913
     },
     {
       "index": 68,

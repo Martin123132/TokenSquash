@@ -158,6 +158,7 @@ python -m tokensquash bench examples\coding-prompts.jsonl
 python -m tokensquash bench examples\messy-coding-prompts.jsonl
 python -m tokensquash bench examples\coding-prompts.jsonl --json
 python -m tokensquash bench examples\messy-coding-prompts.jsonl --json --out benchmarks\messy-heuristic.json
+python -m tokensquash baselines verify
 ```
 
 The default counter is dependency-free and approximate. It is meant for quick
@@ -169,6 +170,7 @@ For an exact tokenizer backend when `tiktoken` is installed:
 ```powershell
 python -m pip install -e ".[tokenizer]"
 python -m tokensquash bench examples\messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
+python -m tokensquash baselines verify --include-exact-tokenizer
 ```
 
 Benchmarks use adaptive mode by default. If the compact wire format is longer
@@ -582,6 +584,7 @@ separated:
 python -m unittest discover -s tests
 python -m tokensquash about --json
 python -m tokensquash init --dry-run
+python -m tokensquash baselines verify
 python -m tokensquash budget init --out private-turns\quality-budget.json --dry-run --json
 python -m tokensquash budget validate examples\quality-budget.json
 python -m tokensquash doctor --strict
@@ -605,6 +608,7 @@ release process needs the evidence somewhere else.
 - Deterministic human-request encoder for common coding workflows.
 - Decoders back into readable task and result text.
 - Local benchmark reports for original versus compact/adaptive prompts and replies.
+- Committed benchmark baseline verifier for detecting stale public benchmark snapshots.
 - Local paired-turn workflow for validating, redacting, splitting, and benchmarking private prompt/reply exports.
 - Safe one-command turn capture with raw private storage and regenerated redacted corpora.
 - Bulk turn import into private raw storage with regenerated redacted corpora.

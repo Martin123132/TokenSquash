@@ -3,6 +3,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 import json
+import os
+import shutil
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -11,6 +13,7 @@ from unittest.mock import patch
 import tokensquash
 from tokensquash.about import build_product_manifest
 from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
+from tokensquash.baselines import verify_benchmark_baselines
 from tokensquash.cli import main as cli_main
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
@@ -370,6 +373,57 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["base"]["item_count"], 2)
             self.assertEqual(report["delta"]["saved_tokens"], 2)
 
+    def test_verify_benchmark_baselines_dependency_free(self) -> None:
+        report = verify_benchmark_baselines()
+
+        self.assertEqual(report["schema_version"], "tokensquash.baselines.verify.v1")
+        self.assertEqual(report["status"], "partial")
+        self.assertEqual(report["summary"]["failed_count"], 0)
+        self.assertGreaterEqual(report["summary"]["verified_count"], 2)
+        self.assertGreater(report["summary"]["skipped_count"], 0)
+
+    def test_verify_benchmark_baselines_detects_stale_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "benchmarks"
+            shutil.copytree(Path("benchmarks"), target)
+            stale_path = target / "messy-char4.json"
+            payload = json.loads(stale_path.read_text(encoding="utf-8"))
+            payload["summary"]["saved_tokens"] = -1
+            stale_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+            report = verify_benchmark_baselines(benchmarks_dir=target)
+
+            self.assertEqual(report["status"], "fail")
+            failed = {row["name"]: row for row in report["artifacts"] if row["status"] == "fail"}
+            self.assertIn("messy-char4-json", failed)
+            self.assertEqual(failed["messy-char4-json"]["mismatch"]["field"], "summary")
+
+    def test_verify_benchmark_baselines_respects_root(self) -> None:
+        repo_root = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(tmp)
+                report = verify_benchmark_baselines(root=repo_root)
+            finally:
+                os.chdir(previous_cwd)
+
+        self.assertEqual(report["status"], "partial")
+        self.assertEqual(report["summary"]["failed_count"], 0)
+        self.assertGreaterEqual(report["summary"]["verified_count"], 2)
+
+    def test_baselines_verify_cli_json(self) -> None:
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            code = cli_main(["baselines", "verify", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["schema_version"], "tokensquash.baselines.verify.v1")
+        self.assertEqual(payload["status"], "partial")
+        self.assertEqual(payload["summary"]["failed_count"], 0)
+
     def test_public_sample_turns_validate(self) -> None:
         report = validate_turn_corpus(DEFAULT_DEMO_CORPUS)
         example_report = validate_turn_corpus(Path("examples/sample-turns.jsonl"))
@@ -425,6 +479,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("budget init", commands)
         self.assertIn("budget validate", commands)
         self.assertIn("init", commands)
+        self.assertIn("baselines verify", commands)
         self.assertIn("readiness", commands)
         self.assertIn("verify-readiness", commands)
         self.assertIn("turns compare-certifications", commands)
@@ -434,6 +489,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns verify-release", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
+        self.assertIn("tokensquash.baselines.verify.v1", schemas)
         self.assertIn("tokensquash.readiness.v1", schemas)
         self.assertIn("tokensquash.readiness.verify.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
@@ -449,6 +505,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(
             any("turns verify-release" in command and "--require-release-pass" in command for command in readiness_commands)
         )
+        self.assertTrue(any("baselines verify" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
@@ -604,11 +661,13 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "pass")
             steps = {step["name"]: step for step in report["steps"]}
             self.assertEqual(steps["unit_tests"]["status"], "skip")
+            self.assertEqual(steps["benchmark_baselines"]["status"], "pass")
             self.assertEqual(steps["strict_doctor"]["status"], "pass")
             self.assertEqual(steps["release_check"]["status"], "pass")
             self.assertEqual(steps["verify_release"]["status"], "pass")
             self.assertTrue((out_dir / "readiness.json").exists())
             self.assertTrue((out_dir / "readiness.md").exists())
+            self.assertTrue((out_dir / "baseline-verify.json").exists())
             self.assertTrue((out_dir / "release-check" / "release-check.json").exists())
             self.assertEqual(
                 json.loads((out_dir / "release-verify.json").read_text(encoding="utf-8"))["status"],

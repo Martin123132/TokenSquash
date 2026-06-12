@@ -90,6 +90,8 @@ jobs:
         run: python -m tokensquash corpus stats examples/messy-coding-prompts.jsonl
       - name: Run messy benchmark
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl
+      - name: Verify dependency-free benchmark baselines
+        run: python -m tokensquash baselines verify --json
       - name: Compare committed exact-tokenizer baselines
         run: python -m tokensquash compare benchmarks/messy-cl100k.json benchmarks/messy-o200k.json
       - name: Compare committed reply baselines
@@ -104,6 +106,8 @@ jobs:
           python-version: "3.13"
       - name: Install tokenizer extra
         run: python -m pip install -e ".[tokenizer]"
+      - name: Verify exact-tokenizer benchmark baselines
+        run: python -m tokensquash baselines verify --include-exact-tokenizer --json
       - name: Run exact tokenizer benchmark
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base
       - name: Run exact tokenizer reply benchmark

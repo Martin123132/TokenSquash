@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .about import build_product_manifest, format_product_manifest_markdown
 from .aliases import format_alias_report_markdown, learn_reply_aliases, load_alias_table, write_alias_table
+from .baselines import format_benchmark_baseline_verify_markdown, verify_benchmark_baselines
 from .codec import decode_intent, encode_intent, parse_wire
 from .corpus import (
     corpus_stats,
@@ -149,6 +150,19 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("base", type=Path)
     compare.add_argument("target", type=Path)
     compare.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    baselines = sub.add_parser("baselines", help="Verify committed public benchmark baselines.")
+    baselines_sub = baselines.add_subparsers(dest="baselines_command", required=True)
+
+    baselines_verify = baselines_sub.add_parser("verify", help="Regenerate and verify committed benchmark baselines.")
+    baselines_verify.add_argument("--benchmarks-dir", type=Path, default=Path("benchmarks"))
+    baselines_verify.add_argument(
+        "--include-exact-tokenizer",
+        action="store_true",
+        help="Also verify tiktoken baselines; requires the tokenizer extra.",
+    )
+    baselines_verify.add_argument("--out", type=Path, help="Write verification output to this file.")
+    baselines_verify.add_argument("--json", action="store_true", help="Print baseline verification JSON.")
 
     init = sub.add_parser("init", help="Prepare local private TokenSquash workspace storage.")
     init.add_argument("--root", type=Path, default=Path("."), help="Workspace root to initialize.")
@@ -898,6 +912,23 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(format_benchmark_compare_markdown(report), end="")
             return 0
+
+        if args.command == "baselines":
+            if args.baselines_command == "verify":
+                report = verify_benchmark_baselines(
+                    benchmarks_dir=args.benchmarks_dir,
+                    include_exact_tokenizer=args.include_exact_tokenizer,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_benchmark_baseline_verify_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "partial"} else 1
 
         if args.command == "init":
             report = initialize_workspace(
