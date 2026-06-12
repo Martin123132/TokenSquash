@@ -43,6 +43,7 @@ from tokensquash.turns import (
     capture_turn_record,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
+    gate_turn_report,
     import_turn_corpus,
     learn_turn_aliases,
     load_turn_records,
@@ -2405,6 +2406,182 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("- Status: `regressed`", output)
             self.assertIn("- Saved percent delta: `-0.5%`", output)
             self.assertIn("- Saved token delta: `-1`", output)
+            self.assertTrue(out.exists())
+            self.assertEqual(out.read_text(encoding="utf-8"), output)
+
+    def test_turns_gate_report_passes_clean_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "report.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 3,
+                            "original_tokens": 100,
+                            "wire_tokens": 82,
+                            "squashed_tokens": 82,
+                            "saved_tokens": 18,
+                            "saved_pct": 18.0,
+                            "prompt_saved_pct": 20.0,
+                            "reply_saved_pct": 15.0,
+                            "privacy_finding_count": 0,
+                        },
+                        "measure": {
+                            "summary": {
+                                "turn_count": 3,
+                                "pass_through_rows": 0,
+                            }
+                        },
+                        "diagnose": {
+                            "summary": {
+                                "raw_wire_loss_turns": 0,
+                                "pass_through_rows": 0,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = gate_turn_report(report_path, min_saved_pct=0.5)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.gate.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["input_type"], "report")
+            self.assertTrue(report["summary"]["passed"])
+            self.assertEqual(report["summary"]["failed_check_count"], 0)
+            self.assertEqual({check["status"] for check in report["checks"]}, {"pass"})
+
+    def test_turns_gate_report_fails_evaluation_thresholds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "evaluation.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.evaluate.v1",
+                        "status": "miss",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 2,
+                            "saved_tokens": -4,
+                            "saved_pct": -2.0,
+                            "prompt_saved_pct": 0.0,
+                            "reply_saved_pct": -4.0,
+                            "privacy_finding_count": 2,
+                        },
+                        "measure": {
+                            "summary": {
+                                "turn_count": 2,
+                                "pass_through_rows": 1,
+                            }
+                        },
+                        "diagnose": {
+                            "summary": {
+                                "raw_wire_loss_turns": 2,
+                                "pass_through_rows": 1,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = gate_turn_report(
+                report_path,
+                min_saved_pct=0.5,
+                max_privacy_findings=0,
+                max_pass_through_rows=0,
+                max_raw_wire_loss_turns=0,
+            )
+
+            self.assertEqual(report["status"], "fail")
+            self.assertEqual(report["input_type"], "evaluation")
+            self.assertFalse(report["summary"]["passed"])
+            self.assertEqual(report["summary"]["failed_check_count"], 4)
+            self.assertEqual(
+                {check["name"] for check in report["failures"]},
+                {
+                    "min_saved_pct",
+                    "max_privacy_findings",
+                    "max_pass_through_rows",
+                    "max_raw_wire_loss_turns",
+                },
+            )
+
+    def test_turns_gate_cli_json_writes_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "report.json"
+            out = Path(tmp) / "gate.json"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 1,
+                            "saved_tokens": 2,
+                            "saved_pct": 2.0,
+                            "privacy_finding_count": 0,
+                        },
+                        "measure": {"summary": {"pass_through_rows": 0}},
+                        "diagnose": {"summary": {"raw_wire_loss_turns": 0}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "gate", str(report_path), "--out", str(out), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.gate.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["summary"]["saved_pct"], 2.0)
+            self.assertTrue(out.exists())
+            self.assertEqual(out.read_text(encoding="utf-8"), stdout.getvalue())
+
+    def test_turns_gate_cli_markdown_returns_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report_path = Path(tmp) / "evaluation.json"
+            out = Path(tmp) / "gate.md"
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.evaluate.v1",
+                        "status": "miss",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "summary": {
+                            "turn_count": 1,
+                            "saved_tokens": 0,
+                            "saved_pct": 0.0,
+                            "privacy_finding_count": 0,
+                        },
+                        "measure": {"summary": {"pass_through_rows": 1}},
+                        "diagnose": {"summary": {"raw_wire_loss_turns": 0}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "gate", str(report_path), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 1)
+            self.assertIn("# TokenSquash Turn Gate", output)
+            self.assertIn("- Status: `fail`", output)
+            self.assertIn("## Failed Checks", output)
+            self.assertIn("max_pass_through_rows", output)
             self.assertTrue(out.exists())
             self.assertEqual(out.read_text(encoding="utf-8"), output)
 

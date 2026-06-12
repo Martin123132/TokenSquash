@@ -71,6 +71,7 @@ from .turns import (
     format_turn_diagnose_markdown,
     format_turn_report_markdown,
     format_turn_report_compare_markdown,
+    format_turn_gate_markdown,
     format_turn_suggestions_markdown,
     format_turn_evaluate_markdown,
     format_turn_import_markdown,
@@ -78,6 +79,7 @@ from .turns import (
     format_turn_split_markdown,
     format_turn_stats_markdown,
     format_turn_validation_markdown,
+    gate_turn_report,
     report_turn_corpus,
     suggest_turn_improvements,
     import_turn_corpus,
@@ -476,6 +478,15 @@ def main(argv: list[str] | None = None) -> int:
     turns_compare_reports.add_argument("target", type=Path)
     turns_compare_reports.add_argument("--out", type=Path, help="Write comparison output to this file.")
     turns_compare_reports.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    turns_gate = turns_sub.add_parser("gate", help="Pass or fail a turn report/evaluation against quality thresholds.")
+    turns_gate.add_argument("report", type=Path, help="Saved turns report JSON or evaluation.json.")
+    turns_gate.add_argument("--min-saved-pct", type=float, default=0.5, help="Minimum saved percent required.")
+    turns_gate.add_argument("--max-privacy-findings", type=int, default=0, help="Maximum privacy findings allowed.")
+    turns_gate.add_argument("--max-pass-through-rows", type=int, default=0, help="Maximum adaptive pass-through rows allowed.")
+    turns_gate.add_argument("--max-raw-wire-loss-turns", type=int, default=0, help="Maximum rows where raw wire is longer.")
+    turns_gate.add_argument("--out", type=Path, help="Write gate output to this file.")
+    turns_gate.add_argument("--json", action="store_true", help="Print gate JSON.")
 
     turns_suggestions = turns_sub.add_parser("suggestions", help="Suggest next codec improvements from a turn report JSON.")
     turns_suggestions.add_argument("report", type=Path)
@@ -1070,6 +1081,24 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0
+            if args.turns_command == "gate":
+                report = gate_turn_report(
+                    args.report,
+                    min_saved_pct=args.min_saved_pct,
+                    max_privacy_findings=args.max_privacy_findings,
+                    max_pass_through_rows=args.max_pass_through_rows,
+                    max_raw_wire_loss_turns=args.max_raw_wire_loss_turns,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_gate_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] == "pass" else 1
             if args.turns_command == "suggestions":
                 report = suggest_turn_improvements(
                     args.report,

@@ -21,6 +21,8 @@ jobs:
         run: python -m tokensquash doctor
       - name: Run public demo
         run: python -m tokensquash demo --counter chars --out-dir /tmp/tokensquash-demo
+      - name: Gate public demo turn evaluation
+        run: python -m tokensquash turns gate /tmp/tokensquash-demo/turn-evaluation/evaluation.json --min-saved-pct 0.5 --max-privacy-findings 0
       - name: Build package wheel
         run: python -m pip wheel . --no-deps -w /tmp/tokensquash-wheel
       - name: Check packaged demo data

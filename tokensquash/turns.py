@@ -1173,6 +1173,69 @@ def compare_turn_reports(base: Path | str, target: Path | str) -> dict[str, Any]
     }
 
 
+def gate_turn_report(
+    report_path: Path | str,
+    *,
+    min_saved_pct: float = 0.5,
+    max_privacy_findings: int = 0,
+    max_pass_through_rows: int = 0,
+    max_raw_wire_loss_turns: int = 0,
+) -> dict[str, Any]:
+    """Apply pass/fail quality thresholds to a saved turn report or evaluation."""
+
+    source_report, input_type, input_schema = _load_turn_gate_report(report_path)
+    gate_summary = _turn_gate_summary(source_report)
+    checks = [
+        _turn_gate_check("min_saved_pct", gate_summary["saved_pct"], min_saved_pct, ">="),
+        _turn_gate_check(
+            "max_privacy_findings",
+            gate_summary["privacy_finding_count"],
+            max(0, int(max_privacy_findings)),
+            "<=",
+        ),
+        _turn_gate_check(
+            "max_pass_through_rows",
+            gate_summary["pass_through_rows"],
+            max(0, int(max_pass_through_rows)),
+            "<=",
+        ),
+        _turn_gate_check(
+            "max_raw_wire_loss_turns",
+            gate_summary["raw_wire_loss_turns"],
+            max(0, int(max_raw_wire_loss_turns)),
+            "<=",
+        ),
+    ]
+    failures = [check for check in checks if check.get("status") == "fail"]
+    status = "pass" if not failures else "fail"
+    return {
+        "schema_version": "tokensquash.turns.gate.v1",
+        "status": status,
+        "source": str(Path(report_path)),
+        "input_type": input_type,
+        "input_schema_version": input_schema,
+        "report": {
+            **_turn_report_identity(report_path, source_report),
+            "schema_version": input_schema,
+        },
+        "thresholds": {
+            "min_saved_pct": float(min_saved_pct),
+            "max_privacy_findings": max(0, int(max_privacy_findings)),
+            "max_pass_through_rows": max(0, int(max_pass_through_rows)),
+            "max_raw_wire_loss_turns": max(0, int(max_raw_wire_loss_turns)),
+        },
+        "summary": {
+            **gate_summary,
+            "status": status,
+            "passed": status == "pass",
+            "check_count": len(checks),
+            "failed_check_count": len(failures),
+        },
+        "checks": checks,
+        "failures": failures,
+    }
+
+
 def suggest_turn_improvements(
     report_path: Path | str,
     *,
@@ -1702,6 +1765,55 @@ def format_turn_report_compare_markdown(report: dict[str, Any]) -> str:
     )
 
 
+def format_turn_gate_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    thresholds = report.get("thresholds", {})
+    lines = [
+        "# TokenSquash Turn Gate",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Input type: `{report.get('input_type')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        f"- Pass-through rows: `{summary.get('pass_through_rows', 0)}`",
+        f"- Raw wire loss turns: `{summary.get('raw_wire_loss_turns', 0)}`",
+        f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
+        "",
+        "## Thresholds",
+        "",
+        f"- Min saved percent: `{thresholds.get('min_saved_pct', 0.0)}%`",
+        f"- Max privacy findings: `{thresholds.get('max_privacy_findings', 0)}`",
+        f"- Max pass-through rows: `{thresholds.get('max_pass_through_rows', 0)}`",
+        f"- Max raw wire loss turns: `{thresholds.get('max_raw_wire_loss_turns', 0)}`",
+        "",
+        "## Checks",
+        "",
+        "| Check | Actual | Limit | Result |",
+        "|---|---:|---:|---|",
+    ]
+    for check in report.get("checks", []):
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(check.get('name', '')))} | "
+            f"{check.get('actual')} | "
+            f"{check.get('operator')} {check.get('limit')} | "
+            f"`{check.get('status')}` |"
+        )
+    failures = report.get("failures", [])
+    if failures:
+        lines.extend(["", "## Failed Checks", ""])
+        for failure in failures:
+            lines.append(
+                "- "
+                f"{failure.get('name')}: actual `{failure.get('actual')}` "
+                f"must be {failure.get('operator')} `{failure.get('limit')}`"
+            )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_turn_suggestions_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     source = report.get("report", {})
@@ -1788,6 +1900,19 @@ def _load_turn_report(path: Path | str) -> dict[str, Any]:
     return payload
 
 
+def _load_turn_gate_report(path: Path | str) -> tuple[dict[str, Any], str, str]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError("turn gate input must be a JSON object")
+    schema = str(payload.get("schema_version", ""))
+    if schema == "tokensquash.turns.report.v1":
+        return payload, "report", schema
+    if schema == "tokensquash.turns.evaluate.v1":
+        return payload, "evaluation", schema
+    raise ValueError(f"not a TokenSquash turn report or evaluation: {source}")
+
+
 def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary", {})
     return {
@@ -1810,6 +1935,89 @@ def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str,
         "alias_saved_tokens_delta": summary.get("alias_saved_tokens_delta"),
         "alias_saved_pct_delta": summary.get("alias_saved_pct_delta"),
         "break_even_corpora": summary.get("break_even_corpora"),
+    }
+
+
+def _turn_gate_summary(report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("summary", {}) or {}
+    validation_summary = ((report.get("validation") or {}).get("summary") or {})
+    measure = report.get("measure") or {}
+    measure_summary = measure.get("summary", {}) or {}
+    measure_benchmark_summary = ((measure.get("benchmark") or {}).get("summary") or {})
+    diagnose_summary = ((report.get("diagnose") or {}).get("summary") or {})
+    bench_summary = ((report.get("bench") or {}).get("summary") or {})
+    raw_loss_default = len(report.get("top_raw_wire_losses") or [])
+    pass_through_rows = _summary_value(
+        "pass_through_rows",
+        summary,
+        measure_summary,
+        diagnose_summary,
+        default=None,
+    )
+    if pass_through_rows is None:
+        pass_through_rows = _summary_value("passthroughs", bench_summary, measure_benchmark_summary, default=0)
+    return {
+        "turn_count": _int_value(
+            _summary_value("turn_count", summary, measure_summary, diagnose_summary, validation_summary, bench_summary, default=0)
+        ),
+        "original_tokens": _int_value(
+            _summary_value("original_tokens", summary, measure_summary, diagnose_summary, bench_summary, default=0)
+        ),
+        "wire_tokens": _int_value(
+            _summary_value("wire_tokens", summary, diagnose_summary, measure_benchmark_summary, bench_summary, default=0)
+        ),
+        "squashed_tokens": _int_value(
+            _summary_value("squashed_tokens", summary, measure_summary, diagnose_summary, bench_summary, default=0)
+        ),
+        "saved_tokens": _int_value(
+            _summary_value("saved_tokens", summary, measure_summary, diagnose_summary, bench_summary, default=0)
+        ),
+        "saved_pct": _float_value(
+            _summary_value("saved_pct", summary, measure_summary, diagnose_summary, bench_summary, default=0.0)
+        ),
+        "prompt_saved_pct": _float_value(
+            _summary_value("prompt_saved_pct", summary, measure_summary, bench_summary, default=0.0)
+        ),
+        "reply_saved_pct": _float_value(
+            _summary_value("reply_saved_pct", summary, measure_summary, bench_summary, default=0.0)
+        ),
+        "privacy_finding_count": _int_value(
+            _summary_value(
+                "privacy_finding_count",
+                summary,
+                validation_summary,
+                measure_summary,
+                diagnose_summary,
+                default=0,
+            )
+        ),
+        "pass_through_rows": _int_value(pass_through_rows),
+        "raw_wire_loss_turns": _int_value(
+            _summary_value("raw_wire_loss_turns", summary, diagnose_summary, default=raw_loss_default)
+        ),
+    }
+
+
+def _summary_value(key: str, *summaries: dict[str, Any], default: Any = None) -> Any:
+    for summary in summaries:
+        if isinstance(summary, dict) and key in summary and summary[key] is not None:
+            return summary[key]
+    return default
+
+
+def _turn_gate_check(name: str, actual: float | int, limit: float | int, operator: str) -> dict[str, Any]:
+    if operator == ">=":
+        passed = actual >= limit
+    elif operator == "<=":
+        passed = actual <= limit
+    else:
+        raise ValueError(f"unsupported turn gate operator: {operator}")
+    return {
+        "name": name,
+        "actual": actual,
+        "operator": operator,
+        "limit": limit,
+        "status": "pass" if passed else "fail",
     }
 
 
