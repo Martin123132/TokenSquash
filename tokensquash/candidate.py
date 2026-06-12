@@ -39,6 +39,7 @@ def run_release_candidate(
     counter: str = "chars",
     skip_tests: bool = False,
     require_exact_tokenizer: bool = True,
+    require_clean_git: bool = False,
     check_ollama: bool = False,
     ollama_endpoint: str = "http://localhost:11434",
     ollama_timeout: float = 2.0,
@@ -59,9 +60,9 @@ def run_release_candidate(
     _run_candidate_step(
         steps,
         "release_info",
-        command=_command("release-info", "--root", str(root)),
+        command=_command("release-info", "--root", str(root), *(("--require-clean",) if require_clean_git else ())),
         required=True,
-        action=lambda: _run_release_info(root, output_dir),
+        action=lambda: _run_release_info(root, output_dir, require_clean=require_clean_git),
     )
     _run_candidate_step(
         steps,
@@ -148,6 +149,7 @@ def run_release_candidate(
         "counter": counter,
         "skip_tests": skip_tests,
         "require_exact_tokenizer": require_exact_tokenizer,
+        "require_clean_git": require_clean_git,
         "check_ollama": check_ollama,
         "summary": {
             "step_count": len(steps),
@@ -164,6 +166,7 @@ def run_release_candidate(
             counter,
             skip_tests=skip_tests,
             require_exact_tokenizer=require_exact_tokenizer,
+            require_clean_git=require_clean_git,
             check_ollama=check_ollama,
             ollama_endpoint=ollama_endpoint,
             ollama_timeout=ollama_timeout,
@@ -224,6 +227,7 @@ def format_release_candidate_markdown(report: dict[str, Any]) -> str:
         f"- Output dir: `{report.get('out_dir')}`",
         f"- Counter: `{report.get('counter')}`",
         f"- Require exact tokenizer: `{report.get('require_exact_tokenizer')}`",
+        f"- Require clean Git: `{report.get('require_clean_git')}`",
         f"- Steps: `{summary.get('step_count', 0)}`",
         f"- Failed required: `{summary.get('failed_required_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
@@ -419,6 +423,7 @@ def verify_release_candidate_pack(
         required=True,
         allowed_statuses={"pass", "warn"},
     )
+    _append_candidate_clean_git_check(checks, candidate, release_info)
     _append_candidate_file_check(
         checks,
         "release_info_markdown",
@@ -605,6 +610,7 @@ def verify_release_candidate_pack(
             "release_candidate_pass_required": require_release_candidate_pass,
             "release_candidate_status": candidate.get("status") if candidate else None,
             "release_candidate_step_count": len(candidate.get("steps", [])) if candidate else 0,
+            "release_candidate_require_clean_git": candidate.get("require_clean_git") if candidate else None,
             "artifact_manifest_status": artifact_manifest.get("status") if artifact_manifest else None,
             "artifact_manifest_artifact_count": (
                 (artifact_manifest.get("summary") or {}).get("artifact_count") if artifact_manifest else None
@@ -655,6 +661,7 @@ def format_release_candidate_verify_markdown(report: dict[str, Any]) -> str:
         f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
         f"- Release-candidate status: `{summary.get('release_candidate_status')}`",
+        f"- Require clean Git: `{summary.get('release_candidate_require_clean_git')}`",
         f"- Artifact manifest: `{summary.get('artifact_manifest_status')}`",
         f"- Artifact count: `{summary.get('artifact_manifest_artifact_count')}`",
         f"- Release attestation: `{summary.get('release_attestation_status')}`",
@@ -712,8 +719,8 @@ def _run_candidate_step(
     )
 
 
-def _run_release_info(root: Path, output_dir: Path) -> tuple[str, str, dict[str, Any]]:
-    report = build_release_info(root=root)
+def _run_release_info(root: Path, output_dir: Path, *, require_clean: bool = False) -> tuple[str, str, dict[str, Any]]:
+    report = build_release_info(root=root, require_clean=require_clean)
     json_path = output_dir / "release-info.json"
     markdown_path = output_dir / "release-info.md"
     _write_json(json_path, report)
@@ -1091,6 +1098,7 @@ def _build_release_candidate_attestation(
     }
     evidence = {
         "release_candidate_status": candidate.get("status") if candidate else None,
+        "release_candidate_require_clean_git": candidate.get("require_clean_git") if candidate else None,
         "release_info_status": release_info.get("status") if release_info else None,
         "artifact_manifest_status": artifact_manifest.get("status") if artifact_manifest else None,
         "readiness_verify_status": stored_readiness_verify.get("status") if stored_readiness_verify else None,
@@ -1103,6 +1111,7 @@ def _build_release_candidate_attestation(
         "git_commit": git.get("commit"),
         "git_dirty": release_summary.get("dirty"),
         "version": project.get("version"),
+        "require_clean_git": candidate.get("require_clean_git") if candidate else None,
         "verification_status": verification_status,
         "release_candidate_sha256": (materials.get("release_candidate") or {}).get("sha256"),
         "artifact_manifest_sha256": (materials.get("artifact_manifest") or {}).get("sha256"),
@@ -1470,6 +1479,61 @@ def _append_status_expectation_check(
     )
 
 
+def _append_candidate_clean_git_check(
+    checks: list[dict[str, Any]],
+    candidate: dict[str, Any] | None,
+    release_info: dict[str, Any] | None,
+) -> None:
+    require_clean_git = bool(candidate.get("require_clean_git")) if candidate else False
+    if not require_clean_git:
+        checks.append(
+            _candidate_check(
+                "release_clean_git",
+                "skip",
+                required=False,
+                message="Clean Git state was not required for this release-candidate pack.",
+            )
+        )
+        return
+    if release_info is None:
+        checks.append(
+            _candidate_check(
+                "release_clean_git",
+                "fail",
+                required=True,
+                message="Cannot verify clean Git state because release-info is unreadable.",
+            )
+        )
+        return
+    summary = release_info.get("summary") or {}
+    git = release_info.get("git") or {}
+    passed = (
+        release_info.get("require_clean") is True
+        and release_info.get("status") == "pass"
+        and bool(summary.get("git_ready")) is True
+        and bool(summary.get("dirty")) is False
+    )
+    checks.append(
+        _candidate_check(
+            "release_clean_git",
+            "pass" if passed else "fail",
+            required=True,
+            message=(
+                "Release-candidate pack required and captured a clean Git state."
+                if passed
+                else "Release-candidate pack required clean Git, but release-info did not prove it."
+            ),
+            data={
+                "require_clean": release_info.get("require_clean"),
+                "release_info_status": release_info.get("status"),
+                "git_ready": summary.get("git_ready"),
+                "dirty": summary.get("dirty"),
+                "commit": git.get("commit"),
+            },
+        )
+    )
+
+
 def _append_baseline_expectation_check(
     checks: list[dict[str, Any]],
     name: str,
@@ -1795,6 +1859,7 @@ def _release_candidate_commands(
     *,
     skip_tests: bool,
     require_exact_tokenizer: bool,
+    require_clean_git: bool,
     check_ollama: bool,
     ollama_endpoint: str,
     ollama_timeout: float,
@@ -1806,13 +1871,16 @@ def _release_candidate_commands(
         readiness += " --skip-tests"
     if not require_exact_tokenizer:
         release_candidate += " --skip-exact-tokenizer"
+    if require_clean_git:
+        release_candidate += " --require-clean"
     if check_ollama:
         ollama_options = f" --check-ollama --ollama-endpoint {ollama_endpoint} --ollama-timeout {ollama_timeout}"
         release_candidate += ollama_options
         readiness += ollama_options
     commands = [
         release_candidate,
-        f"python -m tokensquash release-info --root {root}",
+        f"python -m tokensquash release-info --root {root}"
+        + (" --require-clean" if require_clean_git else ""),
         readiness,
         f"python -m tokensquash verify-readiness {readiness_dir} --require-readiness-pass",
         "python -m tokensquash baselines verify",

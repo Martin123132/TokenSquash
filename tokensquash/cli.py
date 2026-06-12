@@ -241,6 +241,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Skip exact-tokenizer baseline verification; release candidates should normally require it.",
     )
+    release_candidate.add_argument(
+        "--require-clean",
+        action="store_true",
+        help="Fail the release-candidate gate unless Git metadata is available and the work tree is clean.",
+    )
     release_candidate.add_argument("--check-ollama", action="store_true", help="Include the optional Ollama doctor check.")
     release_candidate.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
     release_candidate.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
@@ -1062,6 +1067,7 @@ def main(argv: list[str] | None = None) -> int:
                 counter=args.counter,
                 skip_tests=args.skip_tests,
                 require_exact_tokenizer=not args.skip_exact_tokenizer,
+                require_clean_git=args.require_clean,
                 check_ollama=args.check_ollama,
                 ollama_endpoint=args.ollama_endpoint,
                 ollama_timeout=args.ollama_timeout,

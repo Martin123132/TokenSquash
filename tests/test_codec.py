@@ -768,7 +768,10 @@ class TokenSquashCodecTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
 
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
             ):
@@ -780,6 +783,7 @@ class TokenSquashCodecTests(unittest.TestCase):
 
             self.assertEqual(report["schema_version"], "tokensquash.release_candidate.v1")
             self.assertEqual(report["status"], "pass")
+            self.assertFalse(report["require_clean_git"])
             steps = {step["name"]: step for step in report["steps"]}
             self.assertEqual(steps["release_info"]["status"], "pass")
             self.assertEqual(steps["readiness"]["status"], "pass")
@@ -808,13 +812,48 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
             self.assertTrue(any("--skip-tests" in command for command in report["commands"]))
             self.assertTrue(any("--skip-exact-tokenizer" in command for command in report["commands"]))
+            self.assertFalse(any("--require-clean" in command for command in report["commands"]))
+
+    def test_release_candidate_require_clean_records_and_verifies_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
+                report = run_release_candidate(
+                    out_dir=out_dir,
+                    skip_tests=True,
+                    require_exact_tokenizer=False,
+                    require_clean_git=True,
+                )
+
+            verified = verify_release_candidate_pack(out_dir, require_release_candidate_pass=True)
+
+            self.assertEqual(report["status"], "pass")
+            self.assertTrue(report["require_clean_git"])
+            self.assertTrue(any("--require-clean" in command for command in report["commands"]))
+            release_info = json.loads((out_dir / "release-info.json").read_text(encoding="utf-8"))
+            self.assertTrue(release_info["require_clean"])
+            self.assertFalse(release_info["summary"]["dirty"])
+            self.assertEqual(verified["status"], "pass")
+            checks = {check["name"]: check for check in verified["checks"]}
+            self.assertEqual(checks["release_clean_git"]["status"], "pass")
+            self.assertTrue(verified["summary"]["release_candidate_require_clean_git"])
 
     def test_release_candidate_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
             stdout = StringIO()
 
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
                 "tokensquash.candidate._run_wheel_smoke",
                 side_effect=self._fake_wheel_smoke,
             ):
@@ -824,6 +863,7 @@ class TokenSquashCodecTests(unittest.TestCase):
                             "release-candidate",
                             "--skip-tests",
                             "--skip-exact-tokenizer",
+                            "--require-clean",
                             "--out-dir",
                             str(out_dir),
                             "--json",
@@ -834,6 +874,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["schema_version"], "tokensquash.release_candidate.v1")
             self.assertEqual(payload["status"], "pass")
+            self.assertTrue(payload["require_clean_git"])
             self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
             self.assertTrue((out_dir / "wheel-build.txt").exists())
             self.assertTrue((out_dir / "wheel-smoke.txt").exists())
@@ -909,6 +950,25 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(attestation["status"], "fail")
             self.assertGreater(attestation["verification"]["failed_check_count"], 0)
 
+    def test_verify_release_candidate_pack_fails_when_clean_policy_not_proven(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            candidate_path = out_dir / "release-candidate.json"
+            candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+            candidate["require_clean_git"] = True
+            candidate_path.write_text(json.dumps(candidate, indent=2) + "\n", encoding="utf-8")
+
+            report = verify_release_candidate_pack(out_dir)
+
+            self.assertEqual(report["status"], "fail")
+            failed_names = {check["name"] for check in report["checks"] if check["status"] == "fail"}
+            self.assertIn("release_clean_git", failed_names)
+
     def test_verify_release_candidate_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
@@ -950,6 +1010,53 @@ class TokenSquashCodecTests(unittest.TestCase):
             "returncode": 0,
             "wheel": str(wheel_path),
             "packaged_demo_data": True,
+        }
+
+    def _fake_release_info(
+        self,
+        root: Path,
+        output_dir: Path,
+        *,
+        require_clean: bool = False,
+    ) -> tuple[str, str, dict[str, object]]:
+        report = {
+            "schema_version": "tokensquash.release_info.v1",
+            "status": "pass",
+            "root": str(root),
+            "require_clean": require_clean,
+            "project": {
+                "name": "tokensquash",
+                "version": "0.1.0",
+                "requires_python": ">=3.10",
+            },
+            "git": {
+                "inside_work_tree": True,
+                "commit": "abc123",
+                "short_commit": "abc123",
+                "branch": "main",
+                "dirty": False,
+                "status_lines": [],
+            },
+            "python": {"version": "3.13.0"},
+            "platform": {"system": "test"},
+            "summary": {
+                "git_ready": True,
+                "dirty": False,
+                "status_line_count": 0,
+                "elapsed_seconds": 0.0,
+            },
+        }
+        json_path = output_dir / "release-info.json"
+        markdown_path = output_dir / "release-info.md"
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        markdown_path.write_text("# fake release info\n", encoding="utf-8")
+        return "pass", "Release info faked for unit test.", {
+            "report": str(json_path),
+            "markdown": str(markdown_path),
+            "git_commit": "abc123",
+            "git_dirty": False,
+            "version": "0.1.0",
         }
 
     def _fake_wheel_smoke(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:

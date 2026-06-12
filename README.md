@@ -607,6 +607,9 @@ python -m tokensquash release-candidate --out-dir private-turns\release-candidat
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass
 ```
 
+Use `--require-clean` on `release-candidate` for a final release check when the
+Git work tree should have no tracked or untracked changes.
+
 Use `--skip-exact-tokenizer` only for local smoke checks where the tokenizer
 extra is intentionally not installed. Use the expanded form below when CI or
 debugging needs each command separated:
