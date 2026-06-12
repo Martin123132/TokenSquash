@@ -41,6 +41,7 @@ from tokensquash.turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
     benchmark_turns,
+    build_turn_certification_history,
     capture_turn_record,
     certify_turn_corpus,
     compare_turn_certifications,
@@ -412,11 +413,13 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("about", commands)
         self.assertIn("init", commands)
         self.assertIn("turns compare-certifications", commands)
+        self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.workspace.init.v1", schemas)
         self.assertIn("tokensquash.turns.certify.compare.v1", schemas)
+        self.assertIn("tokensquash.turns.certify.history.v1", schemas)
         self.assertIn("tokensquash.turns.certify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
@@ -2818,6 +2821,55 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("# TokenSquash Turn Certification Compare", output)
             self.assertIn("- Status: `regressed`", output)
             self.assertIn("- Saved percent delta: `-2.0%`", output)
+            self.assertTrue(out.exists())
+            self.assertEqual(out.read_text(encoding="utf-8"), output)
+
+    def test_turns_certification_history_reports_mixed_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "cert-1.json"
+            second = Path(tmp) / "cert-2.json"
+            third = Path(tmp) / "cert-3.json"
+            first.write_text(json.dumps(_turn_certification_fixture(saved_pct=4.0, saved_tokens=8)), encoding="utf-8")
+            second.write_text(json.dumps(_turn_certification_fixture(saved_pct=6.5, saved_tokens=13)), encoding="utf-8")
+            third.write_text(json.dumps(_turn_certification_fixture(saved_pct=5.0, saved_tokens=10)), encoding="utf-8")
+
+            report = build_turn_certification_history([first, second, third])
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.certify.history.v1")
+            self.assertEqual(report["status"], "mixed")
+            self.assertEqual(report["summary"]["certification_count"], 3)
+            self.assertEqual(report["summary"]["saved_pct_delta"], 1.0)
+            self.assertEqual(report["summary"]["best_saved_pct"], 6.5)
+            self.assertEqual(report["summary"]["regressed_step_count"], 1)
+            self.assertEqual([step["status"] for step in report["steps"]], ["improved", "regressed"])
+            self.assertIn("latest saved_pct is 1.5% below best observed", report["warnings"])
+
+    def test_turns_certification_history_cli_accepts_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first_dir = Path(tmp) / "cert-before"
+            second_dir = Path(tmp) / "cert-after"
+            first_dir.mkdir()
+            second_dir.mkdir()
+            (first_dir / "certification.json").write_text(
+                json.dumps(_turn_certification_fixture(saved_pct=3.0, saved_tokens=6)),
+                encoding="utf-8",
+            )
+            (second_dir / "certification.json").write_text(
+                json.dumps(_turn_certification_fixture(saved_pct=5.0, saved_tokens=10)),
+                encoding="utf-8",
+            )
+            out = Path(tmp) / "history.md"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "certification-history", str(first_dir), str(second_dir), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Certification History", output)
+            self.assertIn("- Status: `improved`", output)
+            self.assertIn("- Net saved percent delta: `2.0%`", output)
+            self.assertIn("## Adjacent Steps", output)
             self.assertTrue(out.exists())
             self.assertEqual(out.read_text(encoding="utf-8"), output)
 

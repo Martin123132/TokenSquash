@@ -33,6 +33,8 @@ jobs:
         run: python -m tokensquash turns certify examples/sample-turns.jsonl --counter chars --out-dir /tmp/tokensquash-certification
       - name: Compare public demo certifications
         run: python -m tokensquash turns compare-certifications /tmp/tokensquash-certification/certification.json /tmp/tokensquash-certification/certification.json
+      - name: Summarize public demo certification history
+        run: python -m tokensquash turns certification-history /tmp/tokensquash-certification /tmp/tokensquash-certification
       - name: Build package wheel
         run: python -m pip wheel . --no-deps -w /tmp/tokensquash-wheel
       - name: Check packaged demo data

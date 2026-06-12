@@ -1192,6 +1192,107 @@ def compare_turn_certifications(base: Path | str, target: Path | str) -> dict[st
     }
 
 
+def build_turn_certification_history(certifications: Iterable[Path | str]) -> dict[str, Any]:
+    """Summarize trend history across saved turn certification JSON files."""
+
+    if isinstance(certifications, (str, Path)):
+        paths = [Path(certifications)]
+    else:
+        paths = [Path(path) for path in certifications]
+    if len(paths) < 2:
+        raise ValueError("turn certification history requires at least two certification files")
+
+    reports = [_load_turn_certification(path) for path in paths]
+    entries: list[dict[str, Any]] = []
+    for index, (path, report) in enumerate(zip(paths, reports), start=1):
+        identity = _turn_certification_identity(path, report)
+        identity["index"] = index
+        entries.append(identity)
+
+    steps: list[dict[str, Any]] = []
+    for index in range(1, len(paths)):
+        comparison = compare_turn_certifications(paths[index - 1], paths[index])
+        steps.append(
+            {
+                "from_index": index,
+                "to_index": index + 1,
+                "status": comparison.get("status"),
+                "base": comparison.get("base"),
+                "target": comparison.get("target"),
+                "delta": comparison.get("delta", {}),
+            }
+        )
+
+    net_comparison = compare_turn_certifications(paths[0], paths[-1])
+    latest = entries[-1]
+    best = max(entries, key=lambda item: _float_value(item.get("saved_pct")))
+    worst = min(entries, key=lambda item: _float_value(item.get("saved_pct")))
+    latest_failed = _turn_certification_failed(latest)
+    failed_count = sum(1 for entry in entries if _turn_certification_failed(entry))
+    improved_step_count = sum(1 for step in steps if step.get("status") == "improved")
+    regressed_step_count = sum(1 for step in steps if step.get("status") == "regressed")
+    failed_step_count = sum(1 for step in steps if step.get("status") == "failed")
+    same_step_count = sum(1 for step in steps if step.get("status") == "same")
+
+    if latest_failed:
+        status = "failed"
+    elif failed_step_count or (improved_step_count and regressed_step_count):
+        status = "mixed"
+    elif regressed_step_count:
+        status = "regressed"
+    elif improved_step_count:
+        status = "improved"
+    else:
+        status = "same"
+
+    saved_pct_drop_from_best = round(
+        _float_value(latest.get("saved_pct")) - _float_value(best.get("saved_pct")),
+        4,
+    )
+    warnings: list[str] = []
+    if latest_failed:
+        warnings.append("latest certification is failing")
+    elif failed_count:
+        warnings.append(f"history contains {failed_count} failing certification(s)")
+    if regressed_step_count:
+        warnings.append(f"history contains {regressed_step_count} adjacent regression(s)")
+    if saved_pct_drop_from_best < 0:
+        warnings.append(f"latest saved_pct is {abs(saved_pct_drop_from_best)}% below best observed")
+
+    return {
+        "schema_version": "tokensquash.turns.certify.history.v1",
+        "status": status,
+        "summary": {
+            "certification_count": len(entries),
+            "first_certification_path": entries[0].get("certification_path"),
+            "latest_certification_path": latest.get("certification_path"),
+            "first_saved_pct": entries[0].get("saved_pct"),
+            "latest_saved_pct": latest.get("saved_pct"),
+            "saved_pct_delta": (net_comparison.get("delta") or {}).get("saved_pct"),
+            "first_saved_tokens": entries[0].get("saved_tokens"),
+            "latest_saved_tokens": latest.get("saved_tokens"),
+            "saved_tokens_delta": (net_comparison.get("delta") or {}).get("saved_tokens"),
+            "first_failed_check_count": entries[0].get("failed_check_count"),
+            "latest_failed_check_count": latest.get("failed_check_count"),
+            "failed_check_delta": (net_comparison.get("delta") or {}).get("failed_check_count"),
+            "failed_certification_count": failed_count,
+            "improved_step_count": improved_step_count,
+            "regressed_step_count": regressed_step_count,
+            "failed_step_count": failed_step_count,
+            "same_step_count": same_step_count,
+            "best_saved_pct": best.get("saved_pct"),
+            "best_certification_path": best.get("certification_path"),
+            "worst_saved_pct": worst.get("saved_pct"),
+            "worst_certification_path": worst.get("certification_path"),
+            "saved_pct_drop_from_best": saved_pct_drop_from_best,
+        },
+        "certifications": entries,
+        "steps": steps,
+        "net": net_comparison,
+        "warnings": warnings,
+    }
+
+
 def gate_turn_report(
     report_path: Path | str,
     *,
@@ -1907,6 +2008,70 @@ def format_turn_certification_compare_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_turn_certification_history_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Turn Certification History",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Certifications: `{summary.get('certification_count', 0)}`",
+        f"- First: `{summary.get('first_certification_path')}` saved=`{summary.get('first_saved_pct')}%`",
+        f"- Latest: `{summary.get('latest_certification_path')}` saved=`{summary.get('latest_saved_pct')}%`",
+        f"- Net saved percent delta: `{summary.get('saved_pct_delta')}%`",
+        f"- Net saved token delta: `{summary.get('saved_tokens_delta')}`",
+        f"- Net failed check delta: `{summary.get('failed_check_delta')}`",
+        f"- Best saved percent: `{summary.get('best_saved_pct')}%` at `{summary.get('best_certification_path')}`",
+        f"- Worst saved percent: `{summary.get('worst_saved_pct')}%` at `{summary.get('worst_certification_path')}`",
+        f"- Adjacent improvements: `{summary.get('improved_step_count', 0)}`",
+        f"- Adjacent regressions: `{summary.get('regressed_step_count', 0)}`",
+        f"- Adjacent failures: `{summary.get('failed_step_count', 0)}`",
+        "",
+        "## Certification Timeline",
+        "",
+        "| # | Certification | Status | Gate | Saved % | Saved Tokens | Failed Checks | Privacy Findings | Suggestions |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for entry in report.get("certifications", []):
+        lines.append(
+            "| "
+            f"{entry.get('index')} | "
+            f"{_markdown_cell(str(entry.get('certification_path', '')))} | "
+            f"`{entry.get('status')}` | "
+            f"`{entry.get('gate_status')}` | "
+            f"{entry.get('saved_pct')}% | "
+            f"{entry.get('saved_tokens')} | "
+            f"{entry.get('failed_check_count')} | "
+            f"{entry.get('privacy_finding_count')} | "
+            f"{entry.get('suggestion_count')} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Adjacent Steps",
+            "",
+            "| From | To | Status | Saved % Delta | Saved Token Delta | Failed Check Delta |",
+            "|---:|---:|---|---:|---:|---:|",
+        ]
+    )
+    for step in report.get("steps", []):
+        delta = step.get("delta", {})
+        lines.append(
+            "| "
+            f"{step.get('from_index')} | "
+            f"{step.get('to_index')} | "
+            f"`{step.get('status')}` | "
+            f"{delta.get('saved_pct')}% | "
+            f"{delta.get('saved_tokens')} | "
+            f"{delta.get('failed_check_count')} |"
+        )
+    warnings = report.get("warnings", [])
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        for warning in warnings:
+            lines.append(f"- {warning}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_turn_gate_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     thresholds = report.get("thresholds", {})
@@ -2110,11 +2275,18 @@ def _load_turn_report(path: Path | str) -> dict[str, Any]:
 
 
 def _load_turn_certification(path: Path | str) -> dict[str, Any]:
-    source = Path(path)
+    source = _resolve_turn_certification_path(path)
     payload = json.loads(source.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict) or payload.get("schema_version") != "tokensquash.turns.certify.v1":
         raise ValueError(f"Not a TokenSquash turn certification: {source}")
     return payload
+
+
+def _resolve_turn_certification_path(path: Path | str) -> Path:
+    source = Path(path)
+    if source.is_dir():
+        return source / "certification.json"
+    return source
 
 
 def _load_turn_gate_report(path: Path | str) -> tuple[dict[str, Any], str, str]:
@@ -2217,7 +2389,7 @@ def _turn_certification_identity(path: Path | str, report: dict[str, Any]) -> di
     artifacts = report.get("artifacts", {})
     gate = artifacts.get("gate", {})
     return {
-        "certification_path": str(path),
+        "certification_path": str(_resolve_turn_certification_path(path)),
         "corpus_path": report.get("path"),
         "status": report.get("status"),
         "counter": report.get("counter"),
@@ -2234,6 +2406,14 @@ def _turn_certification_identity(path: Path | str, report: dict[str, Any]) -> di
         "failed_check_count": summary.get("failed_check_count"),
         "suggestion_count": summary.get("suggestion_count"),
     }
+
+
+def _turn_certification_failed(identity: dict[str, Any]) -> bool:
+    return (
+        identity.get("status") != "pass"
+        or identity.get("gate_status") == "fail"
+        or _int_value(identity.get("failed_check_count")) > 0
+    )
 
 
 def _gate_turn_report_payload(

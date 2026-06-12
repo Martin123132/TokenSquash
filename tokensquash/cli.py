@@ -61,6 +61,7 @@ from .turns import (
     append_turn_record,
     benchmark_turn_alias_impact,
     benchmark_turns,
+    build_turn_certification_history,
     capture_turn_record,
     certify_turn_corpus,
     compare_turn_certifications,
@@ -72,6 +73,7 @@ from .turns import (
     format_turn_benchmark_markdown,
     format_turn_capture_markdown,
     format_turn_certification_compare_markdown,
+    format_turn_certification_history_markdown,
     format_turn_certification_markdown,
     format_turn_diagnose_markdown,
     format_turn_report_markdown,
@@ -512,6 +514,19 @@ def main(argv: list[str] | None = None) -> int:
     turns_compare_certifications.add_argument("target", type=Path)
     turns_compare_certifications.add_argument("--out", type=Path, help="Write comparison output to this file.")
     turns_compare_certifications.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    turns_certification_history = turns_sub.add_parser(
+        "certification-history",
+        help="Summarize trends across saved turn certification JSON files or directories.",
+    )
+    turns_certification_history.add_argument(
+        "certifications",
+        nargs="+",
+        type=Path,
+        help="Certification JSON files or certification output directories, in chronological order.",
+    )
+    turns_certification_history.add_argument("--out", type=Path, help="Write history output to this file.")
+    turns_certification_history.add_argument("--json", action="store_true", help="Print history JSON.")
 
     turns_gate = turns_sub.add_parser("gate", help="Pass or fail a turn report/evaluation against quality thresholds.")
     turns_gate.add_argument("report", type=Path, help="Saved turns report JSON or evaluation.json.")
@@ -1181,6 +1196,18 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(report, indent=2) + "\n"
                     if args.json
                     else format_turn_certification_compare_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0
+            if args.turns_command == "certification-history":
+                report = build_turn_certification_history(args.certifications)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_certification_history_markdown(report)
                 )
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)
