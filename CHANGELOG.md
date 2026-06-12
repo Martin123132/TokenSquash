@@ -11,6 +11,9 @@ is produced locally and in GitHub Actions.
 
 ### Added
 
+- `ROADMAP.md` and `docs/v0.1.1-plan.md` now describe the public product
+  direction, experimental boundaries, evidence bar, and next patch-release
+  scope.
 - `release-assets` stages verified public release assets from a
   release-candidate pack, writes a release asset report, and can optionally run
   `gh release upload`.

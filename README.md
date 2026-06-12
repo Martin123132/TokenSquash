@@ -91,7 +91,9 @@ Use [docs/release-checklist.md](docs/release-checklist.md) as the release
 runbook, confirm the [LICENSE](LICENSE) and
 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) terms, and record user-facing
 changes in [CHANGELOG.md](CHANGELOG.md). The draft first-release notes live at
-[docs/release-notes-v0.1.0.md](docs/release-notes-v0.1.0.md).
+[docs/release-notes-v0.1.0.md](docs/release-notes-v0.1.0.md). The project
+direction is tracked in [ROADMAP.md](ROADMAP.md), with the next patch plan in
+[docs/v0.1.1-plan.md](docs/v0.1.1-plan.md).
 
 Add `--check-ollama` when you want the doctor to query a local Ollama server
 for the experimental sidecar path.
@@ -694,6 +696,9 @@ For a tag or external release, follow
 the clean release-candidate pack.
 Use [docs/release-verification.md](docs/release-verification.md) to inspect
 published release assets, hashes, attestations, and packaged license evidence.
+Use [ROADMAP.md](ROADMAP.md) and
+[docs/v0.1.1-plan.md](docs/v0.1.1-plan.md) to keep release scope focused on
+measured product polish rather than broad new claims.
 
 ## Current Scope
 
@@ -727,12 +732,10 @@ published release assets, hashes, attestations, and packaged license evidence.
 
 ## Future Work
 
-- Collect larger real-world prompt corpora with privacy filtering.
-- Compare multiple model tokenizers, not just one encoding.
-- Collect larger real-world reply corpora with privacy filtering.
-- Improve raw-reply field extraction for paired turn benchmarks.
-- Integrate RepoMori pack and snapshot references into compact intents.
-- Measure task success as well as token savings.
+See [ROADMAP.md](ROADMAP.md) for the public product direction and
+[docs/v0.1.1-plan.md](docs/v0.1.1-plan.md) for the next patch-release plan.
+Near-term work should stay focused on real-corpus evidence, release automation,
+sidecar meaning preservation, and small workflow polish.
 
 ## Design Rule
 
