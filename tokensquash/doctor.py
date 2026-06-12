@@ -480,6 +480,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "CHANGELOG.md",
             "docs/release-checklist.md",
             "docs/release-notes-v0.1.0.md",
+            "docs/release-verification.md",
             ".github/ISSUE_TEMPLATE",
             PUBLIC_LICENSE_PATH,
             COMMERCIAL_LICENSE_PATH,
@@ -507,6 +508,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
         "docs/release-checklist.md": [
             "release-candidate-evidence",
             "docs/release-notes-v0.1.0.md",
+            "docs/release-verification.md",
             "Release-Prep Command Block",
             PUBLIC_LICENSE_PATH,
             COMMERCIAL_LICENSE_PATH,
@@ -518,6 +520,15 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "private-turns/",
             PUBLIC_LICENSE_NAME,
             LICENSOR,
+        ],
+        "docs/release-verification.md": [
+            "Release Verification",
+            "tokensquash-0.1.0-py3-none-any.whl",
+            "release-attestation.json",
+            "verify-release-candidate.json",
+            "9583c296f4ada082c88b7bc8149b678ed1529a16",
+            "LICENSE",
+            COMMERCIAL_LICENSE_PATH,
         ],
         ".github/PULL_REQUEST_TEMPLATE.md": [
             "README.md",

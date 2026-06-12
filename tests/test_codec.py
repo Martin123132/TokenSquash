@@ -532,6 +532,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("SECURITY.md", governance_paths)
         self.assertIn("docs/release-checklist.md", governance_paths)
         self.assertIn("docs/release-notes-v0.1.0.md", governance_paths)
+        self.assertIn("docs/release-verification.md", governance_paths)
         self.assertIn(".github/PULL_REQUEST_TEMPLATE.md", governance_paths)
         self.assertIn(".github/ISSUE_TEMPLATE/config.yml", governance_paths)
         self.assertIn(".github/ISSUE_TEMPLATE/bug_report.yml", governance_paths)

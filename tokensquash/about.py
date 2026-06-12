@@ -174,6 +174,7 @@ GOVERNANCE_DOCUMENTS = [
     {"path": "SECURITY.md", "purpose": "Security support, vulnerability reporting, and private-data handling policy."},
     {"path": "docs/release-checklist.md", "purpose": "Manual release runbook and evidence checklist."},
     {"path": "docs/release-notes-v0.1.0.md", "purpose": "Draft v0.1.0 scope, evidence, and release notes."},
+    {"path": "docs/release-verification.md", "purpose": "Published release asset hash and evidence verification guide."},
     {"path": ".github/PULL_REQUEST_TEMPLATE.md", "purpose": "Pull-request verification and privacy checklist."},
     {"path": ".github/ISSUE_TEMPLATE/config.yml", "purpose": "Issue-template routing and private contact links."},
     {"path": ".github/ISSUE_TEMPLATE/bug_report.yml", "purpose": "Public-safe bug report form."},

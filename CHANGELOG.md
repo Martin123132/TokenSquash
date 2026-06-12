@@ -9,7 +9,11 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- Release asset verification docs now explain how to inspect published wheel,
+  source distribution, attestation, artifact manifest, and verifier assets for
+  `v0.1.0`.
 
 ## [0.1.0] - 2026-06-12
 

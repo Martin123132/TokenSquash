@@ -87,6 +87,8 @@ Required release-candidate evidence:
 - artifact-manifest integrity is `pass`
 - release attestation contains wheel, sdist, and artifact-manifest SHA-256
   hashes
+- `docs/release-verification.md` can be updated with the public release asset
+  names, hashes, CI run, and license-file evidence
 
 ## 5. Verify GitHub Actions
 
@@ -127,5 +129,9 @@ artifact provenance policy have been added and reviewed.
 - Add a new `Unreleased` section to `CHANGELOG.md`.
 - Record the released tag, GitHub Actions run, and release-candidate evidence
   location in the published release notes.
+- Upload public release assets for the wheel, source distribution,
+  `release-attestation.json`, `artifact-manifest.json`, and
+  `verify-release-candidate.json`.
+- Update `docs/release-verification.md` with the final published asset hashes.
 - Keep private corpora under ignored `private-turns/` storage; do not attach
   raw private turns to public releases.

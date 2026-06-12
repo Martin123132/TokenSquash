@@ -687,6 +687,8 @@ For a tag or external release, follow
 [CHANGELOG.md](CHANGELOG.md) plus
 [docs/release-notes-v0.1.0.md](docs/release-notes-v0.1.0.md) before building
 the clean release-candidate pack.
+Use [docs/release-verification.md](docs/release-verification.md) to inspect
+published release assets, hashes, attestations, and packaged license evidence.
 
 ## Current Scope
 
