@@ -141,6 +141,12 @@ def main(argv: list[str] | None = None) -> int:
     demo.add_argument("--json", action="store_true", help="Print demo JSON.")
 
     doctor = sub.add_parser("doctor", help="Check the local TokenSquash install and workspace health.")
+    doctor.add_argument("--strict", action="store_true", help="Run product-readiness checks and write a certification pack.")
+    doctor.add_argument(
+        "--strict-out-dir",
+        type=Path,
+        help="Output directory for strict doctor artifacts; defaults to private-turns/doctor-strict.",
+    )
     doctor.add_argument("--check-ollama", action="store_true", help="Try to reach the local Ollama endpoint.")
     doctor.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
     doctor.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
@@ -750,6 +756,8 @@ def main(argv: list[str] | None = None) -> int:
                 check_ollama=args.check_ollama,
                 ollama_endpoint=args.ollama_endpoint,
                 ollama_timeout=args.ollama_timeout,
+                strict=args.strict,
+                strict_output_dir=args.strict_out_dir,
             )
             output = json.dumps(report, indent=2) + "\n" if args.json else format_doctor_markdown(report)
             print(output, end="")

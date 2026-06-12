@@ -420,6 +420,42 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn(payload["status"], {"pass", "warn"})
         self.assertGreaterEqual(payload["summary"]["required_check_count"], 3)
 
+    def test_run_doctor_strict_writes_certification_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "doctor-strict"
+
+            report = run_doctor(strict=True, strict_output_dir=out_dir)
+
+            self.assertEqual(report["schema_version"], "tokensquash.doctor.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertTrue(report["summary"]["strict"])
+            checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(checks["sample_corpus_copy"]["status"], "pass")
+            self.assertEqual(checks["console_script_metadata"]["status"], "pass")
+            self.assertEqual(checks["turn_certification_workflow"]["status"], "pass")
+            self.assertTrue((out_dir / "certification.json").exists())
+            self.assertTrue((out_dir / "evaluation" / "evaluation.json").exists())
+            self.assertEqual(
+                json.loads((out_dir / "gate.json").read_text(encoding="utf-8"))["status"],
+                "pass",
+            )
+
+    def test_doctor_cli_strict_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "doctor-strict"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["doctor", "--strict", "--strict-out-dir", str(out_dir), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.doctor.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertTrue(payload["summary"]["strict"])
+            self.assertEqual(payload["environment"]["strict_output_dir"], str(out_dir))
+            self.assertTrue((out_dir / "certification.md").exists())
+
     def test_doctor_ollama_check_can_pass_with_mock(self) -> None:
         class FakeResponse:
             def __enter__(self):

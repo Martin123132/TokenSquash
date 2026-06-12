@@ -9,6 +9,22 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from .demo import DEFAULT_DEMO_CORPUS, run_demo
+from .turns import certify_turn_corpus, write_turn_certification_outputs
+
+
+STRICT_CERTIFICATION_FILES = (
+    "certification.json",
+    "certification.md",
+    "report.json",
+    "report.md",
+    "gate.json",
+    "gate.md",
+    "suggestions.json",
+    "suggestions.md",
+    "evaluation/evaluation.json",
+    "evaluation/measure.json",
+    "evaluation/diagnose.json",
+)
 
 
 def run_doctor(
@@ -16,12 +32,15 @@ def run_doctor(
     check_ollama: bool = False,
     ollama_endpoint: str = "http://localhost:11434",
     ollama_timeout: float = 2.0,
+    strict: bool = False,
+    strict_output_dir: Path | str | None = None,
     cwd: Path | str | None = None,
 ) -> dict[str, Any]:
     """Run local health checks for a TokenSquash install/workspace."""
 
     started = time.time()
     root = Path(cwd) if cwd is not None else Path.cwd()
+    strict_dir = Path(strict_output_dir) if strict_output_dir is not None else root / "private-turns" / "doctor-strict"
     checks = [
         _check_python_version(),
         _check_demo_corpus(),
@@ -30,6 +49,14 @@ def run_doctor(
         _check_tiktoken_available(),
         _check_ollama(ollama_endpoint, timeout=ollama_timeout) if check_ollama else _skip_ollama_check(ollama_endpoint),
     ]
+    if strict:
+        checks.extend(
+            [
+                _check_sample_corpus_copy(root),
+                _check_console_script_metadata(root),
+                _check_turn_certification_workflow(strict_dir),
+            ]
+        )
     required_checks = [check for check in checks if check.get("required")]
     failed_required = [check for check in required_checks if check.get("status") == "fail"]
     warnings = [check for check in checks if check.get("status") == "warn"]
@@ -43,12 +70,14 @@ def run_doctor(
             "failed_required_count": len(failed_required),
             "warning_count": len(warnings),
             "skip_count": sum(1 for check in checks if check.get("status") == "skip"),
+            "strict": strict,
             "elapsed_seconds": round(time.time() - started, 4),
         },
         "environment": {
             "python": sys.version.split()[0],
             "executable": sys.executable,
             "cwd": str(root),
+            "strict_output_dir": str(strict_dir) if strict else None,
         },
         "checks": checks,
     }
@@ -68,6 +97,7 @@ def format_doctor_markdown(report: dict[str, Any]) -> str:
         f"- Failed required checks: `{summary.get('failed_required_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
         f"- Skipped: `{summary.get('skip_count', 0)}`",
+        f"- Strict: `{summary.get('strict', False)}`",
         "",
         "## Checks",
         "",
@@ -215,6 +245,107 @@ def _check_ollama(endpoint: str, *, timeout: float) -> dict[str, Any]:
         required=False,
         message=f"Ollama responded at {url} with {len(models)} model(s).",
         data={"endpoint": endpoint, "url": url, "model_count": len(models)},
+    )
+
+
+def _check_sample_corpus_copy(cwd: Path) -> dict[str, Any]:
+    example = cwd / "examples" / "sample-turns.jsonl"
+    if not example.exists():
+        return _doctor_check(
+            "sample_corpus_copy",
+            "skip",
+            required=False,
+            message="Repository example sample corpus not present; packaged corpus check already covered install data.",
+            data={"example": str(example), "packaged": str(DEFAULT_DEMO_CORPUS)},
+        )
+    packaged_text = DEFAULT_DEMO_CORPUS.read_text(encoding="utf-8")
+    example_text = example.read_text(encoding="utf-8")
+    matches = packaged_text == example_text
+    return _doctor_check(
+        "sample_corpus_copy",
+        "pass" if matches else "fail",
+        required=True,
+        message=(
+            f"Packaged sample corpus matches {example}."
+            if matches
+            else f"Packaged sample corpus differs from {example}."
+        ),
+        data={"example": str(example), "packaged": str(DEFAULT_DEMO_CORPUS)},
+    )
+
+
+def _check_console_script_metadata(cwd: Path) -> dict[str, Any]:
+    pyproject = cwd / "pyproject.toml"
+    if not pyproject.exists():
+        return _doctor_check(
+            "console_script_metadata",
+            "skip",
+            required=False,
+            message="pyproject.toml not present; console script metadata check skipped outside a source checkout.",
+        )
+    text = pyproject.read_text(encoding="utf-8")
+    has_script = 'tokensquash = "tokensquash.cli:main"' in text
+    has_package_data = 'tokensquash = ["data/*.jsonl"]' in text
+    passed = has_script and has_package_data
+    missing = []
+    if not has_script:
+        missing.append("project.scripts tokensquash entry")
+    if not has_package_data:
+        missing.append("package-data data/*.jsonl entry")
+    return _doctor_check(
+        "console_script_metadata",
+        "pass" if passed else "fail",
+        required=True,
+        message=(
+            f"pyproject.toml exposes the CLI script and packaged demo data."
+            if passed
+            else f"pyproject.toml is missing: {', '.join(missing)}."
+        ),
+        data={"pyproject": str(pyproject), "missing": missing},
+    )
+
+
+def _check_turn_certification_workflow(output_dir: Path) -> dict[str, Any]:
+    try:
+        report = certify_turn_corpus(DEFAULT_DEMO_CORPUS, counter="chars")
+        write_turn_certification_outputs(output_dir, report)
+        expected_paths = [output_dir / name for name in STRICT_CERTIFICATION_FILES]
+        missing = [str(path) for path in expected_paths if not path.exists() or path.stat().st_size == 0]
+        gate_path = output_dir / "gate.json"
+        gate = json.loads(gate_path.read_text(encoding="utf-8")) if gate_path.exists() else {}
+    except Exception as exc:  # pragma: no cover - exercised through failure path in CLI use.
+        return _doctor_check(
+            "turn_certification_workflow",
+            "fail",
+            required=True,
+            message=f"Strict turn certification failed: {exc}",
+            data={"output_dir": str(output_dir)},
+        )
+    summary = report.get("summary", {})
+    passed = (
+        report.get("status") == "pass"
+        and gate.get("status") == "pass"
+        and not missing
+        and float(summary.get("saved_pct", 0.0)) >= 0.5
+        and int(summary.get("privacy_finding_count", 0)) == 0
+    )
+    return _doctor_check(
+        "turn_certification_workflow",
+        "pass" if passed else "fail",
+        required=True,
+        message=(
+            f"Turn certification passed with {summary.get('saved_pct', 0.0)}% saved; artifacts written to {output_dir}."
+            if passed
+            else f"Turn certification did not meet strict readiness checks; inspect {output_dir}."
+        ),
+        data={
+            "output_dir": str(output_dir),
+            "status": report.get("status"),
+            "gate_status": gate.get("status"),
+            "saved_pct": summary.get("saved_pct", 0.0),
+            "privacy_finding_count": summary.get("privacy_finding_count", 0),
+            "missing_artifacts": missing,
+        },
     )
 
 

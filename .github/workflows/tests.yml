@@ -19,6 +19,8 @@ jobs:
         run: python -m unittest discover -s tests
       - name: Run install doctor
         run: python -m tokensquash doctor
+      - name: Run strict install doctor
+        run: python -m tokensquash doctor --strict --strict-out-dir /tmp/tokensquash-doctor-strict
       - name: Run public demo
         run: python -m tokensquash demo --counter chars --out-dir /tmp/tokensquash-demo
       - name: Gate public demo turn evaluation

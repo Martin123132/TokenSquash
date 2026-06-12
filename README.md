@@ -45,6 +45,13 @@ Check the local install and workspace health:
 python -m tokensquash doctor
 ```
 
+Run the stricter product-readiness check when you want the deterministic demo,
+package metadata, sample corpus, and certification workflow verified together:
+
+```powershell
+python -m tokensquash doctor --strict
+```
+
 Add `--check-ollama` when you want the doctor to query a local Ollama server
 for the experimental sidecar path.
 
@@ -462,6 +469,22 @@ python -m pip install -e .
 python -m unittest discover -s tests
 ```
 
+## Production Readiness Checklist
+
+Before treating a TokenSquash change as product-ready, run the deterministic
+checks that do not depend on API keys or a local model:
+
+```powershell
+python -m unittest discover -s tests
+python -m tokensquash doctor --strict
+python -m tokensquash demo --counter chars --out-dir private-turns\demo-output
+python -m tokensquash turns certify examples\sample-turns.jsonl --counter chars --out-dir private-turns\certification
+```
+
+`doctor --strict` writes its certification evidence to
+`private-turns\doctor-strict` by default. Use `--strict-out-dir` when CI or a
+release process needs the evidence somewhere else.
+
 ## Current Scope
 
 - Compact coding-agent intent format: `ts1`.
@@ -477,7 +500,7 @@ python -m unittest discover -s tests
 - Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - Public paired-turn sample corpus and first-run deterministic demo command.
-- Local doctor command for install, demo, private-storage, tokenizer, and optional Ollama checks.
+- Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
 - One-command turn evaluation report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.
