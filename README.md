@@ -595,8 +595,9 @@ verification command audits the saved files and schemas after the pack is
 written.
 
 The stricter release-candidate gate also verifies exact-tokenizer benchmark
-baselines, builds the package wheel, and writes a SHA-256 artifact manifest so
-the verifier can detect changed evidence files:
+baselines, builds the package wheel, installs that wheel in a temporary
+environment, runs the installed `about` and `demo` commands, and writes a
+SHA-256 artifact manifest so the verifier can detect changed evidence files:
 
 ```powershell
 python -m pip install -e ".[tokenizer]"
@@ -650,7 +651,7 @@ release process needs the evidence somewhere else.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
 - One-command product readiness evidence pack and verifier for tests, strict doctor, demo, certification, release-check, and release verification.
-- One-command release-candidate gate and verifier for readiness verification, benchmark baseline freshness, exact-tokenizer baselines, wheel packaging evidence, and artifact hash integrity.
+- One-command release-candidate gate and verifier for readiness verification, benchmark baseline freshness, exact-tokenizer baselines, wheel packaging/install smoke evidence, and artifact hash integrity.
 - One-command turn evaluation, certification, comparison, history, release-check, and release-verification report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.

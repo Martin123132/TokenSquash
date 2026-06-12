@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -117,6 +118,17 @@ def run_release_candidate(
         required=True,
         action=lambda: _run_wheel_build(root, output_dir, wheel_dir),
     )
+    _run_candidate_step(
+        steps,
+        "wheel_smoke",
+        command=(
+            f"{sys.executable} -m venv <temp> && <venv-python> -m pip install --no-deps <wheel> "
+            "&& <venv-python> -m tokensquash about --json "
+            "&& <venv-python> -m tokensquash demo --counter chars --json"
+        ),
+        required=True,
+        action=lambda: _run_wheel_smoke(root, output_dir, wheel_dir),
+    )
 
     failed_required = [step for step in steps if step.get("required") and step.get("status") == "fail"]
     warnings = [step for step in steps if step.get("status") == "warn"]
@@ -169,6 +181,7 @@ def run_release_candidate(
             "exact_baseline_verify_markdown": str(output_dir / "exact-baseline-verify.md"),
             "wheel_dir": str(wheel_dir),
             "wheel_log": str(output_dir / "wheel-build.txt"),
+            "wheel_smoke_log": str(output_dir / "wheel-smoke.txt"),
         },
     }
     write_release_candidate_outputs(output_dir, report)
@@ -237,6 +250,7 @@ def format_release_candidate_markdown(report: dict[str, Any]) -> str:
         "exact_baseline_verify",
         "wheel_dir",
         "wheel_log",
+        "wheel_smoke_log",
     ):
         if outputs.get(name):
             lines.append(f"- `{name}`: `{outputs.get(name)}`")
@@ -495,6 +509,13 @@ def verify_release_candidate_pack(
     wheel_path = _candidate_wheel_path(wheel_dir, candidate)
     if _append_candidate_directory_check(checks, "wheel_dir", wheel_dir, required=True):
         _append_candidate_wheel_check(checks, wheel_path, required=True)
+    _append_candidate_file_check(
+        checks,
+        "wheel_smoke_log",
+        _resolve_candidate_artifact(candidate_dir, outputs.get("wheel_smoke_log"), Path("wheel-smoke.txt")),
+        required=True,
+    )
+    _append_candidate_wheel_smoke_check(checks, candidate, required=True)
 
     _append_candidate_steps_check(checks, candidate_path, candidate)
 
@@ -529,6 +550,7 @@ def verify_release_candidate_pack(
             "baseline_verify_status": baseline_verify.get("status") if baseline_verify else None,
             "exact_baseline_verify_status": exact_baseline_verify.get("status") if exact_baseline_verify else None,
             "wheel": str(wheel_path) if wheel_path else None,
+            "wheel_smoke_status": _candidate_step_status(candidate, "wheel_smoke"),
         },
         "checks": checks,
         "artifacts": {
@@ -565,6 +587,7 @@ def format_release_candidate_verify_markdown(report: dict[str, Any]) -> str:
         f"- Baseline verify: `{summary.get('baseline_verify_status')}`",
         f"- Exact baseline verify: `{summary.get('exact_baseline_verify_status')}`",
         f"- Wheel: `{summary.get('wheel')}`",
+        f"- Wheel smoke: `{summary.get('wheel_smoke_status')}`",
         "",
         "## Checks",
         "",
@@ -757,6 +780,138 @@ def _run_wheel_build(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str
     }
 
 
+def _run_wheel_smoke(root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, Any]]:
+    log_path = output_dir / "wheel-smoke.txt"
+    wheel_path = _candidate_wheel_path(wheel_dir, None)
+    if wheel_path is None:
+        log_path.write_text("No TokenSquash wheel found for smoke test.\n", encoding="utf-8")
+        return "fail", "Wheel smoke test could not find a built wheel.", {"log": str(log_path)}
+
+    logs: list[str] = [f"wheel={wheel_path}"]
+    about_payload: dict[str, Any] | None = None
+    demo_payload: dict[str, Any] | None = None
+    create_env = install = about = demo = None
+    with tempfile.TemporaryDirectory(prefix="tokensquash-wheel-smoke-") as tmp:
+        temp_dir = Path(tmp)
+        env_dir = temp_dir / "venv"
+        demo_dir = temp_dir / "demo"
+        create_env = _run_logged_command(
+            [sys.executable, "-m", "venv", str(env_dir)],
+            cwd=root,
+            logs=logs,
+            label="create_venv",
+        )
+        env_python = _venv_python(env_dir)
+        if create_env.returncode == 0:
+            install = _run_logged_command(
+                [str(env_python), "-m", "pip", "install", "--no-deps", str(wheel_path)],
+                cwd=root,
+                logs=logs,
+                label="install_wheel",
+            )
+        if install is not None and install.returncode == 0:
+            about = _run_logged_command(
+                [str(env_python), "-m", "tokensquash", "about", "--json"],
+                cwd=root,
+                logs=logs,
+                label="about_json",
+            )
+            about_payload = _json_stdout_payload(about)
+        if about_payload is not None and about_payload.get("status") == "pass":
+            demo = _run_logged_command(
+                [
+                    str(env_python),
+                    "-m",
+                    "tokensquash",
+                    "demo",
+                    "--counter",
+                    "chars",
+                    "--out-dir",
+                    str(demo_dir),
+                    "--json",
+                ],
+                cwd=root,
+                logs=logs,
+                label="demo_json",
+            )
+            demo_payload = _json_stdout_payload(demo)
+
+    log_path.write_text("\n".join(logs).rstrip() + "\n", encoding="utf-8")
+    demo_summary = demo_payload.get("summary", {}) if demo_payload else {}
+    passed = (
+        create_env is not None
+        and create_env.returncode == 0
+        and install is not None
+        and install.returncode == 0
+        and about is not None
+        and about.returncode == 0
+        and about_payload is not None
+        and about_payload.get("schema_version") == "tokensquash.product.manifest.v1"
+        and about_payload.get("status") == "pass"
+        and demo is not None
+        and demo.returncode == 0
+        and demo_payload is not None
+        and demo_payload.get("schema_version") == "tokensquash.demo.v1"
+        and demo_payload.get("status") == "pass"
+        and int(demo_summary.get("turn_count", 0)) > 0
+    )
+    return (
+        "pass" if passed else "fail",
+        "Wheel installed in an isolated environment and ran about/demo." if passed else "Wheel smoke test failed.",
+        {
+            "wheel": str(wheel_path),
+            "log": str(log_path),
+            "create_env_returncode": create_env.returncode if create_env is not None else None,
+            "install_returncode": install.returncode if install is not None else None,
+            "about_returncode": about.returncode if about is not None else None,
+            "demo_returncode": demo.returncode if demo is not None else None,
+            "about_status": about_payload.get("status") if about_payload else None,
+            "demo_status": demo_payload.get("status") if demo_payload else None,
+            "demo_turn_count": demo_summary.get("turn_count", 0),
+            "demo_saved_pct": demo_summary.get("saved_pct", 0.0),
+        },
+    )
+
+
+def _run_logged_command(
+    command: list[str],
+    *,
+    cwd: Path,
+    logs: list[str],
+    label: str,
+) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)
+    logs.extend(
+        [
+            "",
+            f"## {label}",
+            f"$ {' '.join(command)}",
+            f"exit_code={completed.returncode}",
+            "### stdout",
+            completed.stdout.rstrip(),
+            "### stderr",
+            completed.stderr.rstrip(),
+        ]
+    )
+    return completed
+
+
+def _json_stdout_payload(completed: subprocess.CompletedProcess[str]) -> dict[str, Any] | None:
+    if completed.returncode != 0:
+        return None
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _venv_python(env_dir: Path) -> Path:
+    if sys.platform == "win32":
+        return env_dir / "Scripts" / "python.exe"
+    return env_dir / "bin" / "python"
+
+
 def _wheel_contains(path: Path | None, member: str) -> bool:
     if path is None:
         return False
@@ -797,6 +952,7 @@ def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: 
         ("exact_baseline_verify", Path("exact-baseline-verify.json")),
         ("exact_baseline_verify_markdown", Path("exact-baseline-verify.md")),
         ("wheel_log", Path("wheel-build.txt")),
+        ("wheel_smoke_log", Path("wheel-smoke.txt")),
     ):
         add_path(_resolve_candidate_artifact(candidate_dir, outputs.get(key), fallback))
 
@@ -1207,6 +1363,62 @@ def _append_candidate_wheel_check(checks: list[dict[str, Any]], path: Path | Non
     )
 
 
+def _append_candidate_wheel_smoke_check(
+    checks: list[dict[str, Any]],
+    candidate: dict[str, Any] | None,
+    *,
+    required: bool,
+) -> None:
+    if candidate is None:
+        checks.append(
+            _candidate_check(
+                "wheel_smoke",
+                "fail" if required else "skip",
+                required=required,
+                message="Cannot verify wheel smoke step because release-candidate.json is unreadable.",
+            )
+        )
+        return
+    step = _candidate_step(candidate, "wheel_smoke")
+    if step is None:
+        checks.append(
+            _candidate_check(
+                "wheel_smoke",
+                "fail" if required else "skip",
+                required=required,
+                message="Release-candidate report does not include the wheel_smoke step.",
+            )
+        )
+        return
+    data = step.get("data") if isinstance(step.get("data"), dict) else {}
+    passed = (
+        step.get("status") == "pass"
+        and data.get("install_returncode") == 0
+        and data.get("about_status") == "pass"
+        and data.get("demo_status") == "pass"
+        and _candidate_int(data.get("demo_turn_count"), default=0) > 0
+    )
+    checks.append(
+        _candidate_check(
+            "wheel_smoke",
+            "pass" if passed else "fail",
+            required=required,
+            message=(
+                "Wheel smoke step installed the built wheel and ran about/demo."
+                if passed
+                else "Wheel smoke step did not prove the built wheel installs and runs."
+            ),
+            data={
+                "step_status": step.get("status"),
+                "install_returncode": data.get("install_returncode"),
+                "about_status": data.get("about_status"),
+                "demo_status": data.get("demo_status"),
+                "demo_turn_count": data.get("demo_turn_count", 0),
+            },
+        )
+    )
+
+
 def _append_candidate_steps_check(
     checks: list[dict[str, Any]],
     candidate_path: Path,
@@ -1243,6 +1455,7 @@ def _append_candidate_steps_check(
         "benchmark_baselines",
         "exact_tokenizer_baselines",
         "wheel_build",
+        "wheel_smoke",
     }
     names = {step.get("name") for step in steps if isinstance(step, dict)}
     missing_steps = sorted(required_steps - names)
@@ -1293,6 +1506,31 @@ def _candidate_wheel_path(wheel_dir: Path, candidate: dict[str, Any] | None) -> 
                 return Path(str(wheel))
     wheels = sorted(wheel_dir.glob("tokensquash-*.whl")) if wheel_dir.exists() and wheel_dir.is_dir() else []
     return wheels[-1] if wheels else None
+
+
+def _candidate_step(candidate: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next(
+        (
+            step
+            for step in candidate.get("steps", [])
+            if isinstance(step, dict) and step.get("name") == name
+        ),
+        None,
+    )
+
+
+def _candidate_step_status(candidate: dict[str, Any] | None, name: str) -> Any:
+    if candidate is None:
+        return None
+    step = _candidate_step(candidate, name)
+    return step.get("status") if step else None
+
+
+def _candidate_int(value: Any, *, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _resolve_candidate_artifact(base_dir: Path, value: Any, fallback: Path) -> Path:
@@ -1387,6 +1625,11 @@ def _release_candidate_commands(
     if require_exact_tokenizer:
         commands.append("python -m tokensquash baselines verify --include-exact-tokenizer")
     commands.append(f"python -m pip wheel . --no-deps -w {wheel_dir}")
+    commands.append(
+        "python -m venv <temp> && <venv-python> -m pip install --no-deps <wheel> "
+        "&& <venv-python> -m tokensquash about --json "
+        "&& <venv-python> -m tokensquash demo --counter chars --json"
+    )
     return commands
 
 

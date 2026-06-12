@@ -767,7 +767,10 @@ class TokenSquashCodecTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
 
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
                 report = run_release_candidate(
                     out_dir=out_dir,
                     skip_tests=True,
@@ -783,6 +786,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(steps["benchmark_baselines"]["status"], "pass")
             self.assertEqual(steps["exact_tokenizer_baselines"]["status"], "skip")
             self.assertEqual(steps["wheel_build"]["status"], "pass")
+            self.assertEqual(steps["wheel_smoke"]["status"], "pass")
             self.assertTrue((out_dir / "release-candidate.json").exists())
             self.assertTrue((out_dir / "release-candidate.md").exists())
             self.assertTrue((out_dir / "artifact-manifest.json").exists())
@@ -790,12 +794,14 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "release-info.json").exists())
             self.assertTrue((out_dir / "readiness" / "readiness.json").exists())
             self.assertTrue((out_dir / "readiness-verify.json").exists())
+            self.assertTrue((out_dir / "wheel-smoke.txt").exists())
             manifest = json.loads((out_dir / "artifact-manifest.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["schema_version"], "tokensquash.release_candidate.artifacts.v1")
             self.assertEqual(manifest["status"], "pass")
             artifact_paths = {artifact["relative_path"] for artifact in manifest["artifacts"]}
             self.assertIn("release-candidate.json", artifact_paths)
             self.assertIn("release-info.json", artifact_paths)
+            self.assertIn("wheel-smoke.txt", artifact_paths)
             self.assertIn("wheel/tokensquash-0.0.0-py3-none-any.whl", artifact_paths)
             self.assertNotIn("artifact-manifest.json", artifact_paths)
             self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
@@ -807,7 +813,10 @@ class TokenSquashCodecTests(unittest.TestCase):
             out_dir = Path(tmp) / "release-candidate"
             stdout = StringIO()
 
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
                 with redirect_stdout(stdout):
                     code = cli_main(
                         [
@@ -826,11 +835,15 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["status"], "pass")
             self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
             self.assertTrue((out_dir / "wheel-build.txt").exists())
+            self.assertTrue((out_dir / "wheel-smoke.txt").exists())
 
     def test_verify_release_candidate_pack_passes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
 
             report = verify_release_candidate_pack(out_dir, require_release_candidate_pass=True)
@@ -840,6 +853,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["release_candidate_status"], "pass")
             self.assertEqual(report["summary"]["artifact_manifest_status"], "pass")
             self.assertGreater(report["summary"]["artifact_manifest_artifact_count"], 0)
+            self.assertEqual(report["summary"]["wheel_smoke_status"], "pass")
             self.assertIn(report["summary"]["release_info_status"], {"pass", "warn"})
             self.assertEqual(report["summary"]["nested_readiness_verify_status"], "pass")
             self.assertEqual(report["summary"]["baseline_verify_status"], "partial")
@@ -847,7 +861,10 @@ class TokenSquashCodecTests(unittest.TestCase):
     def test_verify_release_candidate_pack_fails_on_missing_wheel(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
             wheel = next((out_dir / "wheel").glob("tokensquash-*.whl"))
             wheel.unlink()
@@ -862,7 +879,10 @@ class TokenSquashCodecTests(unittest.TestCase):
     def test_verify_release_candidate_pack_fails_on_tampered_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
             (out_dir / "release-info.md").write_text("tampered\n", encoding="utf-8")
 
@@ -876,7 +896,10 @@ class TokenSquashCodecTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "release-candidate"
             stdout = StringIO()
-            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ):
                 run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
 
             with redirect_stdout(stdout):
@@ -908,6 +931,23 @@ class TokenSquashCodecTests(unittest.TestCase):
             "returncode": 0,
             "wheel": str(wheel_path),
             "packaged_demo_data": True,
+        }
+
+    def _fake_wheel_smoke(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:
+        wheel_path = next(wheel_dir.glob("tokensquash-*.whl"))
+        log_path = output_dir / "wheel-smoke.txt"
+        log_path.write_text("fake wheel smoke\n", encoding="utf-8")
+        return "pass", "Wheel smoke faked for unit test.", {
+            "wheel": str(wheel_path),
+            "log": str(log_path),
+            "create_env_returncode": 0,
+            "install_returncode": 0,
+            "about_returncode": 0,
+            "demo_returncode": 0,
+            "about_status": "pass",
+            "demo_status": "pass",
+            "demo_turn_count": 1,
+            "demo_saved_pct": 1.0,
         }
 
     def test_doctor_ollama_check_can_pass_with_mock(self) -> None:
