@@ -33,6 +33,7 @@ from tokensquash.release import (
     validate_quality_budget,
     verify_turn_release_pack,
 )
+from tokensquash.readiness import run_product_readiness
 from tokensquash.sidecar import (
     certify_sidecar_report,
     compact_semantic_payload,
@@ -424,6 +425,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("budget init", commands)
         self.assertIn("budget validate", commands)
         self.assertIn("init", commands)
+        self.assertIn("readiness", commands)
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
@@ -431,6 +433,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns verify-release", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
+        self.assertIn("tokensquash.readiness.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
         self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
@@ -444,6 +447,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(
             any("turns verify-release" in command and "--require-release-pass" in command for command in readiness_commands)
         )
+        self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
 
     def test_about_cli_json_and_markdown(self) -> None:
@@ -586,6 +590,42 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue(payload["summary"]["strict"])
             self.assertEqual(payload["environment"]["strict_output_dir"], str(out_dir))
             self.assertTrue((out_dir / "certification.md").exists())
+
+    def test_product_readiness_writes_evidence_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "readiness"
+
+            report = run_product_readiness(out_dir=out_dir, skip_tests=True)
+
+            self.assertEqual(report["schema_version"], "tokensquash.readiness.v1")
+            self.assertEqual(report["status"], "pass")
+            steps = {step["name"]: step for step in report["steps"]}
+            self.assertEqual(steps["unit_tests"]["status"], "skip")
+            self.assertEqual(steps["strict_doctor"]["status"], "pass")
+            self.assertEqual(steps["release_check"]["status"], "pass")
+            self.assertEqual(steps["verify_release"]["status"], "pass")
+            self.assertTrue((out_dir / "readiness.json").exists())
+            self.assertTrue((out_dir / "readiness.md").exists())
+            self.assertTrue((out_dir / "release-check" / "release-check.json").exists())
+            self.assertEqual(
+                json.loads((out_dir / "release-verify.json").read_text(encoding="utf-8"))["status"],
+                "pass",
+            )
+
+    def test_product_readiness_cli_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "readiness"
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["readiness", "--skip-tests", "--out-dir", str(out_dir), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.readiness.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
+            self.assertTrue((out_dir / "readiness.md").exists())
 
     def test_doctor_ollama_check_can_pass_with_mock(self) -> None:
         class FakeResponse:

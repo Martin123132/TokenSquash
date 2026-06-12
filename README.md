@@ -64,6 +64,12 @@ package metadata, sample corpus, and certification workflow verified together:
 python -m tokensquash doctor --strict
 ```
 
+Run the full local readiness checklist and write a reusable evidence pack:
+
+```powershell
+python -m tokensquash readiness --out-dir private-turns\readiness
+```
+
 Add `--check-ollama` when you want the doctor to query a local Ollama server
 for the experimental sidecar path.
 
@@ -561,6 +567,14 @@ Before treating a TokenSquash change as product-ready, run the deterministic
 checks that do not depend on API keys or a local model:
 
 ```powershell
+python -m tokensquash readiness --out-dir private-turns\readiness
+```
+
+That command writes `readiness.json`, `readiness.md`, and the nested doctor,
+demo, certification, release-check, and release-verification artifacts. Use the
+expanded form below when CI or debugging needs each command separated:
+
+```powershell
 python -m unittest discover -s tests
 python -m tokensquash about --json
 python -m tokensquash init --dry-run
@@ -595,6 +609,7 @@ release process needs the evidence somewhere else.
 - Machine-readable product manifest for version, commands, schemas, protocols, quality budgets, and readiness checks.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
+- One-command product readiness evidence pack for tests, strict doctor, demo, certification, release-check, and release verification.
 - One-command turn evaluation, certification, comparison, history, release-check, and release-verification report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.

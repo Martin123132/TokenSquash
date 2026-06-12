@@ -40,6 +40,7 @@ from .release import (
     validate_quality_budget,
     verify_turn_release_pack,
 )
+from .readiness import format_product_readiness_markdown, run_product_readiness
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -179,6 +180,15 @@ def main(argv: list[str] | None = None) -> int:
     doctor.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
     doctor.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
     doctor.add_argument("--json", action="store_true", help="Print doctor JSON.")
+
+    readiness = sub.add_parser("readiness", help="Run the product-readiness checklist and write evidence.")
+    readiness.add_argument("--out-dir", type=Path, default=Path("private-turns/readiness"))
+    readiness.add_argument("--counter", default="chars", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    readiness.add_argument("--skip-tests", action="store_true", help="Skip the unittest step when tests already ran.")
+    readiness.add_argument("--check-ollama", action="store_true", help="Include the optional Ollama doctor check.")
+    readiness.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    readiness.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
+    readiness.add_argument("--json", action="store_true", help="Print readiness JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -919,6 +929,19 @@ def main(argv: list[str] | None = None) -> int:
                 strict_output_dir=args.strict_out_dir,
             )
             output = json.dumps(report, indent=2) + "\n" if args.json else format_doctor_markdown(report)
+            print(output, end="")
+            return 0 if report["status"] in {"pass", "warn"} else 1
+
+        if args.command == "readiness":
+            report = run_product_readiness(
+                out_dir=args.out_dir,
+                counter=args.counter,
+                skip_tests=args.skip_tests,
+                check_ollama=args.check_ollama,
+                ollama_endpoint=args.ollama_endpoint,
+                ollama_timeout=args.ollama_timeout,
+            )
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_product_readiness_markdown(report)
             print(output, end="")
             return 0 if report["status"] in {"pass", "warn"} else 1
 
