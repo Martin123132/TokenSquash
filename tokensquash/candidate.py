@@ -14,6 +14,7 @@ from .readiness import (
     run_product_readiness,
     verify_product_readiness_pack,
 )
+from .release_info import build_release_info, format_release_info_markdown
 
 
 RELEASE_CANDIDATE_SCHEMA_VERSION = "tokensquash.release_candidate.v1"
@@ -45,6 +46,13 @@ def run_release_candidate(
     wheel_dir = output_dir / "wheel"
     steps: list[dict[str, Any]] = []
 
+    _run_candidate_step(
+        steps,
+        "release_info",
+        command=_command("release-info", "--root", str(root)),
+        required=True,
+        action=lambda: _run_release_info(root, output_dir),
+    )
     _run_candidate_step(
         steps,
         "readiness",
@@ -128,6 +136,7 @@ def run_release_candidate(
             "elapsed_seconds": round(time.time() - started, 4),
         },
         "commands": _release_candidate_commands(
+            root,
             output_dir,
             readiness_dir,
             wheel_dir,
@@ -143,6 +152,8 @@ def run_release_candidate(
             "output_dir": str(output_dir),
             "report": str(output_dir / "release-candidate.json"),
             "markdown": str(output_dir / "release-candidate.md"),
+            "release_info": str(output_dir / "release-info.json"),
+            "release_info_markdown": str(output_dir / "release-info.md"),
             "readiness_dir": str(readiness_dir),
             "readiness": str(readiness_dir / "readiness.json"),
             "readiness_verify": str(output_dir / "readiness-verify.json"),
@@ -204,6 +215,7 @@ def format_release_candidate_markdown(report: dict[str, Any]) -> str:
     for name in (
         "report",
         "markdown",
+        "release_info",
         "readiness",
         "readiness_verify",
         "baseline_verify",
@@ -246,6 +258,31 @@ def verify_release_candidate_pack(
         checks,
         "release_candidate_markdown",
         _resolve_candidate_artifact(candidate_dir, outputs.get("markdown"), Path("release-candidate.md")),
+        required=True,
+    )
+    release_info, release_info_check = _verify_candidate_json_artifact(
+        "release_info",
+        _resolve_candidate_artifact(candidate_dir, outputs.get("release_info"), Path("release-info.json")),
+        "tokensquash.release_info.v1",
+        required=True,
+        allowed_statuses={"pass", "warn", "fail"},
+    )
+    checks.append(release_info_check)
+    _append_status_expectation_check(
+        checks,
+        "release_info_status",
+        release_info,
+        required=True,
+        allowed_statuses={"pass", "warn"},
+    )
+    _append_candidate_file_check(
+        checks,
+        "release_info_markdown",
+        _resolve_candidate_artifact(
+            candidate_dir,
+            outputs.get("release_info_markdown"),
+            Path("release-info.md"),
+        ),
         required=True,
     )
 
@@ -380,6 +417,9 @@ def verify_release_candidate_pack(
             "release_candidate_pass_required": require_release_candidate_pass,
             "release_candidate_status": candidate.get("status") if candidate else None,
             "release_candidate_step_count": len(candidate.get("steps", [])) if candidate else 0,
+            "release_info_status": release_info.get("status") if release_info else None,
+            "release_info_dirty": ((release_info.get("summary") or {}).get("dirty") if release_info else None),
+            "release_info_commit": ((release_info.get("git") or {}).get("commit") if release_info else None),
             "readiness_verify_status": stored_readiness_verify.get("status") if stored_readiness_verify else None,
             "nested_readiness_verify_status": readiness_verify_report.get("status") if readiness_verify_report else None,
             "baseline_verify_status": baseline_verify.get("status") if baseline_verify else None,
@@ -389,6 +429,7 @@ def verify_release_candidate_pack(
         "checks": checks,
         "artifacts": {
             "release_candidate": _candidate_artifact_reference(candidate),
+            "release_info": _candidate_artifact_reference(release_info),
             "readiness_verification": _candidate_artifact_reference(readiness_verify_report),
             "stored_readiness_verify": _candidate_artifact_reference(stored_readiness_verify),
             "baseline_verify": _candidate_artifact_reference(baseline_verify),
@@ -410,6 +451,9 @@ def format_release_candidate_verify_markdown(report: dict[str, Any]) -> str:
         f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
         f"- Release-candidate status: `{summary.get('release_candidate_status')}`",
+        f"- Release info: `{summary.get('release_info_status')}`",
+        f"- Git commit: `{summary.get('release_info_commit')}`",
+        f"- Git dirty: `{summary.get('release_info_dirty')}`",
         f"- Nested readiness verify: `{summary.get('nested_readiness_verify_status')}`",
         f"- Baseline verify: `{summary.get('baseline_verify_status')}`",
         f"- Exact baseline verify: `{summary.get('exact_baseline_verify_status')}`",
@@ -457,6 +501,22 @@ def _run_candidate_step(
             "data": data,
         }
     )
+
+
+def _run_release_info(root: Path, output_dir: Path) -> tuple[str, str, dict[str, Any]]:
+    report = build_release_info(root=root)
+    json_path = output_dir / "release-info.json"
+    markdown_path = output_dir / "release-info.md"
+    _write_json(json_path, report)
+    markdown_path.write_text(format_release_info_markdown(report), encoding="utf-8")
+    status = "pass" if report.get("status") in {"pass", "warn"} else "fail"
+    return status, f"Release info returned {report.get('status')}.", {
+        "report": str(json_path),
+        "markdown": str(markdown_path),
+        "git_commit": (report.get("git") or {}).get("commit"),
+        "git_dirty": (report.get("summary") or {}).get("dirty"),
+        "version": (report.get("project") or {}).get("version"),
+    }
 
 
 def _run_readiness(
@@ -906,6 +966,7 @@ def _append_candidate_steps_check(
         )
         return
     required_steps = {
+        "release_info",
         "readiness",
         "verify_readiness",
         "benchmark_baselines",
@@ -1002,6 +1063,7 @@ def _candidate_check(
 
 
 def _release_candidate_commands(
+    root: Path,
     output_dir: Path,
     readiness_dir: Path,
     wheel_dir: Path,
@@ -1026,6 +1088,7 @@ def _release_candidate_commands(
         readiness += ollama_options
     commands = [
         release_candidate,
+        f"python -m tokensquash release-info --root {root}",
         readiness,
         f"python -m tokensquash verify-readiness {readiness_dir} --require-readiness-pass",
         "python -m tokensquash baselines verify",

@@ -53,6 +53,7 @@ from .readiness import (
     run_product_readiness,
     verify_product_readiness_pack,
 )
+from .release_info import build_release_info, format_release_info_markdown
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -181,6 +182,12 @@ def main(argv: list[str] | None = None) -> int:
     about = sub.add_parser("about", help="Show the TokenSquash product manifest.")
     about.add_argument("--out", type=Path, help="Write product manifest output to this file.")
     about.add_argument("--json", action="store_true", help="Print manifest JSON.")
+
+    release_info = sub.add_parser("release-info", help="Show package, Git, and runtime release metadata.")
+    release_info.add_argument("--root", type=Path, default=Path("."), help="Repository or workspace root to inspect.")
+    release_info.add_argument("--require-clean", action="store_true", help="Fail if Git metadata is unavailable or dirty.")
+    release_info.add_argument("--out", type=Path, help="Write release-info output to this file.")
+    release_info.add_argument("--json", action="store_true", help="Print release-info JSON.")
 
     demo = sub.add_parser("demo", help="Run the public deterministic TokenSquash demo workflow.")
     demo.add_argument(
@@ -998,6 +1005,15 @@ def main(argv: list[str] | None = None) -> int:
                 args.out.write_text(output, encoding="utf-8")
             print(output, end="")
             return 0
+
+        if args.command == "release-info":
+            report = build_release_info(root=args.root, require_clean=args.require_clean)
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_release_info_markdown(report)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
+            print(output, end="")
+            return 0 if report["status"] in {"pass", "warn"} else 1
 
         if args.command == "doctor":
             report = run_doctor(

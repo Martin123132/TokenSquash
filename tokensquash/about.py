@@ -24,6 +24,7 @@ COMMAND_GROUPS = {
         "doctor",
         "readiness",
         "verify-readiness",
+        "release-info",
         "release-candidate",
         "verify-release-candidate",
         "about",
@@ -89,6 +90,7 @@ SUPPORTED_SCHEMAS = [
     ("product", "tokensquash.doctor.v1", "Install and readiness doctor report."),
     ("product", "tokensquash.readiness.v1", "One-command product-readiness evidence report."),
     ("product", "tokensquash.readiness.verify.v1", "Product-readiness evidence verification report."),
+    ("product", "tokensquash.release_info.v1", "Release package, Git, and runtime metadata report."),
     ("product", "tokensquash.release_candidate.v1", "Pre-release product gate and packaging evidence report."),
     ("product", "tokensquash.release_candidate.verify.v1", "Release-candidate evidence verification report."),
     ("product", MANIFEST_SCHEMA_VERSION, "Product manifest report."),
@@ -136,6 +138,7 @@ SUPPORTED_SCHEMAS = [
 READINESS_COMMANDS = [
     "python -m tokensquash readiness --out-dir private-turns\\readiness",
     "python -m tokensquash verify-readiness private-turns\\readiness --require-readiness-pass",
+    "python -m tokensquash release-info --json",
     "python -m tokensquash release-candidate --out-dir private-turns\\release-candidate",
     "python -m tokensquash verify-release-candidate private-turns\\release-candidate --require-release-candidate-pass",
     "python -m tokensquash baselines verify",

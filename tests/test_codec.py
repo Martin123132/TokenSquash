@@ -38,6 +38,7 @@ from tokensquash.release import (
     validate_quality_budget,
     verify_turn_release_pack,
 )
+from tokensquash.release_info import build_release_info
 from tokensquash.readiness import run_product_readiness, verify_product_readiness_pack
 from tokensquash.sidecar import (
     certify_sidecar_report,
@@ -484,6 +485,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("baselines verify", commands)
         self.assertIn("readiness", commands)
         self.assertIn("verify-readiness", commands)
+        self.assertIn("release-info", commands)
         self.assertIn("release-candidate", commands)
         self.assertIn("verify-release-candidate", commands)
         self.assertIn("turns compare-certifications", commands)
@@ -496,6 +498,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.baselines.verify.v1", schemas)
         self.assertIn("tokensquash.readiness.v1", schemas)
         self.assertIn("tokensquash.readiness.verify.v1", schemas)
+        self.assertIn("tokensquash.release_info.v1", schemas)
         self.assertIn("tokensquash.release_candidate.v1", schemas)
         self.assertIn("tokensquash.release_candidate.verify.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
@@ -512,6 +515,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             any("turns verify-release" in command and "--require-release-pass" in command for command in readiness_commands)
         )
         self.assertTrue(any("baselines verify" in command for command in readiness_commands))
+        self.assertTrue(any("release-info" in command for command in readiness_commands))
         self.assertTrue(any("release-candidate" in command for command in readiness_commands))
         self.assertTrue(any("verify-release-candidate" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
@@ -540,6 +544,26 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["schema_version"], "tokensquash.product.manifest.v1")
             self.assertGreaterEqual(payload["counts"]["command_count"], 40)
+
+    def test_release_info_reports_version_git_and_python(self) -> None:
+        report = build_release_info()
+
+        self.assertEqual(report["schema_version"], "tokensquash.release_info.v1")
+        self.assertIn(report["status"], {"pass", "warn"})
+        self.assertRegex(report["project"]["version"], r"^\d+\.\d+\.\d+")
+        self.assertIn("version", report["python"])
+        self.assertIn("dirty", report["summary"])
+
+    def test_release_info_cli_json(self) -> None:
+        stdout = StringIO()
+
+        with redirect_stdout(stdout):
+            code = cli_main(["release-info", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["schema_version"], "tokensquash.release_info.v1")
+        self.assertIn(payload["status"], {"pass", "warn"})
 
     def test_workspace_init_dry_run_does_not_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -752,6 +776,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["schema_version"], "tokensquash.release_candidate.v1")
             self.assertEqual(report["status"], "pass")
             steps = {step["name"]: step for step in report["steps"]}
+            self.assertEqual(steps["release_info"]["status"], "pass")
             self.assertEqual(steps["readiness"]["status"], "pass")
             self.assertEqual(steps["verify_readiness"]["status"], "pass")
             self.assertEqual(steps["benchmark_baselines"]["status"], "pass")
@@ -759,6 +784,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(steps["wheel_build"]["status"], "pass")
             self.assertTrue((out_dir / "release-candidate.json").exists())
             self.assertTrue((out_dir / "release-candidate.md").exists())
+            self.assertTrue((out_dir / "release-info.json").exists())
             self.assertTrue((out_dir / "readiness" / "readiness.json").exists())
             self.assertTrue((out_dir / "readiness-verify.json").exists())
             self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
@@ -801,6 +827,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["schema_version"], "tokensquash.release_candidate.verify.v1")
             self.assertEqual(report["status"], "pass")
             self.assertEqual(report["summary"]["release_candidate_status"], "pass")
+            self.assertIn(report["summary"]["release_info_status"], {"pass", "warn"})
             self.assertEqual(report["summary"]["nested_readiness_verify_status"], "pass")
             self.assertEqual(report["summary"]["baseline_verify_status"], "partial")
 

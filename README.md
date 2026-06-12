@@ -37,6 +37,12 @@ Show the machine-readable product manifest:
 python -m tokensquash about --json
 ```
 
+Show the package, Git, and runtime fingerprint for the current checkout:
+
+```powershell
+python -m tokensquash release-info --json
+```
+
 Prepare local private folders and `.gitignore` rules for real corpora:
 
 ```powershell
@@ -604,6 +610,7 @@ debugging needs each command separated:
 ```powershell
 python -m unittest discover -s tests
 python -m tokensquash about --json
+python -m tokensquash release-info --json
 python -m tokensquash init --dry-run
 python -m tokensquash baselines verify
 python -m tokensquash baselines verify --include-exact-tokenizer
@@ -638,6 +645,7 @@ release process needs the evidence somewhere else.
 - Alias-impact reports for learned session dictionaries.
 - Public paired-turn sample corpus and first-run deterministic demo command.
 - Machine-readable product manifest for version, commands, schemas, protocols, quality budgets, and readiness checks.
+- Release metadata report for package version, Git commit, dirty state, Python runtime, and platform details.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
 - One-command product readiness evidence pack and verifier for tests, strict doctor, demo, certification, release-check, and release verification.

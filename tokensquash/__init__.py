@@ -18,6 +18,7 @@ from .release import (
     validate_quality_budget,
     verify_turn_release_pack,
 )
+from .release_info import build_release_info
 from .readiness import run_product_readiness, verify_product_readiness_pack
 from .turns import (
     append_turn_record,
@@ -53,6 +54,7 @@ __all__ = [
     "benchmark_replies",
     "benchmark_turns",
     "build_product_manifest",
+    "build_release_info",
     "build_turn_certification_history",
     "capture_turn_record",
     "compare_turn_certifications",
