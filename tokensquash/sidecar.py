@@ -375,6 +375,21 @@ def suggest_sidecar_review(
     """Turn a sidecar review report into prioritized tuning suggestions."""
 
     review = _load_sidecar_review(review_path)
+    return _suggest_sidecar_review_payload(
+        review,
+        source=str(Path(review_path)),
+        min_count=min_count,
+        max_examples=max_examples,
+    )
+
+
+def _suggest_sidecar_review_payload(
+    review: dict[str, Any],
+    *,
+    source: str,
+    min_count: int,
+    max_examples: int,
+) -> dict[str, Any]:
     rows = review.get("rows", [])
     flag_groups = _sidecar_review_flag_groups(rows, max_examples=max_examples)
     suggestions = [
@@ -393,7 +408,7 @@ def suggest_sidecar_review(
     return {
         "schema_version": "tokensquash.sidecar.suggestions.v1",
         "status": "pass" if suggestions else "empty",
-        "source": str(Path(review_path)),
+        "source": source,
         "review": {
             "status": review.get("status"),
             "source": review.get("source"),
@@ -430,6 +445,35 @@ def gate_sidecar_report(
         high_savings_pct=high_savings_pct,
         short_ratio=short_ratio,
     )
+    return _gate_sidecar_review_payload(
+        review,
+        source=str(Path(report_path)),
+        input_type=input_type,
+        input_schema=input_schema,
+        min_saved_pct=min_saved_pct,
+        max_review_count=max_review_count,
+        max_high_risk=max_high_risk,
+        max_medium_risk=max_medium_risk,
+        max_loss_items=max_loss_items,
+        high_savings_pct=high_savings_pct,
+        short_ratio=short_ratio,
+    )
+
+
+def _gate_sidecar_review_payload(
+    review: dict[str, Any],
+    *,
+    source: str,
+    input_type: str,
+    input_schema: str,
+    min_saved_pct: float,
+    max_review_count: int,
+    max_high_risk: int,
+    max_medium_risk: int,
+    max_loss_items: int,
+    high_savings_pct: float,
+    short_ratio: float,
+) -> dict[str, Any]:
     summary = review.get("summary", {})
     loss_items = _sidecar_gate_loss_items(review.get("rows", []))
     checks = [
@@ -444,7 +488,7 @@ def gate_sidecar_report(
     return {
         "schema_version": "tokensquash.sidecar.gate.v1",
         "status": status,
-        "source": str(Path(report_path)),
+        "source": source,
         "input_type": input_type,
         "input_schema_version": input_schema,
         "review": {
@@ -476,6 +520,75 @@ def gate_sidecar_report(
         },
         "checks": checks,
         "failures": failures,
+    }
+
+
+def certify_sidecar_report(
+    report_path: Path | str,
+    *,
+    min_saved_pct: float = 0.5,
+    max_review_count: int = 0,
+    max_high_risk: int = 0,
+    max_medium_risk: int = 0,
+    max_loss_items: int = 0,
+    high_savings_pct: float = 40.0,
+    short_ratio: float = 0.45,
+    min_count: int = 1,
+    max_examples: int = 5,
+) -> dict[str, Any]:
+    """Build a review, gate, and suggestions pack for a saved sidecar report."""
+
+    source = str(Path(report_path))
+    review, input_type, input_schema = _load_sidecar_gate_review(
+        report_path,
+        high_savings_pct=high_savings_pct,
+        short_ratio=short_ratio,
+    )
+    gate = _gate_sidecar_review_payload(
+        review,
+        source=source,
+        input_type=input_type,
+        input_schema=input_schema,
+        min_saved_pct=min_saved_pct,
+        max_review_count=max_review_count,
+        max_high_risk=max_high_risk,
+        max_medium_risk=max_medium_risk,
+        max_loss_items=max_loss_items,
+        high_savings_pct=high_savings_pct,
+        short_ratio=short_ratio,
+    )
+    suggestions = _suggest_sidecar_review_payload(
+        review,
+        source=source,
+        min_count=min_count,
+        max_examples=max_examples,
+    )
+    gate_summary = gate.get("summary", {})
+    review_summary = review.get("summary", {})
+    suggestion_summary = suggestions.get("summary", {})
+    status = "pass" if gate.get("status") == "pass" else "fail"
+    return {
+        "schema_version": "tokensquash.sidecar.certify.v1",
+        "status": status,
+        "source": source,
+        "input_type": input_type,
+        "input_schema_version": input_schema,
+        "summary": {
+            "passed": status == "pass",
+            "saved_tokens": int(review_summary.get("saved_tokens", 0)),
+            "saved_pct": float(review_summary.get("saved_pct", 0.0)),
+            "review_count": int(review_summary.get("review_count", 0)),
+            "high_risk_count": int(review_summary.get("high_risk_count", 0)),
+            "medium_risk_count": int(review_summary.get("medium_risk_count", 0)),
+            "loss_items": int(gate_summary.get("loss_items", 0)),
+            "failed_check_count": int(gate_summary.get("failed_check_count", 0)),
+            "suggestion_count": int(suggestion_summary.get("suggestion_count", 0)),
+        },
+        "artifacts": {
+            "review": review,
+            "gate": gate,
+            "suggestions": suggestions,
+        },
     }
 
 
@@ -832,6 +945,66 @@ def format_sidecar_gate_markdown(report: dict[str, Any]) -> str:
                 f"{failure.get('name')}: actual `{failure.get('actual')}` "
                 f"must be {failure.get('operator')} `{failure.get('limit')}`"
             )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_sidecar_certification_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    artifacts = report.get("artifacts", {})
+    review = artifacts.get("review", {})
+    gate = artifacts.get("gate", {})
+    suggestions = artifacts.get("suggestions", {})
+    outputs = report.get("outputs", {})
+    lines = [
+        "# TokenSquash Sidecar Certification",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Input type: `{report.get('input_type')}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Review rows: `{summary.get('review_count', 0)}`",
+        f"- High risk: `{summary.get('high_risk_count', 0)}`",
+        f"- Medium risk: `{summary.get('medium_risk_count', 0)}`",
+        f"- Loss items: `{summary.get('loss_items', 0)}`",
+        f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
+        f"- Suggestions: `{summary.get('suggestion_count', 0)}`",
+        "",
+        "## Gate",
+        "",
+        f"- Status: `{gate.get('status')}`",
+        f"- Failed checks: `{(gate.get('summary') or {}).get('failed_check_count', 0)}`",
+        "",
+        "| Check | Actual | Limit | Result |",
+        "|---|---:|---:|---|",
+    ]
+    for check in gate.get("checks", []):
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(check.get('name', '')))} | "
+            f"{check.get('actual')} | "
+            f"{check.get('operator')} {check.get('limit')} | "
+            f"`{check.get('status')}` |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Review",
+            "",
+            f"- Status: `{review.get('status')}`",
+            f"- Rows: `{(review.get('summary') or {}).get('row_count', 0)}`",
+            f"- Needs review: `{(review.get('summary') or {}).get('review_count', 0)}`",
+            "",
+            "## Suggestions",
+            "",
+            f"- Status: `{suggestions.get('status')}`",
+            f"- Count: `{(suggestions.get('summary') or {}).get('suggestion_count', 0)}`",
+        ]
+    )
+    if outputs:
+        lines.extend(["", "## Outputs", ""])
+        for key, path in sorted(outputs.items()):
+            lines.append(f"- {key}: `{path}`")
     return "\n".join(lines).rstrip() + "\n"
 
 

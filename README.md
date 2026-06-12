@@ -353,6 +353,13 @@ Gate a saved evaluation or review when you want a CI-style pass/fail check:
 python -m tokensquash sidecar gate private-turns\sidecar-sweeps\real-corpus-sweep\runs\001-realredacted-turns-llama323b-chars\review.json --min-saved-pct 0.5 --max-review-count 0 --json
 ```
 
+Certify a saved evaluation or review when you want a single folder containing
+the review, gate, suggestions, and top-level certification result:
+
+```powershell
+python -m tokensquash sidecar certify private-turns\sidecar-sweeps\real-corpus-sweep\runs\001-realredacted-turns-llama323b-chars\evaluation.json --out-dir private-turns\sidecar-certification --json
+```
+
 Compare two saved sidecar evaluation reports after changing the semantic prompt,
 schema, or local model:
 
@@ -392,9 +399,11 @@ review` turns a saved evaluation into a row-by-row checklist for suspicious
 savings, warnings, missing fields, and generic decoded results. `sidecar
 suggestions` groups those review flags into prioritized tuning work. `sidecar
 gate` turns a saved evaluation or review into a pass/fail threshold report for
-repeatable checks. `sidecar compare-evaluations` reports before/after token
-deltas alongside warning and failure deltas, so increased savings do not hide
-worse meaning-risk signals.
+repeatable checks. `sidecar certify` writes all three quality artifacts plus a
+top-level certification report so an experiment can be archived or checked in
+one step. `sidecar compare-evaluations` reports before/after token deltas
+alongside warning and failure deltas, so increased savings do not hide worse
+meaning-risk signals.
 
 ## Install For Local Development
 

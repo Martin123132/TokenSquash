@@ -31,9 +31,11 @@ from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
     build_sidecar_request,
+    certify_sidecar_report,
     compare_sidecar_evaluations,
     decode_semantic,
     evaluate_sidecar_turns,
+    format_sidecar_certification_markdown,
     format_sidecar_decode_markdown,
     format_sidecar_evaluation_compare_markdown,
     format_sidecar_evaluation_markdown,
@@ -314,6 +316,42 @@ def main(argv: list[str] | None = None) -> int:
     )
     sidecar_gate.add_argument("--out", type=Path, help="Write gate output to this file.")
     sidecar_gate.add_argument("--json", action="store_true", help="Print gate JSON.")
+
+    sidecar_certify = sidecar_sub.add_parser(
+        "certify",
+        help="Write review, gate, and suggestion artifacts for a saved sidecar report.",
+    )
+    sidecar_certify.add_argument("report", type=Path, help="Saved sidecar evaluation.json or review.json.")
+    sidecar_certify.add_argument(
+        "--out-dir",
+        type=Path,
+        help="Write certification artifacts here; defaults to a certification folder next to the input.",
+    )
+    sidecar_certify.add_argument("--min-saved-pct", type=float, default=0.5, help="Minimum saved percent required.")
+    sidecar_certify.add_argument("--max-review-count", type=int, default=0, help="Maximum rows needing review.")
+    sidecar_certify.add_argument("--max-high-risk", type=int, default=0, help="Maximum high-risk review rows.")
+    sidecar_certify.add_argument("--max-medium-risk", type=int, default=0, help="Maximum medium-risk review rows.")
+    sidecar_certify.add_argument(
+        "--max-loss-items",
+        type=int,
+        default=0,
+        help="Maximum rows where semantic output is longer.",
+    )
+    sidecar_certify.add_argument(
+        "--high-savings-pct",
+        type=float,
+        default=40.0,
+        help="Evaluation input only: saved percentage that makes short decoded previews suspicious.",
+    )
+    sidecar_certify.add_argument(
+        "--short-ratio",
+        type=float,
+        default=0.45,
+        help="Evaluation input only: decoded/original ratio below which high-savings rows are flagged.",
+    )
+    sidecar_certify.add_argument("--min-count", type=int, default=1, help="Minimum flag count for suggestions.")
+    sidecar_certify.add_argument("--max-examples", type=int, default=5, help="Maximum examples per suggestion.")
+    sidecar_certify.add_argument("--json", action="store_true", help="Print certification JSON.")
 
     sidecar_compare_evaluations = sidecar_sub.add_parser(
         "compare-evaluations",
@@ -823,6 +861,28 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0 if report["status"] == "pass" else 1
+            if args.sidecar_command == "certify":
+                report = certify_sidecar_report(
+                    args.report,
+                    min_saved_pct=args.min_saved_pct,
+                    max_review_count=args.max_review_count,
+                    max_high_risk=args.max_high_risk,
+                    max_medium_risk=args.max_medium_risk,
+                    max_loss_items=args.max_loss_items,
+                    high_savings_pct=args.high_savings_pct,
+                    short_ratio=args.short_ratio,
+                    min_count=args.min_count,
+                    max_examples=args.max_examples,
+                )
+                out_dir = args.out_dir or (args.report.parent / "certification")
+                _write_sidecar_certification_outputs(out_dir, report)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_sidecar_certification_markdown(report)
+                )
+                print(output, end="")
+                return 0 if report["status"] == "pass" else 1
             if args.sidecar_command == "compare-evaluations":
                 report = compare_sidecar_evaluations(args.base, args.target)
                 output = (
@@ -1318,6 +1378,55 @@ def _write_sidecar_suggestions_outputs(out_dir: Path, report: dict) -> None:
     report["outputs"]["markdown"] = str(markdown_path)
     markdown_path.write_text(format_sidecar_suggestions_markdown(report), encoding="utf-8")
     suggestions_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _write_sidecar_certification_outputs(out_dir: Path, report: dict) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    artifacts = report.get("artifacts", {})
+    review = artifacts.get("review", {})
+    gate = artifacts.get("gate", {})
+    suggestions = artifacts.get("suggestions", {})
+
+    review_path = out_dir / "review.json"
+    review_markdown_path = out_dir / "review.md"
+    gate_path = out_dir / "gate.json"
+    gate_markdown_path = out_dir / "gate.md"
+    suggestions_path = out_dir / "suggestions.json"
+    suggestions_markdown_path = out_dir / "suggestions.md"
+    certification_path = out_dir / "certification.json"
+    certification_markdown_path = out_dir / "certification.md"
+
+    review.setdefault("outputs", {})
+    review["outputs"]["review"] = str(review_path)
+    review["outputs"]["markdown"] = str(review_markdown_path)
+    gate.setdefault("outputs", {})
+    gate["outputs"]["gate"] = str(gate_path)
+    gate["outputs"]["markdown"] = str(gate_markdown_path)
+    suggestions.setdefault("outputs", {})
+    suggestions["outputs"]["suggestions"] = str(suggestions_path)
+    suggestions["outputs"]["markdown"] = str(suggestions_markdown_path)
+    report.setdefault("outputs", {})
+    report["outputs"].update(
+        {
+            "certification": str(certification_path),
+            "markdown": str(certification_markdown_path),
+            "review": str(review_path),
+            "review_markdown": str(review_markdown_path),
+            "gate": str(gate_path),
+            "gate_markdown": str(gate_markdown_path),
+            "suggestions": str(suggestions_path),
+            "suggestions_markdown": str(suggestions_markdown_path),
+        }
+    )
+
+    review_markdown_path.write_text(format_sidecar_review_markdown(review), encoding="utf-8")
+    review_path.write_text(json.dumps(review, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    gate_markdown_path.write_text(format_sidecar_gate_markdown(gate), encoding="utf-8")
+    gate_path.write_text(json.dumps(gate, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    suggestions_markdown_path.write_text(format_sidecar_suggestions_markdown(suggestions), encoding="utf-8")
+    suggestions_path.write_text(json.dumps(suggestions, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    certification_markdown_path.write_text(format_sidecar_certification_markdown(report), encoding="utf-8")
+    certification_path.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def _write_sidecar_experiment_outputs(

@@ -23,6 +23,7 @@ from tokensquash.metrics import (
 from tokensquash.mining import mine_reply_patterns
 from tokensquash.reply import decode_reply, encode_reply, parse_reply_wire
 from tokensquash.sidecar import (
+    certify_sidecar_report,
     compact_semantic_payload,
     compare_sidecar_evaluations,
     decode_semantic,
@@ -1461,6 +1462,97 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["status"], "pass")
             self.assertTrue(out.exists())
             self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["status"], "pass")
+
+    def test_certify_sidecar_report_builds_artifact_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = Path(tmp) / "review.json"
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "warn",
+                        "source": "evaluation.json",
+                        "summary": {
+                            "row_count": 1,
+                            "ok_count": 0,
+                            "review_count": 1,
+                            "high_risk_count": 0,
+                            "medium_risk_count": 1,
+                            "saved_tokens": 40,
+                            "saved_pct": 4.0,
+                        },
+                        "rows": [
+                            {
+                                "id": "r1",
+                                "side": "prompt",
+                                "verdict": "review",
+                                "risk_level": "medium",
+                                "risk_score": 40,
+                                "flags": ["high_savings_short_decoded"],
+                                "saved_tokens": 40,
+                                "saved_pct": 70.0,
+                                "original_preview": "Improve semantic wire with enough details.",
+                                "decoded_preview": "Improve wire.",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = certify_sidecar_report(review)
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.certify.v1")
+        self.assertEqual(report["status"], "fail")
+        self.assertEqual(report["artifacts"]["gate"]["status"], "fail")
+        self.assertEqual(report["artifacts"]["suggestions"]["summary"]["suggestion_count"], 1)
+        self.assertEqual(report["summary"]["review_count"], 1)
+
+    def test_sidecar_certify_cli_writes_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = Path(tmp) / "review.json"
+            out_dir = Path(tmp) / "cert"
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "pass",
+                        "source": "evaluation.json",
+                        "summary": {
+                            "row_count": 1,
+                            "ok_count": 1,
+                            "review_count": 0,
+                            "high_risk_count": 0,
+                            "medium_risk_count": 0,
+                            "saved_tokens": 20,
+                            "saved_pct": 2.0,
+                        },
+                        "rows": [{"id": "r1", "verdict": "ok", "status": "saved", "saved_tokens": 20}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["sidecar", "certify", str(review), "--out-dir", str(out_dir), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.sidecar.certify.v1")
+            self.assertEqual(payload["status"], "pass")
+            for filename in (
+                "certification.json",
+                "certification.md",
+                "review.json",
+                "review.md",
+                "gate.json",
+                "gate.md",
+                "suggestions.json",
+                "suggestions.md",
+            ):
+                self.assertTrue((out_dir / filename).exists(), filename)
+            self.assertEqual(json.loads((out_dir / "gate.json").read_text(encoding="utf-8"))["status"], "pass")
 
     def test_compare_sidecar_evaluations_reports_improvement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
