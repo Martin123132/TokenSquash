@@ -3258,6 +3258,43 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(override_payload["thresholds"]["min_saved_pct"], 0.5)
             self.assertEqual(override_certification_check["status"], "pass")
 
+    def test_turns_verify_release_accepts_complete_failed_release_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release"
+            budget = Path(tmp) / "quality-budget.json"
+            budget.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.quality_budget.v1",
+                        "turns": {"release_check": {"min_saved_pct": 99.0}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            release = run_turn_release_check(
+                DEFAULT_DEMO_CORPUS,
+                out_dir=out_dir,
+                quality_budget_path=budget,
+                counter="chars",
+            )
+
+            report = verify_turn_release_pack(out_dir)
+
+            self.assertEqual(release["status"], "fail")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["release_status"], "fail")
+            self.assertEqual(report["summary"]["certification_status"], "fail")
+            failed_checks = [check for check in report["checks"] if check["status"] == "fail"]
+            self.assertEqual(failed_checks, [])
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "verify-release", str(out_dir), "--json"])
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["summary"]["release_status"], "fail")
+
     def test_turns_suggestions_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "report.json"

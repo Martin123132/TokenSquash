@@ -41,33 +41,57 @@ _RELEASE_BUDGET_INT_KEYS = (
     "max_doctor_warnings",
 )
 _CERTIFICATION_PACK_JSON_ARTIFACTS = (
-    ("report", "report", Path("report.json"), "tokensquash.turns.report.v1", {"pass"}),
-    ("gate", "gate", Path("gate.json"), "tokensquash.turns.gate.v1", {"pass"}),
+    (
+        "report",
+        "report",
+        Path("report.json"),
+        "tokensquash.turns.report.v1",
+        {"pass", "warn", "miss", "regressed", "fail"},
+    ),
+    ("gate", "gate", Path("gate.json"), "tokensquash.turns.gate.v1", {"pass", "fail"}),
     ("suggestions", "suggestions", Path("suggestions.json"), "tokensquash.turns.suggestions.v1", {"pass", "empty"}),
-    ("evaluation", "evaluation", Path("evaluation") / "evaluation.json", "tokensquash.turns.evaluate.v1", {"pass"}),
+    (
+        "evaluation",
+        "evaluation",
+        Path("evaluation") / "evaluation.json",
+        "tokensquash.turns.evaluate.v1",
+        {"pass", "warn", "miss", "regressed", "fail"},
+    ),
     (
         "evaluation_validation",
         "validation",
         Path("evaluation") / "validation.json",
         "tokensquash.turns.validate.v1",
-        {"pass", "warn"},
+        {"pass", "warn", "fail"},
     ),
     ("evaluation_stats", "stats", Path("evaluation") / "stats.json", "tokensquash.turns.stats.v1", None),
-    ("evaluation_measure", "measure", Path("evaluation") / "measure.json", "tokensquash.turns.measure.v1", {"pass"}),
+    (
+        "evaluation_measure",
+        "measure",
+        Path("evaluation") / "measure.json",
+        "tokensquash.turns.measure.v1",
+        {"pass", "warn", "miss", "fail"},
+    ),
     (
         "evaluation_diagnose",
         "diagnose",
         Path("evaluation") / "diagnose.json",
         "tokensquash.turns.diagnose.v1",
-        {"pass"},
+        {"pass", "warn", "empty", "fail"},
     ),
-    ("evaluation_mine", "mine", Path("evaluation") / "mine.json", "tokensquash.turns.mine.v1", {"pass", "warn", "empty"}),
+    (
+        "evaluation_mine",
+        "mine",
+        Path("evaluation") / "mine.json",
+        "tokensquash.turns.mine.v1",
+        {"pass", "warn", "empty", "fail"},
+    ),
     (
         "evaluation_alias_impact",
         "alias_impact",
         Path("evaluation") / "alias-impact.json",
         "tokensquash.turns.alias_impact.v1",
-        {"improved", "same", "regressed", "warn", "empty"},
+        {"improved", "same", "regressed", "warn", "empty", "fail"},
     ),
     ("evaluation_bench", "bench", Path("evaluation") / "bench.json", "tokensquash.turns.bench.v1", {"pass", "miss", "empty"}),
     (
@@ -75,7 +99,7 @@ _CERTIFICATION_PACK_JSON_ARTIFACTS = (
         "aliases_report",
         Path("evaluation") / "aliases-report.json",
         "tokensquash.aliases.v1",
-        {"pass", "empty"},
+        {"pass", "warn", "empty", "fail"},
     ),
     (
         "evaluation_alias_table",
@@ -284,7 +308,7 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
         release_check_path,
         RELEASE_CHECK_SCHEMA_VERSION,
         required=True,
-        allowed_statuses={"pass", "warn"},
+        allowed_statuses={"pass", "warn", "fail"},
     )
     checks.append(release_check_payload_check)
 
@@ -305,7 +329,7 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
         ),
         "tokensquash.turns.certify.v1",
         required=True,
-        allowed_statuses={"pass"},
+        allowed_statuses={"pass", "fail"},
     )
     checks.append(certification_check)
     certification_dir = _resolve_release_artifact(
@@ -351,7 +375,7 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
         _resolve_release_artifact(release_dir, outputs.get("doctor"), Path("doctor.json")),
         "tokensquash.doctor.v1",
         required=True,
-        allowed_statuses={"pass", "warn"},
+        allowed_statuses={"pass", "warn", "fail"},
     )
     checks.append(doctor_check)
     _append_release_file_check(
@@ -372,7 +396,7 @@ def verify_turn_release_pack(path: Path | str) -> dict[str, Any]:
             _resolve_release_artifact(doctor_strict_dir, None, Path("certification.json")),
             "tokensquash.turns.certify.v1",
             required=True,
-            allowed_statuses={"pass"},
+            allowed_statuses={"pass", "fail"},
         )
         checks.append(doctor_strict_check)
         _append_release_certification_pack_checks(checks, "doctor_strict", doctor_strict_dir, doctor_strict)

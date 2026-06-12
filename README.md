@@ -376,6 +376,9 @@ effective release policy is preserved with the release evidence.
 `release-check.json` file, verifies the required top-level and nested JSON
 schemas plus markdown artifacts, and reports whether the evidence pack is
 complete enough to trust.
+It can verify a complete pack whose release gate failed; check
+`summary.release_status` to distinguish evidence integrity from release
+approval.
 Python automation can use the same release verifier through the package root:
 
 ```python
