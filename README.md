@@ -347,6 +347,12 @@ Turn a review report into prioritized tuning suggestions:
 python -m tokensquash sidecar suggestions private-turns\sidecar-sweeps\real-corpus-sweep\runs\001-realredacted-turns-llama323b-chars\review.json
 ```
 
+Gate a saved evaluation or review when you want a CI-style pass/fail check:
+
+```powershell
+python -m tokensquash sidecar gate private-turns\sidecar-sweeps\real-corpus-sweep\runs\001-realredacted-turns-llama323b-chars\review.json --min-saved-pct 0.5 --max-review-count 0 --json
+```
+
 Compare two saved sidecar evaluation reports after changing the semantic prompt,
 schema, or local model:
 
@@ -385,8 +391,10 @@ of experiments and writes a top-level summary plus comparison files. `sidecar
 review` turns a saved evaluation into a row-by-row checklist for suspicious
 savings, warnings, missing fields, and generic decoded results. `sidecar
 suggestions` groups those review flags into prioritized tuning work. `sidecar
-compare-evaluations` reports before/after token deltas alongside warning and
-failure deltas, so increased savings do not hide worse meaning-risk signals.
+gate` turns a saved evaluation or review into a pass/fail threshold report for
+repeatable checks. `sidecar compare-evaluations` reports before/after token
+deltas alongside warning and failure deltas, so increased savings do not hide
+worse meaning-risk signals.
 
 ## Install For Local Development
 

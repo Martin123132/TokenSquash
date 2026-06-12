@@ -412,6 +412,73 @@ def suggest_sidecar_review(
     }
 
 
+def gate_sidecar_report(
+    report_path: Path | str,
+    *,
+    min_saved_pct: float = 0.5,
+    max_review_count: int = 0,
+    max_high_risk: int = 0,
+    max_medium_risk: int = 0,
+    max_loss_items: int = 0,
+    high_savings_pct: float = 40.0,
+    short_ratio: float = 0.45,
+) -> dict[str, Any]:
+    """Apply pass/fail quality thresholds to a sidecar review or evaluation report."""
+
+    review, input_type, input_schema = _load_sidecar_gate_review(
+        report_path,
+        high_savings_pct=high_savings_pct,
+        short_ratio=short_ratio,
+    )
+    summary = review.get("summary", {})
+    loss_items = _sidecar_gate_loss_items(review.get("rows", []))
+    checks = [
+        _sidecar_gate_check("min_saved_pct", float(summary.get("saved_pct", 0.0)), min_saved_pct, ">="),
+        _sidecar_gate_check("max_review_count", int(summary.get("review_count", 0)), max_review_count, "<="),
+        _sidecar_gate_check("max_high_risk", int(summary.get("high_risk_count", 0)), max_high_risk, "<="),
+        _sidecar_gate_check("max_medium_risk", int(summary.get("medium_risk_count", 0)), max_medium_risk, "<="),
+        _sidecar_gate_check("max_loss_items", loss_items, max_loss_items, "<="),
+    ]
+    failures = [check for check in checks if check.get("status") == "fail"]
+    status = "pass" if not failures else "fail"
+    return {
+        "schema_version": "tokensquash.sidecar.gate.v1",
+        "status": status,
+        "source": str(Path(report_path)),
+        "input_type": input_type,
+        "input_schema_version": input_schema,
+        "review": {
+            "status": review.get("status"),
+            "source": review.get("source"),
+            "evaluation": review.get("evaluation", {}),
+            "summary": summary,
+        },
+        "thresholds": {
+            "min_saved_pct": min_saved_pct,
+            "max_review_count": max_review_count,
+            "max_high_risk": max_high_risk,
+            "max_medium_risk": max_medium_risk,
+            "max_loss_items": max_loss_items,
+            "high_savings_pct": high_savings_pct,
+            "short_ratio": short_ratio,
+        },
+        "summary": {
+            "status": status,
+            "passed": status == "pass",
+            "check_count": len(checks),
+            "failed_check_count": len(failures),
+            "review_count": int(summary.get("review_count", 0)),
+            "high_risk_count": int(summary.get("high_risk_count", 0)),
+            "medium_risk_count": int(summary.get("medium_risk_count", 0)),
+            "loss_items": loss_items,
+            "saved_tokens": int(summary.get("saved_tokens", 0)),
+            "saved_pct": float(summary.get("saved_pct", 0.0)),
+        },
+        "checks": checks,
+        "failures": failures,
+    }
+
+
 def build_semantic_prompt(text: str, *, mode: str) -> str:
     _validate_mode(mode)
     if mode == "prompt":
@@ -718,6 +785,56 @@ def format_sidecar_review_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_sidecar_gate_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    thresholds = report.get("thresholds", {})
+    lines = [
+        "# TokenSquash Sidecar Gate",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Source: `{report.get('source')}`",
+        f"- Input type: `{report.get('input_type')}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Review rows: `{summary.get('review_count', 0)}`",
+        f"- High risk: `{summary.get('high_risk_count', 0)}`",
+        f"- Medium risk: `{summary.get('medium_risk_count', 0)}`",
+        f"- Loss items: `{summary.get('loss_items', 0)}`",
+        f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
+        "",
+        "## Thresholds",
+        "",
+        f"- Min saved percent: `{thresholds.get('min_saved_pct', 0.0)}%`",
+        f"- Max review rows: `{thresholds.get('max_review_count', 0)}`",
+        f"- Max high risk: `{thresholds.get('max_high_risk', 0)}`",
+        f"- Max medium risk: `{thresholds.get('max_medium_risk', 0)}`",
+        f"- Max loss items: `{thresholds.get('max_loss_items', 0)}`",
+        "",
+        "## Checks",
+        "",
+        "| Check | Actual | Limit | Result |",
+        "|---|---:|---:|---|",
+    ]
+    for check in report.get("checks", []):
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(check.get('name', '')))} | "
+            f"{check.get('actual')} | "
+            f"{check.get('operator')} {check.get('limit')} | "
+            f"`{check.get('status')}` |"
+        )
+    failures = report.get("failures", [])
+    if failures:
+        lines.extend(["", "## Failed Checks", ""])
+        for failure in failures:
+            lines.append(
+                "- "
+                f"{failure.get('name')}: actual `{failure.get('actual')}` "
+                f"must be {failure.get('operator')} `{failure.get('limit')}`"
+            )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_sidecar_suggestions_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     outputs = report.get("outputs", {})
@@ -978,6 +1095,53 @@ def _load_sidecar_review(path: Path | str) -> dict[str, Any]:
     if payload.get("schema_version") != "tokensquash.sidecar.review.v1":
         raise ValueError(f"not a sidecar review report: {source}")
     return payload
+
+
+def _load_sidecar_gate_review(
+    path: Path | str,
+    *,
+    high_savings_pct: float,
+    short_ratio: float,
+) -> tuple[dict[str, Any], str, str]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError("sidecar gate input must be a JSON object")
+    schema = str(payload.get("schema_version", ""))
+    if schema == "tokensquash.sidecar.review.v1":
+        return payload, "review", schema
+    if schema == "tokensquash.sidecar.evaluate.v1":
+        review = review_sidecar_evaluation(
+            source,
+            high_savings_pct=high_savings_pct,
+            short_ratio=short_ratio,
+        )
+        return review, "evaluation", schema
+    raise ValueError(f"not a sidecar review or evaluation report: {source}")
+
+
+def _sidecar_gate_check(name: str, actual: float | int, limit: float | int, operator: str) -> dict[str, Any]:
+    if operator == ">=":
+        passed = actual >= limit
+    elif operator == "<=":
+        passed = actual <= limit
+    else:
+        raise ValueError(f"unsupported sidecar gate operator: {operator}")
+    return {
+        "name": name,
+        "actual": actual,
+        "operator": operator,
+        "limit": limit,
+        "status": "pass" if passed else "fail",
+    }
+
+
+def _sidecar_gate_loss_items(rows: list[dict[str, Any]]) -> int:
+    return sum(
+        1
+        for row in rows
+        if row.get("status") == "loss" or int(row.get("saved_tokens", 0)) < 0
+    )
 
 
 def _sidecar_report_brief(report: dict[str, Any], path: Path | str) -> dict[str, Any]:

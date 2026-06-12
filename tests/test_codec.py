@@ -27,6 +27,7 @@ from tokensquash.sidecar import (
     compare_sidecar_evaluations,
     decode_semantic,
     evaluate_sidecar_turns,
+    gate_sidecar_report,
     parse_semantic_json,
     review_sidecar_evaluation,
     suggest_sidecar_review,
@@ -1337,6 +1338,129 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "suggestions.json").exists())
             self.assertTrue((out_dir / "suggestions.md").exists())
             self.assertIn("TokenSquash Sidecar Suggestions", (out_dir / "suggestions.md").read_text(encoding="utf-8"))
+
+    def test_gate_sidecar_review_passes_thresholds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = Path(tmp) / "review.json"
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "pass",
+                        "source": "evaluation.json",
+                        "summary": {
+                            "row_count": 2,
+                            "ok_count": 2,
+                            "review_count": 0,
+                            "high_risk_count": 0,
+                            "medium_risk_count": 0,
+                            "saved_tokens": 30,
+                            "saved_pct": 3.0,
+                        },
+                        "rows": [
+                            {"id": "r1", "verdict": "ok", "status": "saved", "saved_tokens": 20},
+                            {"id": "r2", "verdict": "ok", "status": "saved", "saved_tokens": 10},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = gate_sidecar_report(review, min_saved_pct=0.5)
+
+        self.assertEqual(report["schema_version"], "tokensquash.sidecar.gate.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["input_type"], "review")
+        self.assertEqual(report["summary"]["failed_check_count"], 0)
+        self.assertEqual(report["summary"]["loss_items"], 0)
+
+    def test_gate_sidecar_evaluation_fails_thresholds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            evaluation = Path(tmp) / "evaluation.json"
+            evaluation.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.evaluate.v1",
+                        "status": "pass",
+                        "source": "turns.jsonl",
+                        "mode": "both",
+                        "model": "tiny-local",
+                        "counter": "chars",
+                        "summary": {
+                            "item_count": 1,
+                            "warning_count": 0,
+                            "original_tokens": 100,
+                            "semantic_tokens": 101,
+                            "saved_tokens": -1,
+                            "saved_pct": -1.0,
+                        },
+                        "rows": [
+                            {
+                                "index": 1,
+                                "id": "lossy",
+                                "side": "reply",
+                                "status": "loss",
+                                "original_tokens": 100,
+                                "semantic_tokens": 101,
+                                "saved_tokens": -1,
+                                "saved_pct": -1.0,
+                                "warning_count": 0,
+                                "warnings": [],
+                                "original_preview": "Done. Ran pytest.",
+                                "decoded_preview": "Done: ran pytest.",
+                                "semantic": {"status": "done", "summary": "ran pytest", "verification": ["pytest"]},
+                            }
+                        ],
+                        "failures": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = gate_sidecar_report(evaluation, min_saved_pct=0.5)
+
+        failed = {check["name"] for check in report["failures"]}
+        self.assertEqual(report["status"], "fail")
+        self.assertEqual(report["input_type"], "evaluation")
+        self.assertIn("min_saved_pct", failed)
+        self.assertIn("max_review_count", failed)
+        self.assertIn("max_loss_items", failed)
+
+    def test_sidecar_gate_cli_writes_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = Path(tmp) / "review.json"
+            out = Path(tmp) / "gate.json"
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "pass",
+                        "source": "evaluation.json",
+                        "summary": {
+                            "row_count": 1,
+                            "ok_count": 1,
+                            "review_count": 0,
+                            "high_risk_count": 0,
+                            "medium_risk_count": 0,
+                            "saved_tokens": 10,
+                            "saved_pct": 2.0,
+                        },
+                        "rows": [{"id": "r1", "verdict": "ok", "status": "saved", "saved_tokens": 10}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["sidecar", "gate", str(review), "--out", str(out), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.sidecar.gate.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertTrue(out.exists())
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["status"], "pass")
 
     def test_compare_sidecar_evaluations_reports_improvement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

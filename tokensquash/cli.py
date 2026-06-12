@@ -38,6 +38,7 @@ from .sidecar import (
     format_sidecar_evaluation_compare_markdown,
     format_sidecar_evaluation_markdown,
     format_sidecar_experiment_markdown,
+    format_sidecar_gate_markdown,
     format_sidecar_request_markdown,
     format_sidecar_review_markdown,
     format_sidecar_roundtrip_markdown,
@@ -45,6 +46,7 @@ from .sidecar import (
     format_sidecar_sweep_markdown,
     format_sidecar_translation_markdown,
     parse_semantic_json,
+    gate_sidecar_report,
     review_sidecar_evaluation,
     roundtrip_with_ollama,
     suggest_sidecar_review,
@@ -287,6 +289,31 @@ def main(argv: list[str] | None = None) -> int:
     sidecar_suggestions.add_argument("--min-count", type=int, default=1, help="Minimum flag count to include.")
     sidecar_suggestions.add_argument("--max-examples", type=int, default=5, help="Maximum examples per suggestion.")
     sidecar_suggestions.add_argument("--json", action="store_true", help="Print suggestions JSON.")
+
+    sidecar_gate = sidecar_sub.add_parser(
+        "gate",
+        help="Pass or fail a sidecar evaluation/review against quality thresholds.",
+    )
+    sidecar_gate.add_argument("report", type=Path, help="Saved sidecar evaluation.json or review.json.")
+    sidecar_gate.add_argument("--min-saved-pct", type=float, default=0.5, help="Minimum saved percent required.")
+    sidecar_gate.add_argument("--max-review-count", type=int, default=0, help="Maximum rows needing review.")
+    sidecar_gate.add_argument("--max-high-risk", type=int, default=0, help="Maximum high-risk review rows.")
+    sidecar_gate.add_argument("--max-medium-risk", type=int, default=0, help="Maximum medium-risk review rows.")
+    sidecar_gate.add_argument("--max-loss-items", type=int, default=0, help="Maximum rows where semantic output is longer.")
+    sidecar_gate.add_argument(
+        "--high-savings-pct",
+        type=float,
+        default=40.0,
+        help="Evaluation input only: saved percentage that makes short decoded previews suspicious.",
+    )
+    sidecar_gate.add_argument(
+        "--short-ratio",
+        type=float,
+        default=0.45,
+        help="Evaluation input only: decoded/original ratio below which high-savings rows are flagged.",
+    )
+    sidecar_gate.add_argument("--out", type=Path, help="Write gate output to this file.")
+    sidecar_gate.add_argument("--json", action="store_true", help="Print gate JSON.")
 
     sidecar_compare_evaluations = sidecar_sub.add_parser(
         "compare-evaluations",
@@ -779,6 +806,23 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(output, end="")
                 return 0
+            if args.sidecar_command == "gate":
+                report = gate_sidecar_report(
+                    args.report,
+                    min_saved_pct=args.min_saved_pct,
+                    max_review_count=args.max_review_count,
+                    max_high_risk=args.max_high_risk,
+                    max_medium_risk=args.max_medium_risk,
+                    max_loss_items=args.max_loss_items,
+                    high_savings_pct=args.high_savings_pct,
+                    short_ratio=args.short_ratio,
+                )
+                output = json.dumps(report, indent=2) + "\n" if args.json else format_sidecar_gate_markdown(report)
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] == "pass" else 1
             if args.sidecar_command == "compare-evaluations":
                 report = compare_sidecar_evaluations(args.base, args.target)
                 output = (
