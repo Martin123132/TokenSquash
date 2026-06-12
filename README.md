@@ -363,11 +363,14 @@ constraints, verification, and return wants. Reply mode uses `s`, `m`, `f`,
 risks, and next steps. Older payloads that include `k` still decode, and reports
 normalize all fields back into readable names for inspection. During live
 translation, path/file fields and reply next steps are kept only when they are
-anchored in the original text, which helps catch local-model invention without
-changing the deterministic codec. The decoder also warns when a model copies
-schema placeholders such as `<=5 words`, `constraint1`, or `returns:` into the
-semantic payload, because that can make token savings look better while meaning
-quality gets worse.
+anchored in the original text, and obvious reply-side command/test evidence is
+recovered from the original reply when the model omits it. This helps catch
+local-model invention without changing the deterministic codec. The decoder also
+warns when a model copies schema placeholders such as `<=5 words`,
+`constraint1`, or `returns:` into the semantic payload, because that can make
+token savings look better while meaning quality gets worse. Prompt-mode
+translations should keep safety and quality guardrails in `c` rather than
+dropping them from a very short `q`.
 
 This is intentionally experimental. A local model can add latency and may
 misread intent, so sidecar output should be treated as a proposal, not source of

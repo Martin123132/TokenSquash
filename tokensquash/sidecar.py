@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -420,7 +421,10 @@ def build_semantic_prompt(text: str, *, mode: str) -> str:
         )
         value_rules = (
             "o must be one of: fix, add, review, explain, test, docs, refactor, other. "
-            "q must be the actual task gist in 1-5 words."
+            "q must be the actual task gist in 1-5 words. "
+            "For prompt q, preserve the main object and action. "
+            "If the request contains a safety or quality guardrail, put the original condition in c. "
+            "If the request has scope dimensions, comparisons, or output artifacts, preserve them in c or r."
         )
     else:
         key_rules = (
@@ -1401,14 +1405,17 @@ def _normalize_semantic_payload(
 
 def _normalize_prompt_semantic(payload: dict[str, Any], *, source_text: str | None = None) -> dict[str, Any]:
     paths = _semantic_list(_semantic_value(payload, "paths", "p", default=[]))
+    constraints = _semantic_list(_semantic_value(payload, "constraints", "c", default=[]))
+    verify = _semantic_list(_semantic_value(payload, "verify", "v", default=[]))
+    returns = _semantic_list(_semantic_value(payload, "returns", "r", default=[]))
     return {
         "kind": _normalize_kind(_semantic_value(payload, "kind", "k")),
         "op": str(_semantic_value(payload, "op", "o", default="other")).strip() or "other",
         "query": str(_semantic_value(payload, "query", "q", default="")).strip(),
         "paths": _source_anchored_items(paths, source_text),
-        "constraints": _semantic_list(_semantic_value(payload, "constraints", "c", default=[])),
-        "verify": _semantic_list(_semantic_value(payload, "verify", "v", default=[])),
-        "returns": _semantic_list(_semantic_value(payload, "returns", "r", default=[])),
+        "constraints": _source_related_items(constraints, source_text),
+        "verify": _source_related_items(verify, source_text),
+        "returns": _source_related_items(returns, source_text),
     }
 
 
@@ -1416,15 +1423,23 @@ def _normalize_reply_semantic(payload: dict[str, Any], *, source_text: str | Non
     status = str(_semantic_value(payload, "status", "s", default="done")).strip()
     status = STATUS_FROM_CODES.get(status, status)
     files = _semantic_list(_semantic_value(payload, "files", "f", default=[]))
+    verification = _source_related_items(_semantic_list(_semantic_value(payload, "verification", "v", default=[])), source_text)
+    commands = _source_related_items(_semantic_list(_semantic_value(payload, "commands", "c", default=[])), source_text)
+    risks = _source_related_items(_semantic_list(_semantic_value(payload, "risks", "r", default=[])), source_text)
     next_steps = _semantic_list(_semantic_value(payload, "next_steps", "n", default=[]))
+    if source_text is not None:
+        extracted_commands = _extract_reply_commands(source_text)
+        commands = _merge_unique_items(commands, extracted_commands)
+        commands = _drop_prefix_redundant_items(commands)
+        verification = _merge_unique_items(verification, _extract_reply_verification(source_text, commands=extracted_commands))
     return {
         "kind": _normalize_kind(_semantic_value(payload, "kind", "k")),
         "status": status or "done",
-        "summary": str(_semantic_value(payload, "summary", "m", default="")).strip(),
+        "summary": _semantic_short_text(_semantic_value(payload, "summary", "m", default=""), max_words=6),
         "files": _source_anchored_items(files, source_text),
-        "verification": _semantic_list(_semantic_value(payload, "verification", "v", default=[])),
-        "commands": _semantic_list(_semantic_value(payload, "commands", "c", default=[])),
-        "risks": _semantic_list(_semantic_value(payload, "risks", "r", default=[])),
+        "verification": verification,
+        "commands": commands,
+        "risks": risks,
         "next_steps": _source_anchored_items(next_steps, source_text),
     }
 
@@ -1517,8 +1532,91 @@ def _looks_like_schema_placeholder(value: str, *, field: str) -> bool:
 
 def _source_anchored_items(items: list[str], source_text: str | None) -> list[str]:
     if source_text is None:
+        return [item for item in items if _looks_like_path_item(item)]
+    return [item for item in items if _looks_like_path_item(item) and _source_contains_item(source_text, item)]
+
+
+def _source_related_items(items: list[str], source_text: str | None) -> list[str]:
+    if source_text is None:
         return items
-    return [item for item in items if _source_contains_item(source_text, item)]
+    source_tokens = _meaningful_tokens(source_text)
+    return [
+        item
+        for item in items
+        if _source_contains_item(source_text, item) or bool(_meaningful_tokens(item) & source_tokens)
+    ]
+
+
+def _extract_reply_commands(source_text: str) -> list[str]:
+    commands: list[str] = []
+    for match in re.finditer(r"\b((?:python\s+-m|pytest|npm|pnpm|yarn)\b[^;,\n]*)", source_text, re.IGNORECASE):
+        command = _clean_extracted_command(match.group(1))
+        if command:
+            commands.append(command)
+    return _merge_unique_items(commands)
+
+
+def _extract_reply_verification(source_text: str, *, commands: list[str] | None = None) -> list[str]:
+    verification: list[str] = []
+    for command in commands or _extract_reply_commands(source_text):
+        lowered = command.lower()
+        if "pytest" in lowered:
+            verification.append("pytest")
+        elif "test" in lowered:
+            verification.append("tests")
+
+    lowered_source = source_text.lower()
+    if re.search(r"\btests?\s+pass(?:ed)?\b", lowered_source):
+        verification.append("tests pass")
+    if re.search(r"\bran\s+tests?\b", lowered_source) or re.search(r"\brun\s+tests?\b", lowered_source):
+        verification.append("tests")
+    for match in re.finditer(r"\bverified\s+(?:with|via|using)\s+([^\.;,\n]+)", source_text, re.IGNORECASE):
+        item = _clean_extracted_command(match.group(1))
+        if item:
+            verification.append(item)
+    return _merge_unique_items(verification)
+
+
+def _clean_extracted_command(value: str) -> str:
+    text = " ".join(value.strip().strip("`'\"").split())
+    text = re.split(r"\.\s+(?=[A-Z])", text, maxsplit=1)[0]
+    text = text.rstrip(".")
+    text = re.sub(r"\s+(?:and\s+)?(?:committed|pushed|updated|documented|wrote|added)$", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
+def _semantic_short_text(value: Any, *, max_words: int) -> str:
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return ""
+    words = text.split()
+    if len(words) <= max_words:
+        return text
+    return " ".join(words[:max_words]).rstrip(",;:.")
+
+
+def _merge_unique_items(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in group:
+            text = str(item).strip()
+            key = _compact_list_item(text).casefold()
+            if text and key not in seen:
+                seen.add(key)
+                merged.append(text)
+    return merged
+
+
+def _drop_prefix_redundant_items(items: list[str]) -> list[str]:
+    output: list[str] = []
+    lowered = [item.casefold() for item in items]
+    for index, item in enumerate(items):
+        key = lowered[index]
+        if any(other != key and other.startswith(f"{key} ") for other in lowered):
+            continue
+        output.append(item)
+    return output
 
 
 def _source_contains_item(source_text: str, item: str) -> bool:
@@ -1533,6 +1631,53 @@ def _source_contains_item(source_text: str, item: str) -> bool:
 def _path_text_variants(text: str) -> set[str]:
     lowered = text.lower()
     return {lowered, lowered.replace("\\", "/"), lowered.replace("/", "\\")}
+
+
+def _looks_like_path_item(item: str) -> bool:
+    text = item.strip().strip("`'\"").lower()
+    if not text:
+        return False
+    if "/" in text or "\\" in text:
+        return True
+    if text in {"makefile", "dockerfile"}:
+        return True
+    return any(
+        text.endswith(suffix)
+        for suffix in (
+            ".cfg",
+            ".css",
+            ".html",
+            ".ini",
+            ".js",
+            ".json",
+            ".jsx",
+            ".md",
+            ".py",
+            ".toml",
+            ".ts",
+            ".tsx",
+            ".txt",
+            ".yaml",
+            ".yml",
+        )
+    )
+
+
+def _meaningful_tokens(text: str) -> set[str]:
+    tokens = set()
+    for raw in str(text).lower().replace("\\", "/").replace("-", " ").replace("_", " ").split():
+        token = "".join(char for char in raw if char.isalnum())
+        if len(token) < 4 or token in {"true", "false", "none", "null", "with", "from", "into", "that", "this", "only"}:
+            continue
+        tokens.add(_simple_stem(token))
+    return tokens
+
+
+def _simple_stem(token: str) -> str:
+    for suffix in ("ingly", "edly", "ing", "ed", "ly", "es", "s"):
+        if len(token) > len(suffix) + 3 and token.endswith(suffix):
+            return token[: -len(suffix)]
+    return token
 
 
 def _compact_prompt_semantic(semantic: dict[str, Any]) -> dict[str, Any]:

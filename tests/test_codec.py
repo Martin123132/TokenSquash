@@ -381,6 +381,9 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("fix the login bug", payload["payload"]["prompt"])
         self.assertIn("Required prompt keys: o, q.", payload["payload"]["prompt"])
         self.assertIn("q must be the actual task gist in 1-5 words", payload["payload"]["prompt"])
+        self.assertIn("preserve the main object and action", payload["payload"]["prompt"])
+        self.assertIn("put the original condition in c", payload["payload"]["prompt"])
+        self.assertIn("scope dimensions, comparisons, or output artifacts", payload["payload"]["prompt"])
         self.assertIn("Values must come from the English text only", payload["payload"]["prompt"])
         self.assertIn("Use ONLY the short keys", payload["payload"]["prompt"])
         self.assertIn("do not include a kind key", payload["payload"]["prompt"])
@@ -470,7 +473,7 @@ class TokenSquashCodecTests(unittest.TestCase):
                             {
                                 "o": "review",
                                 "q": "checkout flow",
-                                "p": ["src/checkout.py", "/invented-checkout-notes.txt"],
+                                "p": ["src/checkout.py", "/invented-checkout-notes.txt", "models"],
                                 "r": ["risks"],
                             }
                         )
@@ -479,7 +482,7 @@ class TokenSquashCodecTests(unittest.TestCase):
 
         with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
             report = translate_with_ollama(
-                "review checkout flow in src/checkout.py and return risks",
+                "review checkout flow in src/checkout.py and compare models before returning risks",
                 mode="prompt",
                 model="tiny-local",
                 counter="chars",
@@ -488,6 +491,44 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["semantic"]["paths"], ["src/checkout.py"])
         self.assertEqual(report["semantic_compact"]["p"], ["src/checkout.py"])
         self.assertNotIn("invented-checkout", report["semantic_wire"])
+        self.assertNotIn("models", report["semantic_wire"])
+
+    def test_translate_with_ollama_drops_instruction_copied_prompt_fields(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "o": "add",
+                                "q": "redacted corpus eval",
+                                "c": ["repeatable", "cannot invent"],
+                                "v": ["True"],
+                                "r": ["evidence pack comparison"],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+            report = translate_with_ollama(
+                "Add a repeatable sidecar sweep workflow for redacted turn corpora with evidence packs and honest comparisons.",
+                mode="prompt",
+                model="tiny-local",
+                counter="chars",
+            )
+
+        self.assertEqual(report["semantic"]["constraints"], ["repeatable"])
+        self.assertEqual(report["semantic"]["verify"], [])
+        self.assertEqual(report["semantic"]["returns"], ["evidence pack comparison"])
+        self.assertNotIn("cannot invent", report["semantic_wire"])
+        self.assertNotIn("True", report["semantic_wire"])
 
     def test_translate_with_ollama_drops_unanchored_reply_next_steps(self) -> None:
         class FakeResponse:
@@ -525,6 +566,48 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["semantic_compact"]["v"], ["pytest"])
         self.assertNotIn("Review code", report["semantic_wire"])
         self.assertNotIn("src/ghost.py", report["semantic_wire"])
+
+    def test_translate_with_ollama_extracts_reply_commands_from_source(self) -> None:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "response": json.dumps(
+                            {
+                                "s": "d",
+                                "m": (
+                                    "Added sidecar sweep, per-run evidence folders, "
+                                    "top-level summaries, skipped mixed-counter comparisons"
+                                ),
+                                "f": [],
+                                "v": [],
+                                "c": [],
+                            }
+                        )
+                    }
+                ).encode("utf-8")
+
+        with patch("tokensquash.sidecar.urlopen", return_value=FakeResponse()):
+            report = translate_with_ollama(
+                "Done. I added python -m tokensquash sidecar sweep, then ran pytest tests/test_codec.py -q.",
+                mode="reply",
+                model="tiny-local",
+                counter="chars",
+            )
+
+        self.assertIn("python -m tokensquash sidecar sweep", report["semantic"]["commands"])
+        self.assertIn("pytest tests/test_codec.py -q", report["semantic"]["commands"])
+        self.assertIn("pytest", report["semantic"]["verification"])
+        self.assertLessEqual(len(report["semantic"]["summary"].split()), 6)
+        self.assertNotIn("top-level", report["semantic_wire"])
+        self.assertIn("c", report["semantic_compact"])
+        self.assertIn("v", report["semantic_compact"])
 
     def test_sidecar_decode_prompt_is_deterministic(self) -> None:
         report = decode_semantic(
