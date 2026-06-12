@@ -501,6 +501,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.release_info.v1", schemas)
         self.assertIn("tokensquash.release_candidate.v1", schemas)
         self.assertIn("tokensquash.release_candidate.artifacts.v1", schemas)
+        self.assertIn("tokensquash.release_candidate.attestation.v1", schemas)
         self.assertIn("tokensquash.release_candidate.verify.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
@@ -853,10 +854,23 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["summary"]["release_candidate_status"], "pass")
             self.assertEqual(report["summary"]["artifact_manifest_status"], "pass")
             self.assertGreater(report["summary"]["artifact_manifest_artifact_count"], 0)
+            self.assertEqual(report["summary"]["release_attestation_status"], "pass")
+            self.assertRegex(report["summary"]["release_attestation_evidence_hash"], r"^[0-9a-f]{64}$")
             self.assertEqual(report["summary"]["wheel_smoke_status"], "pass")
             self.assertIn(report["summary"]["release_info_status"], {"pass", "warn"})
             self.assertEqual(report["summary"]["nested_readiness_verify_status"], "pass")
             self.assertEqual(report["summary"]["baseline_verify_status"], "partial")
+            attestation_path = out_dir / "release-attestation.json"
+            self.assertTrue(attestation_path.exists())
+            self.assertTrue((out_dir / "release-attestation.md").exists())
+            attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
+            self.assertEqual(attestation["schema_version"], "tokensquash.release_candidate.attestation.v1")
+            self.assertEqual(attestation["status"], "pass")
+            self.assertEqual(attestation["verification"]["status"], "pass")
+            self.assertEqual(attestation["provenance"]["git"]["commit"], report["summary"]["release_info_commit"])
+            self.assertRegex(attestation["materials"]["wheel"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(attestation["materials"]["artifact_manifest"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertFalse(attestation["signature"]["signed"])
 
     def test_verify_release_candidate_pack_fails_on_missing_wheel(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -891,6 +905,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["status"], "fail")
             failed_names = {check["name"] for check in report["checks"] if check["status"] == "fail"}
             self.assertIn("artifact_manifest_integrity", failed_names)
+            attestation = json.loads((out_dir / "release-attestation.json").read_text(encoding="utf-8"))
+            self.assertEqual(attestation["status"], "fail")
+            self.assertGreater(attestation["verification"]["failed_check_count"], 0)
 
     def test_verify_release_candidate_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -917,6 +934,8 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["schema_version"], "tokensquash.release_candidate.verify.v1")
             self.assertEqual(payload["status"], "pass")
             self.assertTrue(payload["require_release_candidate_pass"])
+            self.assertEqual(payload["summary"]["release_attestation_status"], "pass")
+            self.assertTrue((out_dir / "release-attestation.json").exists())
 
     def _fake_wheel_build(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:
         wheel_dir.mkdir(parents=True, exist_ok=True)

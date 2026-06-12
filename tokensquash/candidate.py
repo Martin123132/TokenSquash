@@ -21,10 +21,16 @@ from .release_info import build_release_info, format_release_info_markdown
 
 RELEASE_CANDIDATE_SCHEMA_VERSION = "tokensquash.release_candidate.v1"
 RELEASE_CANDIDATE_ARTIFACTS_SCHEMA_VERSION = "tokensquash.release_candidate.artifacts.v1"
+RELEASE_CANDIDATE_ATTESTATION_SCHEMA_VERSION = "tokensquash.release_candidate.attestation.v1"
 RELEASE_CANDIDATE_VERIFY_SCHEMA_VERSION = "tokensquash.release_candidate.verify.v1"
 DEFAULT_RELEASE_CANDIDATE_OUT_DIR = Path("private-turns/release-candidate")
 PACKAGED_DEMO_DATA_PATH = "tokensquash/data/sample-turns.jsonl"
-ARTIFACT_MANIFEST_FILENAMES = {"artifact-manifest.json", "artifact-manifest.md"}
+ARTIFACT_MANIFEST_FILENAMES = {
+    "artifact-manifest.json",
+    "artifact-manifest.md",
+    "release-attestation.json",
+    "release-attestation.md",
+}
 
 
 def run_release_candidate(
@@ -310,6 +316,33 @@ def format_release_candidate_artifact_manifest_markdown(report: dict[str, Any]) 
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_release_candidate_attestation_markdown(report: dict[str, Any]) -> str:
+    verification = report.get("verification", {})
+    provenance = report.get("provenance", {})
+    git = provenance.get("git", {})
+    project = provenance.get("project", {})
+    materials = report.get("materials", {})
+    wheel = materials.get("wheel") or {}
+    artifact_manifest = materials.get("artifact_manifest") or {}
+    lines = [
+        "# TokenSquash Release Attestation",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Evidence hash: `{report.get('evidence_hash')}`",
+        f"- Project: `{project.get('name')}`",
+        f"- Version: `{project.get('version')}`",
+        f"- Git commit: `{git.get('commit')}`",
+        f"- Git dirty: `{git.get('dirty')}`",
+        f"- Verification status: `{verification.get('status')}`",
+        f"- Checks: `{verification.get('check_count', 0)}`",
+        f"- Failed checks: `{verification.get('failed_check_count', 0)}`",
+        f"- Wheel SHA-256: `{wheel.get('sha256')}`",
+        f"- Artifact manifest SHA-256: `{artifact_manifest.get('sha256')}`",
+        f"- Signature: `{(report.get('signature') or {}).get('type')}`",
+    ]
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def verify_release_candidate_pack(
     path: Path | str,
     *,
@@ -519,6 +552,43 @@ def verify_release_candidate_pack(
 
     _append_candidate_steps_check(checks, candidate_path, candidate)
 
+    attestation_check = _candidate_check(
+        "release_attestation",
+        "pass",
+        required=True,
+        path=candidate_dir / "release-attestation.json",
+        message="Release attestation was written.",
+    )
+    attestation_status = _candidate_status_from_checks([*checks, attestation_check])
+    attestation = _build_release_candidate_attestation(
+        candidate_dir=candidate_dir,
+        source=source,
+        candidate_path=candidate_path,
+        require_release_candidate_pass=require_release_candidate_pass,
+        verification_status=attestation_status,
+        checks=[*checks, attestation_check],
+        candidate=candidate,
+        release_info=release_info,
+        artifact_manifest=artifact_manifest,
+        wheel_path=wheel_path,
+        stored_readiness_verify=stored_readiness_verify,
+        readiness_verify_report=readiness_verify_report,
+        baseline_verify=baseline_verify,
+        exact_baseline_verify=exact_baseline_verify,
+    )
+    try:
+        _write_release_candidate_attestation_outputs(candidate_dir, attestation)
+    except OSError as exc:
+        attestation_check = _candidate_check(
+            "release_attestation",
+            "fail",
+            required=True,
+            path=candidate_dir / "release-attestation.json",
+            message=f"Release attestation could not be written: {exc}",
+        )
+        attestation = None
+    checks.append(attestation_check)
+
     failed = [check for check in checks if check.get("status") == "fail" and check.get("required")]
     warnings = [check for check in checks if check.get("status") == "warn"]
     status = "fail" if failed else "warn" if warnings else "pass"
@@ -542,6 +612,8 @@ def verify_release_candidate_pack(
             "artifact_manifest_total_bytes": (
                 (artifact_manifest.get("summary") or {}).get("total_bytes") if artifact_manifest else None
             ),
+            "release_attestation_status": attestation.get("status") if attestation else None,
+            "release_attestation_evidence_hash": attestation.get("evidence_hash") if attestation else None,
             "release_info_status": release_info.get("status") if release_info else None,
             "release_info_dirty": ((release_info.get("summary") or {}).get("dirty") if release_info else None),
             "release_info_commit": ((release_info.get("git") or {}).get("commit") if release_info else None),
@@ -556,11 +628,16 @@ def verify_release_candidate_pack(
         "artifacts": {
             "release_candidate": _candidate_artifact_reference(candidate),
             "artifact_manifest": _candidate_artifact_reference(artifact_manifest),
+            "release_attestation": _candidate_artifact_reference(attestation),
             "release_info": _candidate_artifact_reference(release_info),
             "readiness_verification": _candidate_artifact_reference(readiness_verify_report),
             "stored_readiness_verify": _candidate_artifact_reference(stored_readiness_verify),
             "baseline_verify": _candidate_artifact_reference(baseline_verify),
             "exact_baseline_verify": _candidate_artifact_reference(exact_baseline_verify),
+        },
+        "outputs": {
+            "release_attestation": str(candidate_dir / "release-attestation.json"),
+            "release_attestation_markdown": str(candidate_dir / "release-attestation.md"),
         },
     }
 
@@ -580,6 +657,8 @@ def format_release_candidate_verify_markdown(report: dict[str, Any]) -> str:
         f"- Release-candidate status: `{summary.get('release_candidate_status')}`",
         f"- Artifact manifest: `{summary.get('artifact_manifest_status')}`",
         f"- Artifact count: `{summary.get('artifact_manifest_artifact_count')}`",
+        f"- Release attestation: `{summary.get('release_attestation_status')}`",
+        f"- Evidence hash: `{summary.get('release_attestation_evidence_hash')}`",
         f"- Release info: `{summary.get('release_info_status')}`",
         f"- Git commit: `{summary.get('release_info_commit')}`",
         f"- Git dirty: `{summary.get('release_info_dirty')}`",
@@ -974,6 +1053,116 @@ def _candidate_artifact_manifest_entry(candidate_dir: Path, path: Path) -> dict[
         "bytes": path.stat().st_size,
         "sha256": _sha256_file(path),
     }
+
+
+def _build_release_candidate_attestation(
+    *,
+    candidate_dir: Path,
+    source: Path,
+    candidate_path: Path,
+    require_release_candidate_pass: bool,
+    verification_status: str,
+    checks: list[dict[str, Any]],
+    candidate: dict[str, Any] | None,
+    release_info: dict[str, Any] | None,
+    artifact_manifest: dict[str, Any] | None,
+    wheel_path: Path | None,
+    stored_readiness_verify: dict[str, Any] | None,
+    readiness_verify_report: dict[str, Any] | None,
+    baseline_verify: dict[str, Any] | None,
+    exact_baseline_verify: dict[str, Any] | None,
+) -> dict[str, Any]:
+    release_summary = (release_info.get("summary") if release_info else {}) or {}
+    git = (release_info.get("git") if release_info else {}) or {}
+    project = (release_info.get("project") if release_info else {}) or {}
+    verification = {
+        "schema_version": RELEASE_CANDIDATE_VERIFY_SCHEMA_VERSION,
+        "status": verification_status,
+        "source": str(source),
+        "require_release_candidate_pass": require_release_candidate_pass,
+        "check_count": len(checks),
+        "failed_check_count": sum(1 for check in checks if check.get("status") == "fail" and check.get("required")),
+        "warning_count": sum(1 for check in checks if check.get("status") == "warn"),
+    }
+    materials = {
+        "release_candidate": _candidate_file_reference(candidate_dir, candidate_path),
+        "artifact_manifest": _candidate_file_reference(candidate_dir, candidate_dir / "artifact-manifest.json"),
+        "wheel": _candidate_file_reference(candidate_dir, wheel_path),
+    }
+    evidence = {
+        "release_candidate_status": candidate.get("status") if candidate else None,
+        "release_info_status": release_info.get("status") if release_info else None,
+        "artifact_manifest_status": artifact_manifest.get("status") if artifact_manifest else None,
+        "readiness_verify_status": stored_readiness_verify.get("status") if stored_readiness_verify else None,
+        "nested_readiness_verify_status": readiness_verify_report.get("status") if readiness_verify_report else None,
+        "baseline_verify_status": baseline_verify.get("status") if baseline_verify else None,
+        "exact_baseline_verify_status": exact_baseline_verify.get("status") if exact_baseline_verify else None,
+        "wheel_smoke_status": _candidate_step_status(candidate, "wheel_smoke"),
+    }
+    evidence_material = {
+        "git_commit": git.get("commit"),
+        "git_dirty": release_summary.get("dirty"),
+        "version": project.get("version"),
+        "verification_status": verification_status,
+        "release_candidate_sha256": (materials.get("release_candidate") or {}).get("sha256"),
+        "artifact_manifest_sha256": (materials.get("artifact_manifest") or {}).get("sha256"),
+        "wheel_sha256": (materials.get("wheel") or {}).get("sha256"),
+    }
+    return {
+        "schema_version": RELEASE_CANDIDATE_ATTESTATION_SCHEMA_VERSION,
+        "status": verification_status,
+        "evidence_hash": _stable_sha256(evidence_material),
+        "out_dir": str(candidate_dir),
+        "provenance": {
+            "project": {
+                "name": project.get("name"),
+                "version": project.get("version"),
+                "requires_python": project.get("requires_python"),
+            },
+            "git": {
+                "commit": git.get("commit"),
+                "short_commit": git.get("short_commit"),
+                "branch": git.get("branch"),
+                "dirty": release_summary.get("dirty"),
+            },
+        },
+        "verification": verification,
+        "evidence": evidence,
+        "materials": materials,
+        "signature": {
+            "type": "unsigned-local-attestation",
+            "signed": False,
+            "rationale": "This local attestation records hashes and verification status but is not cryptographically signed.",
+        },
+    }
+
+
+def _write_release_candidate_attestation_outputs(candidate_dir: Path, report: dict[str, Any]) -> None:
+    _write_json(candidate_dir / "release-attestation.json", report)
+    (candidate_dir / "release-attestation.md").write_text(
+        format_release_candidate_attestation_markdown(report),
+        encoding="utf-8",
+    )
+
+
+def _candidate_file_reference(candidate_dir: Path, path: Path | None) -> dict[str, Any] | None:
+    if path is None or not path.exists() or not path.is_file():
+        return None
+    resolved = path.resolve()
+    if _candidate_path_is_within(resolved, candidate_dir):
+        display_path = _candidate_relative_path(candidate_dir, resolved)
+    else:
+        display_path = str(resolved)
+    return {
+        "path": display_path,
+        "bytes": resolved.stat().st_size,
+        "sha256": _sha256_file(resolved),
+    }
+
+
+def _stable_sha256(payload: dict[str, Any]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _append_candidate_artifact_manifest_integrity_check(
@@ -1589,6 +1778,12 @@ def _candidate_check(
     if path is not None:
         check["path"] = str(path)
     return check
+
+
+def _candidate_status_from_checks(checks: list[dict[str, Any]]) -> str:
+    failed = [check for check in checks if check.get("status") == "fail" and check.get("required")]
+    warnings = [check for check in checks if check.get("status") == "warn"]
+    return "fail" if failed else "warn" if warnings else "pass"
 
 
 def _release_candidate_commands(
