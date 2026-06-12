@@ -43,6 +43,7 @@ from tokensquash.turns import (
     benchmark_turns,
     capture_turn_record,
     certify_turn_corpus,
+    compare_turn_certifications,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
     gate_turn_report,
@@ -410,10 +411,12 @@ class TokenSquashCodecTests(unittest.TestCase):
         schemas = {item["schema_version"] for item in report["schemas"]}
         self.assertIn("about", commands)
         self.assertIn("init", commands)
+        self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns certify", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.workspace.init.v1", schemas)
+        self.assertIn("tokensquash.turns.certify.compare.v1", schemas)
         self.assertIn("tokensquash.turns.certify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
@@ -2777,6 +2780,47 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(json.loads((out_dir / "gate.json").read_text(encoding="utf-8"))["status"], "pass")
             self.assertIn("certification", payload["outputs"])
 
+    def test_turns_compare_certifications_reports_improvement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "cert-before.json"
+            target = Path(tmp) / "cert-after.json"
+            base.write_text(
+                json.dumps(_turn_certification_fixture(saved_pct=4.0, saved_tokens=8, failed_checks=1)),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(_turn_certification_fixture(saved_pct=6.5, saved_tokens=13, failed_checks=0)),
+                encoding="utf-8",
+            )
+
+            report = compare_turn_certifications(base, target)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.certify.compare.v1")
+            self.assertEqual(report["status"], "improved")
+            self.assertEqual(report["delta"]["saved_pct"], 2.5)
+            self.assertEqual(report["delta"]["saved_tokens"], 5)
+            self.assertEqual(report["delta"]["failed_check_count"], -1)
+
+    def test_turns_compare_certifications_cli_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "cert-before.json"
+            target = Path(tmp) / "cert-after.json"
+            out = Path(tmp) / "compare.md"
+            base.write_text(json.dumps(_turn_certification_fixture(saved_pct=7.0, saved_tokens=14)), encoding="utf-8")
+            target.write_text(json.dumps(_turn_certification_fixture(saved_pct=5.0, saved_tokens=10)), encoding="utf-8")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "compare-certifications", str(base), str(target), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Certification Compare", output)
+            self.assertIn("- Status: `regressed`", output)
+            self.assertIn("- Saved percent delta: `-2.0%`", output)
+            self.assertTrue(out.exists())
+            self.assertEqual(out.read_text(encoding="utf-8"), output)
+
     def test_turns_suggestions_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "report.json"
@@ -3306,6 +3350,43 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIsNone(report["measure"])
             self.assertTrue((out_dir / "evaluation.json").exists())
             self.assertTrue((out_dir / "validation.json").exists())
+
+
+def _turn_certification_fixture(
+    *,
+    saved_pct: float,
+    saved_tokens: int,
+    failed_checks: int = 0,
+) -> dict:
+    status = "pass" if failed_checks == 0 else "fail"
+    return {
+        "schema_version": "tokensquash.turns.certify.v1",
+        "status": status,
+        "path": "private-turns/real.redacted-turns.jsonl",
+        "counter": "chars",
+        "adaptive": True,
+        "summary": {
+            "status": status,
+            "passed": status == "pass",
+            "turn_count": 3,
+            "saved_tokens": saved_tokens,
+            "saved_pct": saved_pct,
+            "prompt_saved_pct": saved_pct / 2,
+            "reply_saved_pct": saved_pct / 2,
+            "privacy_finding_count": 0,
+            "pass_through_rows": 0,
+            "raw_wire_loss_turns": 0,
+            "failed_check_count": failed_checks,
+            "suggestion_count": 2,
+        },
+        "artifacts": {
+            "gate": {
+                "schema_version": "tokensquash.turns.gate.v1",
+                "status": status,
+                "summary": {"failed_check_count": failed_checks},
+            }
+        },
+    }
 
 
 if __name__ == "__main__":

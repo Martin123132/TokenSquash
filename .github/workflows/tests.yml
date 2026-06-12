@@ -31,6 +31,8 @@ jobs:
         run: python -m tokensquash turns gate /tmp/tokensquash-demo/turn-evaluation/evaluation.json --min-saved-pct 0.5 --max-privacy-findings 0
       - name: Certify public demo turn corpus
         run: python -m tokensquash turns certify examples/sample-turns.jsonl --counter chars --out-dir /tmp/tokensquash-certification
+      - name: Compare public demo certifications
+        run: python -m tokensquash turns compare-certifications /tmp/tokensquash-certification/certification.json /tmp/tokensquash-certification/certification.json
       - name: Build package wheel
         run: python -m pip wheel . --no-deps -w /tmp/tokensquash-wheel
       - name: Check packaged demo data

@@ -63,6 +63,7 @@ from .turns import (
     benchmark_turns,
     capture_turn_record,
     certify_turn_corpus,
+    compare_turn_certifications,
     compare_turn_reports,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
@@ -70,6 +71,7 @@ from .turns import (
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
     format_turn_capture_markdown,
+    format_turn_certification_compare_markdown,
     format_turn_certification_markdown,
     format_turn_diagnose_markdown,
     format_turn_report_markdown,
@@ -501,6 +503,15 @@ def main(argv: list[str] | None = None) -> int:
     turns_compare_reports.add_argument("target", type=Path)
     turns_compare_reports.add_argument("--out", type=Path, help="Write comparison output to this file.")
     turns_compare_reports.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    turns_compare_certifications = turns_sub.add_parser(
+        "compare-certifications",
+        help="Compare two saved turn certification JSON files.",
+    )
+    turns_compare_certifications.add_argument("base", type=Path)
+    turns_compare_certifications.add_argument("target", type=Path)
+    turns_compare_certifications.add_argument("--out", type=Path, help="Write comparison output to this file.")
+    turns_compare_certifications.add_argument("--json", action="store_true", help="Print comparison JSON.")
 
     turns_gate = turns_sub.add_parser("gate", help="Pass or fail a turn report/evaluation against quality thresholds.")
     turns_gate.add_argument("report", type=Path, help="Saved turns report JSON or evaluation.json.")
@@ -1158,6 +1169,18 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(report, indent=2) + "\n"
                     if args.json
                     else format_turn_report_compare_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0
+            if args.turns_command == "compare-certifications":
+                report = compare_turn_certifications(args.base, args.target)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_certification_compare_markdown(report)
                 )
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)

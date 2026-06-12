@@ -1138,6 +1138,60 @@ def compare_turn_reports(base: Path | str, target: Path | str) -> dict[str, Any]
     }
 
 
+def compare_turn_certifications(base: Path | str, target: Path | str) -> dict[str, Any]:
+    """Compare two saved turn certification JSON files."""
+
+    base_report = _load_turn_certification(base)
+    target_report = _load_turn_certification(target)
+    base_summary = base_report.get("summary", {})
+    target_summary = target_report.get("summary", {})
+    saved_pct_delta = _float_value(target_summary.get("saved_pct")) - _float_value(base_summary.get("saved_pct"))
+    failed_check_delta = _int_value(target_summary.get("failed_check_count")) - _int_value(
+        base_summary.get("failed_check_count")
+    )
+    if target_report.get("status") != "pass" or _int_value(target_summary.get("failed_check_count")) > 0:
+        status = "failed"
+    elif failed_check_delta < 0:
+        status = "improved"
+    elif failed_check_delta > 0:
+        status = "regressed"
+    elif saved_pct_delta > 0:
+        status = "improved"
+    elif saved_pct_delta < 0:
+        status = "regressed"
+    else:
+        status = "same"
+
+    return {
+        "schema_version": "tokensquash.turns.certify.compare.v1",
+        "status": status,
+        "base": _turn_certification_identity(base, base_report),
+        "target": _turn_certification_identity(target, target_report),
+        "delta": {
+            "turn_count": _int_value(target_summary.get("turn_count")) - _int_value(base_summary.get("turn_count")),
+            "saved_tokens": _int_value(target_summary.get("saved_tokens")) - _int_value(base_summary.get("saved_tokens")),
+            "saved_pct": round(saved_pct_delta, 4),
+            "prompt_saved_pct": round(
+                _float_value(target_summary.get("prompt_saved_pct")) - _float_value(base_summary.get("prompt_saved_pct")),
+                4,
+            ),
+            "reply_saved_pct": round(
+                _float_value(target_summary.get("reply_saved_pct")) - _float_value(base_summary.get("reply_saved_pct")),
+                4,
+            ),
+            "privacy_finding_count": _int_value(target_summary.get("privacy_finding_count"))
+            - _int_value(base_summary.get("privacy_finding_count")),
+            "pass_through_rows": _int_value(target_summary.get("pass_through_rows"))
+            - _int_value(base_summary.get("pass_through_rows")),
+            "raw_wire_loss_turns": _int_value(target_summary.get("raw_wire_loss_turns"))
+            - _int_value(base_summary.get("raw_wire_loss_turns")),
+            "failed_check_count": failed_check_delta,
+            "suggestion_count": _int_value(target_summary.get("suggestion_count"))
+            - _int_value(base_summary.get("suggestion_count")),
+        },
+    }
+
+
 def gate_turn_report(
     report_path: Path | str,
     *,
@@ -1812,6 +1866,47 @@ def format_turn_report_compare_markdown(report: dict[str, Any]) -> str:
     )
 
 
+def format_turn_certification_compare_markdown(report: dict[str, Any]) -> str:
+    delta = report.get("delta", {})
+    base = report.get("base", {})
+    target = report.get("target", {})
+    lines = [
+        "# TokenSquash Turn Certification Compare",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Base certification: `{base.get('certification_path')}` saved=`{base.get('saved_pct')}%` gate=`{base.get('gate_status')}`",
+        f"- Target certification: `{target.get('certification_path')}` saved=`{target.get('saved_pct')}%` gate=`{target.get('gate_status')}`",
+        f"- Saved percent delta: `{delta.get('saved_pct')}%`",
+        f"- Saved token delta: `{delta.get('saved_tokens')}`",
+        f"- Failed check delta: `{delta.get('failed_check_count')}`",
+        f"- Privacy finding delta: `{delta.get('privacy_finding_count')}`",
+        f"- Pass-through row delta: `{delta.get('pass_through_rows')}`",
+        f"- Raw wire loss turn delta: `{delta.get('raw_wire_loss_turns')}`",
+        f"- Suggestion count delta: `{delta.get('suggestion_count')}`",
+        "",
+        "## Delta Table",
+        "",
+        "| Metric | Delta |",
+        "|---|---:|",
+    ]
+    for key in (
+        "turn_count",
+        "saved_tokens",
+        "saved_pct",
+        "prompt_saved_pct",
+        "reply_saved_pct",
+        "privacy_finding_count",
+        "pass_through_rows",
+        "raw_wire_loss_turns",
+        "failed_check_count",
+        "suggestion_count",
+    ):
+        value = delta.get(key)
+        suffix = "%" if key.endswith("_pct") else ""
+        lines.append(f"| `{key}` | `{value}{suffix}` |")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_turn_gate_markdown(report: dict[str, Any]) -> str:
     summary = report.get("summary", {})
     thresholds = report.get("thresholds", {})
@@ -2014,6 +2109,14 @@ def _load_turn_report(path: Path | str) -> dict[str, Any]:
     return payload
 
 
+def _load_turn_certification(path: Path | str) -> dict[str, Any]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != "tokensquash.turns.certify.v1":
+        raise ValueError(f"Not a TokenSquash turn certification: {source}")
+    return payload
+
+
 def _load_turn_gate_report(path: Path | str) -> tuple[dict[str, Any], str, str]:
     source = Path(path)
     payload = json.loads(source.read_text(encoding="utf-8-sig"))
@@ -2106,6 +2209,30 @@ def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str,
         "alias_saved_tokens_delta": summary.get("alias_saved_tokens_delta"),
         "alias_saved_pct_delta": summary.get("alias_saved_pct_delta"),
         "break_even_corpora": summary.get("break_even_corpora"),
+    }
+
+
+def _turn_certification_identity(path: Path | str, report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("summary", {})
+    artifacts = report.get("artifacts", {})
+    gate = artifacts.get("gate", {})
+    return {
+        "certification_path": str(path),
+        "corpus_path": report.get("path"),
+        "status": report.get("status"),
+        "counter": report.get("counter"),
+        "adaptive": report.get("adaptive"),
+        "gate_status": gate.get("status"),
+        "turn_count": summary.get("turn_count"),
+        "saved_tokens": summary.get("saved_tokens"),
+        "saved_pct": summary.get("saved_pct"),
+        "prompt_saved_pct": summary.get("prompt_saved_pct"),
+        "reply_saved_pct": summary.get("reply_saved_pct"),
+        "privacy_finding_count": summary.get("privacy_finding_count"),
+        "pass_through_rows": summary.get("pass_through_rows"),
+        "raw_wire_loss_turns": summary.get("raw_wire_loss_turns"),
+        "failed_check_count": summary.get("failed_check_count"),
+        "suggestion_count": summary.get("suggestion_count"),
     }
 
 
