@@ -71,6 +71,14 @@ python -m tokensquash readiness --out-dir private-turns\readiness
 python -m tokensquash verify-readiness private-turns\readiness --require-readiness-pass
 ```
 
+Before tagging or sharing a release candidate, install the tokenizer extra and
+run the full pre-release gate:
+
+```powershell
+python -m pip install -e ".[tokenizer]"
+python -m tokensquash release-candidate --out-dir private-turns\release-candidate
+```
+
 Add `--check-ollama` when you want the doctor to query a local Ollama server
 for the experimental sidecar path.
 
@@ -577,14 +585,26 @@ python -m tokensquash verify-readiness private-turns\readiness --require-readine
 That command writes `readiness.json`, `readiness.md`, and the nested doctor,
 demo, certification, release-check, and release-verification artifacts. The
 verification command audits the saved files and schemas after the pack is
-written. Use the expanded form below when CI or debugging needs each command
-separated:
+written.
+
+The stricter release-candidate gate also verifies exact-tokenizer benchmark
+baselines and builds the package wheel:
+
+```powershell
+python -m pip install -e ".[tokenizer]"
+python -m tokensquash release-candidate --out-dir private-turns\release-candidate
+```
+
+Use `--skip-exact-tokenizer` only for local smoke checks where the tokenizer
+extra is intentionally not installed. Use the expanded form below when CI or
+debugging needs each command separated:
 
 ```powershell
 python -m unittest discover -s tests
 python -m tokensquash about --json
 python -m tokensquash init --dry-run
 python -m tokensquash baselines verify
+python -m tokensquash baselines verify --include-exact-tokenizer
 python -m tokensquash budget init --out private-turns\quality-budget.json --dry-run --json
 python -m tokensquash budget validate examples\quality-budget.json
 python -m tokensquash doctor --strict
@@ -592,6 +612,7 @@ python -m tokensquash demo --counter chars --out-dir private-turns\demo-output
 python -m tokensquash turns certify examples\sample-turns.jsonl --counter chars --out-dir private-turns\certification
 python -m tokensquash turns release-check examples\sample-turns.jsonl --counter chars --budget examples\quality-budget.json --history private-turns\certification --out-dir private-turns\release-check
 python -m tokensquash turns verify-release private-turns\release-check --require-release-pass
+python -m pip wheel . --no-deps -w private-turns\wheel
 ```
 
 `doctor --strict` writes its certification evidence to
@@ -618,6 +639,7 @@ release process needs the evidence somewhere else.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
 - One-command product readiness evidence pack and verifier for tests, strict doctor, demo, certification, release-check, and release verification.
+- One-command release-candidate gate for readiness verification, benchmark baseline freshness, exact-tokenizer baselines, and wheel packaging evidence.
 - One-command turn evaluation, certification, comparison, history, release-check, and release-verification report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.

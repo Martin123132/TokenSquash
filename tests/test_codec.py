@@ -14,6 +14,7 @@ import tokensquash
 from tokensquash.about import build_product_manifest
 from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
 from tokensquash.baselines import verify_benchmark_baselines
+from tokensquash.candidate import run_release_candidate
 from tokensquash.cli import main as cli_main
 from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
@@ -482,6 +483,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("baselines verify", commands)
         self.assertIn("readiness", commands)
         self.assertIn("verify-readiness", commands)
+        self.assertIn("release-candidate", commands)
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
@@ -492,6 +494,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.baselines.verify.v1", schemas)
         self.assertIn("tokensquash.readiness.v1", schemas)
         self.assertIn("tokensquash.readiness.verify.v1", schemas)
+        self.assertIn("tokensquash.release_candidate.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
         self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
@@ -506,6 +509,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             any("turns verify-release" in command and "--require-release-pass" in command for command in readiness_commands)
         )
         self.assertTrue(any("baselines verify" in command for command in readiness_commands))
+        self.assertTrue(any("release-candidate" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
@@ -729,6 +733,72 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["schema_version"], "tokensquash.readiness.verify.v1")
             self.assertEqual(payload["status"], "pass")
             self.assertTrue(payload["require_readiness_pass"])
+
+    def test_release_candidate_writes_evidence_pack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+                report = run_release_candidate(
+                    out_dir=out_dir,
+                    skip_tests=True,
+                    require_exact_tokenizer=False,
+                )
+
+            self.assertEqual(report["schema_version"], "tokensquash.release_candidate.v1")
+            self.assertEqual(report["status"], "pass")
+            steps = {step["name"]: step for step in report["steps"]}
+            self.assertEqual(steps["readiness"]["status"], "pass")
+            self.assertEqual(steps["verify_readiness"]["status"], "pass")
+            self.assertEqual(steps["benchmark_baselines"]["status"], "pass")
+            self.assertEqual(steps["exact_tokenizer_baselines"]["status"], "skip")
+            self.assertEqual(steps["wheel_build"]["status"], "pass")
+            self.assertTrue((out_dir / "release-candidate.json").exists())
+            self.assertTrue((out_dir / "release-candidate.md").exists())
+            self.assertTrue((out_dir / "readiness" / "readiness.json").exists())
+            self.assertTrue((out_dir / "readiness-verify.json").exists())
+            self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
+            self.assertTrue(any("--skip-tests" in command for command in report["commands"]))
+            self.assertTrue(any("--skip-exact-tokenizer" in command for command in report["commands"]))
+
+    def test_release_candidate_cli_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            stdout = StringIO()
+
+            with patch("tokensquash.candidate._run_wheel_build", side_effect=self._fake_wheel_build):
+                with redirect_stdout(stdout):
+                    code = cli_main(
+                        [
+                            "release-candidate",
+                            "--skip-tests",
+                            "--skip-exact-tokenizer",
+                            "--out-dir",
+                            str(out_dir),
+                            "--json",
+                        ]
+                    )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.release_candidate.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
+            self.assertTrue((out_dir / "wheel-build.txt").exists())
+
+    def _fake_wheel_build(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:
+        wheel_dir.mkdir(parents=True, exist_ok=True)
+        wheel_path = wheel_dir / "tokensquash-0.0.0-py3-none-any.whl"
+        wheel_path.write_text("fake wheel", encoding="utf-8")
+        log_path = output_dir / "wheel-build.txt"
+        log_path.write_text("fake wheel build\n", encoding="utf-8")
+        return "pass", "Wheel build faked for unit test.", {
+            "wheel_dir": str(wheel_dir),
+            "log": str(log_path),
+            "returncode": 0,
+            "wheel": str(wheel_path),
+            "packaged_demo_data": True,
+        }
 
     def test_doctor_ollama_check_can_pass_with_mock(self) -> None:
         class FakeResponse:

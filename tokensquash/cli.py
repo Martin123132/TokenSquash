@@ -9,6 +9,7 @@ from pathlib import Path
 from .about import build_product_manifest, format_product_manifest_markdown
 from .aliases import format_alias_report_markdown, learn_reply_aliases, load_alias_table, write_alias_table
 from .baselines import format_benchmark_baseline_verify_markdown, verify_benchmark_baselines
+from .candidate import format_release_candidate_markdown, run_release_candidate
 from .codec import decode_intent, encode_intent, parse_wire
 from .corpus import (
     corpus_stats,
@@ -218,6 +219,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_readiness.add_argument("--out", type=Path, help="Write verification output to this file.")
     verify_readiness.add_argument("--json", action="store_true", help="Print readiness verification JSON.")
+
+    release_candidate = sub.add_parser("release-candidate", help="Run the full pre-release product gate.")
+    release_candidate.add_argument("--out-dir", type=Path, default=Path("private-turns/release-candidate"))
+    release_candidate.add_argument("--counter", default="chars", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    release_candidate.add_argument("--skip-tests", action="store_true", help="Skip readiness unit tests when they already ran.")
+    release_candidate.add_argument(
+        "--skip-exact-tokenizer",
+        action="store_true",
+        help="Skip exact-tokenizer baseline verification; release candidates should normally require it.",
+    )
+    release_candidate.add_argument("--check-ollama", action="store_true", help="Include the optional Ollama doctor check.")
+    release_candidate.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    release_candidate.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
+    release_candidate.add_argument("--json", action="store_true", help="Print release-candidate JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -1006,6 +1021,20 @@ def main(argv: list[str] | None = None) -> int:
                 args.out.write_text(output, encoding="utf-8")
             print(output, end="")
             return 0 if report["status"] in {"pass", "warn"} else 1
+
+        if args.command == "release-candidate":
+            report = run_release_candidate(
+                out_dir=args.out_dir,
+                counter=args.counter,
+                skip_tests=args.skip_tests,
+                require_exact_tokenizer=not args.skip_exact_tokenizer,
+                check_ollama=args.check_ollama,
+                ollama_endpoint=args.ollama_endpoint,
+                ollama_timeout=args.ollama_timeout,
+            )
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_release_candidate_markdown(report)
+            print(output, end="")
+            return 0 if report["status"] == "pass" else 1
 
         if args.command == "budget":
             if args.budget_command == "init":

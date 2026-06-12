@@ -3,6 +3,7 @@
 from .about import build_product_manifest, package_version
 from .aliases import AliasTable, learn_reply_aliases, load_alias_table
 from .baselines import verify_benchmark_baselines
+from .candidate import run_release_candidate
 from .codec import Intent, decode_intent, encode_intent, parse_wire
 from .corpus import corpus_stats, load_prompt_records, redact_corpus, validate_corpus
 from .demo import run_demo
@@ -83,6 +84,7 @@ __all__ = [
     "redact_turn_corpus",
     "run_demo",
     "run_doctor",
+    "run_release_candidate",
     "run_product_readiness",
     "run_turn_release_check",
     "split_turn_corpus",
