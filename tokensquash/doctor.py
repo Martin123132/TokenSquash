@@ -489,7 +489,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Contributor, security, and pull-request policy docs",
             PUBLIC_LICENSE_NAME,
             LICENSOR,
-            "Draft v0.1.0 release notes",
+            "v0.1.0 release notes",
             "GitHub issue forms",
         ],
         "CONTRIBUTING.md": [

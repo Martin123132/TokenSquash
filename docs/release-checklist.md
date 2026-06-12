@@ -7,8 +7,8 @@ candidate. It assumes the release is being prepared from `main`.
 
 - Read `CHANGELOG.md` and move any completed items from `Unreleased` into the
   target version section.
-- Review `docs/release-notes-v0.1.0.md` and fill the release evidence fields
-  after the final local and GitHub release-candidate evidence passes.
+- Review `docs/release-notes-v0.1.0.md` and confirm the release evidence
+  contract matches the final release process.
 - Confirm `pyproject.toml` contains the intended package version.
 - Confirm the README still describes the current command surface accurately.
 - Confirm the project-owner-approved `LICENSE` and `COMMERCIAL-LICENSE.md`
@@ -103,8 +103,10 @@ The workflow must show:
 Download or inspect the `release-candidate-evidence` artifact if the release is
 being reviewed outside the local machine.
 
-Record the final commit, GitHub Actions run, evidence artifact, and hashes in
-`docs/release-notes-v0.1.0.md` before tagging.
+Confirm the GitHub Actions run, evidence artifact, and release-attestation
+hashes are available before tagging. The exact final evidence belongs in the
+generated release-candidate pack and published release notes because it is
+produced after the release commit exists.
 
 ## 6. Tag Or Publish
 
@@ -124,6 +126,6 @@ artifact provenance policy have been added and reviewed.
 
 - Add a new `Unreleased` section to `CHANGELOG.md`.
 - Record the released tag, GitHub Actions run, and release-candidate evidence
-  location in `docs/release-notes-v0.1.0.md`.
+  location in the published release notes.
 - Keep private corpora under ignored `private-turns/` storage; do not attach
   raw private turns to public releases.

@@ -1,8 +1,10 @@
-# TokenSquash v0.1.0 Release Notes (Draft)
+# TokenSquash v0.1.0 Release Notes
 
-Status: draft release notes for the first source-available TokenSquash release.
-Complete the evidence fields after the final release-prep commit, clean
-release-candidate run, and GitHub Actions run have passed.
+Status: ready for the first source-available TokenSquash release once the
+release checklist passes from a clean commit. The final tag, commit, artifact
+hashes, and GitHub Actions run are generated after this tracked file is
+committed and are recorded in the release-candidate evidence pack and published
+release notes.
 
 ## Summary
 
@@ -93,19 +95,22 @@ gh run view <run-id> --repo Martin123132/TokenSquash --json status,conclusion,jo
 gh run download <run-id> --repo Martin123132/TokenSquash --name release-candidate-evidence --dir private-turns\ci-release-candidate-evidence
 ```
 
-## Evidence To Fill At Release Time
+## Release Evidence Contract
 
-- tag: `v0.1.0`
-- release commit: `TBD`
-- local release-candidate status: `TBD`
-- local verifier status: `TBD`
-- GitHub Actions run: `TBD`
-- GitHub Actions conclusion: `TBD`
-- GitHub artifact: `release-candidate-evidence`
-- wheel SHA-256: `TBD`
-- source-distribution SHA-256: `TBD`
-- artifact-manifest SHA-256: `TBD`
-- license files packaged in wheel and source distribution: `TBD`
+Before tagging `v0.1.0`, the release owner must confirm:
+
+- local `release-info --require-clean` status is `pass`
+- local `release-candidate --require-clean` status is `pass`
+- local `verify-release-candidate --require-release-candidate-pass` status is
+  `pass`
+- GitHub Actions `tests` workflow status is `success`
+- GitHub Actions jobs `unittest (3.10)`, `unittest (3.13)`, and
+  `exact-tokenizer` are `success`
+- GitHub artifact `release-candidate-evidence` exists
+- wheel, source distribution, and artifact manifest SHA-256 hashes are present
+  in `release-attestation.json`
+- `LICENSE` and `COMMERCIAL-LICENSE.md` are packaged in both the wheel and
+  source distribution
 
 ## Known Limits
 

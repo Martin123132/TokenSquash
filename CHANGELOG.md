@@ -9,8 +9,25 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [0.1.0] - 2026-06-12
+
 ### Added
 
+- Deterministic compact prompt protocol `ts1` and compact reply protocol `tr1`.
+- Human-readable decoders for compact prompts and replies.
+- Public sample turn corpus and first-run demo workflow.
+- Benchmarking for prompts, replies, paired turns, aliases, and exact-tokenizer
+  counters when `tiktoken` is installed.
+- Private real-turn capture/import workflow with raw ignored storage and
+  regenerated redacted corpora.
+- Turn evaluation, certification, comparison, history, release-check, and
+  release-verification report packs.
+- Product manifest, release metadata report, workspace initialization, doctor,
+  readiness verifier, and release-candidate verifier.
+- Experimental local-AI sidecar translation, decode, round-trip, evaluation,
+  sweep, review, gate, certification, and comparison workflows.
 - GitHub Actions now runs unit tests across Python 3.10 and 3.13.
 - GitHub Actions now verifies dependency-free and exact-tokenizer benchmark
   baselines.
@@ -28,7 +45,7 @@ is produced locally and in GitHub Actions.
   impact checks.
 - TokenSquash now declares PolyForm Noncommercial License 1.0.0 terms, required
   notices, and commercial licensing contact details for TWO HANDS NETWORK LTD.
-- Draft v0.1.0 release notes now summarize scope, evidence, private-data
+- v0.1.0 release notes now summarize scope, evidence, private-data
   boundaries, license terms, and the release-prep command block.
 - GitHub issue forms now guide public-safe bug reports, feature requests,
   commercial licensing enquiries, and private-data/security contact requests.
@@ -48,24 +65,6 @@ is produced locally and in GitHub Actions.
 
 - Source-distribution build evidence now uses a portable dist path and records
   stderr/stdout excerpts only when the build command fails.
-
-## [0.1.0] - 2026-06-12
-
-### Added
-
-- Deterministic compact prompt protocol `ts1` and compact reply protocol `tr1`.
-- Human-readable decoders for compact prompts and replies.
-- Public sample turn corpus and first-run demo workflow.
-- Benchmarking for prompts, replies, paired turns, aliases, and exact-tokenizer
-  counters when `tiktoken` is installed.
-- Private real-turn capture/import workflow with raw ignored storage and
-  regenerated redacted corpora.
-- Turn evaluation, certification, comparison, history, release-check, and
-  release-verification report packs.
-- Product manifest, release metadata report, workspace initialization, doctor,
-  readiness verifier, and release-candidate verifier.
-- Experimental local-AI sidecar translation, decode, round-trip, evaluation,
-  sweep, review, gate, certification, and comparison workflows.
 
 ### Notes
 
