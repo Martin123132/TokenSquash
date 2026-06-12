@@ -7,6 +7,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -69,7 +72,14 @@ jobs:
               assert "tokensquash/data/sample-turns.jsonl" in set(zf.namelist())
           PY
       - name: Build source distribution
-        run: python -c "import setuptools.build_meta as b; print(b.build_sdist('/tmp/tokensquash-sdist'))"
+        run: |
+          mkdir -p /tmp/tokensquash-sdist
+          python - <<'PY'
+          import os
+          import setuptools.build_meta as build_meta
+
+          print(build_meta.build_sdist(os.path.relpath("/tmp/tokensquash-sdist", os.getcwd())))
+          PY
       - name: Check source distribution demo data
         run: |
           python - <<'PY'
@@ -122,9 +132,6 @@ jobs:
 
   exact-tokenizer:
     runs-on: ubuntu-latest
-    env:
-      TOKENSQUASH_RC_DIR: ${{ runner.temp }}/tokensquash-release-candidate
-      TOKENSQUASH_RC_VERIFY: ${{ runner.temp }}/tokensquash-release-candidate-verify.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -135,18 +142,17 @@ jobs:
       - name: Verify exact-tokenizer benchmark baselines
         run: python -m tokensquash baselines verify --include-exact-tokenizer --json
       - name: Run release candidate gate
-        run: python -m tokensquash release-candidate --skip-tests --out-dir "$TOKENSQUASH_RC_DIR" --json
+        run: python -m tokensquash release-candidate --skip-tests --out-dir /tmp/tokensquash-release-candidate --json
       - name: Verify release candidate gate
-        run: python -m tokensquash verify-release-candidate "$TOKENSQUASH_RC_DIR" --require-release-candidate-pass --out "$TOKENSQUASH_RC_VERIFY" --json
+        run: python -m tokensquash verify-release-candidate /tmp/tokensquash-release-candidate --require-release-candidate-pass --out /tmp/tokensquash-release-candidate-verify.json --json
       - name: Assert release package evidence
         run: |
           python - <<'PY'
           import json
-          import os
           from pathlib import Path
 
-          pack = Path(os.environ["TOKENSQUASH_RC_DIR"])
-          verify_path = Path(os.environ["TOKENSQUASH_RC_VERIFY"])
+          pack = Path("/tmp/tokensquash-release-candidate")
+          verify_path = Path("/tmp/tokensquash-release-candidate-verify.json")
           candidate = json.loads((pack / "release-candidate.json").read_text(encoding="utf-8"))
           verify = json.loads(verify_path.read_text(encoding="utf-8"))
           steps = {step["name"]: step for step in candidate["steps"]}
@@ -180,14 +186,23 @@ jobs:
               if not path.exists() or path.stat().st_size <= 0:
                   raise SystemExit(f"Missing or empty release evidence artifact: {path}")
           PY
+      - name: Collect release candidate evidence
+        if: always()
+        run: |
+          rm -rf ci-release-candidate-evidence
+          mkdir -p ci-release-candidate-evidence
+          if [ -d /tmp/tokensquash-release-candidate ]; then
+            cp -R /tmp/tokensquash-release-candidate ci-release-candidate-evidence/release-candidate
+          fi
+          if [ -f /tmp/tokensquash-release-candidate-verify.json ]; then
+            cp /tmp/tokensquash-release-candidate-verify.json ci-release-candidate-evidence/verify-release-candidate.json
+          fi
       - name: Upload release candidate evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-candidate-evidence
-          path: |
-            ${{ runner.temp }}/tokensquash-release-candidate
-            ${{ runner.temp }}/tokensquash-release-candidate-verify.json
+          path: ci-release-candidate-evidence
           if-no-files-found: warn
       - name: Run exact tokenizer benchmark
         run: python -m tokensquash bench examples/messy-coding-prompts.jsonl --counter tiktoken:cl100k_base

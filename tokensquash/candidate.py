@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tarfile
@@ -143,7 +144,7 @@ def run_release_candidate(
     _run_candidate_step(
         steps,
         "sdist_build",
-        command=f"{sys.executable} -c \"import setuptools.build_meta as b; print(b.build_sdist(r'{sdist_dir}'))\"",
+        command=f"{sys.executable} -c \"import setuptools.build_meta as b; print(b.build_sdist(<sdist-dir>))\"",
         required=True,
         action=lambda: _run_sdist_build(root, output_dir, sdist_dir),
     )
@@ -1010,7 +1011,8 @@ def _run_sdist_build(root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str
         old_sdist.unlink()
     log_path = output_dir / "sdist-build.txt"
     script = "import setuptools.build_meta as b, sys; print(b.build_sdist(sys.argv[1]))"
-    command = [sys.executable, "-c", script, str(sdist_dir)]
+    sdist_arg = _sdist_build_arg(root, sdist_dir)
+    command = [sys.executable, "-c", script, sdist_arg]
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, check=False)
     sdists = sorted(sdist_dir.glob("tokensquash-*.tar.gz"))
     sdist_path = sdists[-1] if sdists else None
@@ -1051,7 +1053,7 @@ def _run_sdist_build(root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str
     else:
         status = "pass"
         message = "Source distribution built, metadata matches, and packaged demo data is present."
-    return status, message, {
+    data = {
         "sdist_dir": str(sdist_dir),
         "log": str(log_path),
         "returncode": completed.returncode,
@@ -1060,6 +1062,10 @@ def _run_sdist_build(root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str
         "sdist_metadata": sdist_metadata,
         "sdist_metadata_mismatches": sdist_metadata_mismatches,
     }
+    if completed.returncode != 0:
+        data["stdout"] = _text_excerpt(completed.stdout)
+        data["stderr"] = _text_excerpt(completed.stderr)
+    return status, message, data
 
 
 def _run_logged_command(
@@ -1229,6 +1235,19 @@ def _sdist_metadata(path: Path | None) -> dict[str, Any]:
         "requires_python": parsed.get("Requires-Python"),
         "message": "Source distribution metadata captured.",
     }
+
+
+def _sdist_build_arg(root: Path, sdist_dir: Path) -> str:
+    try:
+        return os.path.relpath(sdist_dir.resolve(), root.resolve())
+    except ValueError:
+        return str(sdist_dir)
+
+
+def _text_excerpt(value: str, *, limit: int = 4000) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit] + "\n...[truncated]\n"
 
 
 def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: dict[str, Any]) -> list[Path]:
@@ -2227,9 +2246,7 @@ def _release_candidate_commands(
         "&& <venv-python> -m tokensquash about --json "
         "&& <venv-python> -m tokensquash demo --counter chars --json"
     )
-    commands.append(
-        f"python -c \"import setuptools.build_meta as b; print(b.build_sdist(r'{sdist_dir}'))\""
-    )
+    commands.append("python -c \"import setuptools.build_meta as b; print(b.build_sdist(<sdist-dir>))\"")
     return commands
 
 
