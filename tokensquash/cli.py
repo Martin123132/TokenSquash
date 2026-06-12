@@ -30,6 +30,7 @@ from .metrics import (
 )
 from .mining import format_pattern_mine_markdown, mine_reply_patterns
 from .reply import decode_reply, encode_reply, parse_reply_wire
+from .release import format_turn_release_check_markdown, run_turn_release_check
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -571,6 +572,51 @@ def main(argv: list[str] | None = None) -> int:
         help="Minimum estimated saved tokens for suggestions.",
     )
     turns_certify.add_argument("--json", action="store_true", help="Print certification JSON.")
+
+    turns_release_check = turns_sub.add_parser(
+        "release-check",
+        help="Run turn certification, optional history, and strict doctor gates for a release.",
+    )
+    turns_release_check.add_argument(
+        "corpus",
+        nargs="?",
+        type=Path,
+        default=Path("private-turns/real.redacted-turns.jsonl"),
+        help="Redacted turn corpus to certify for release.",
+    )
+    turns_release_check.add_argument("--out-dir", type=Path, default=Path("private-turns/release-check"))
+    turns_release_check.add_argument(
+        "--history",
+        action="append",
+        default=[],
+        type=Path,
+        help="Previous certification JSON file or output directory. Repeat in chronological order.",
+    )
+    turns_release_check.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_release_check.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_release_check.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_release_check.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_release_check.add_argument("--min-count", type=int, default=2, help="Minimum alias/pattern occurrences before selection.")
+    turns_release_check.add_argument("--limit", type=int, default=10, help="Rows to show per diagnostic or mining section.")
+    turns_release_check.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to select.")
+    turns_release_check.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to select.")
+    turns_release_check.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving per alias.")
+    turns_release_check.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    turns_release_check.add_argument("--min-saved-pct", type=float, default=0.5, help="Minimum saved percent required.")
+    turns_release_check.add_argument("--max-privacy-findings", type=int, default=0, help="Maximum privacy findings allowed.")
+    turns_release_check.add_argument("--max-pass-through-rows", type=int, default=0, help="Maximum adaptive pass-through rows allowed.")
+    turns_release_check.add_argument("--max-raw-wire-loss-turns", type=int, default=0, help="Maximum rows where raw wire is longer.")
+    turns_release_check.add_argument("--suggestion-limit", type=int, default=5, help="Maximum suggestions to include.")
+    turns_release_check.add_argument(
+        "--suggestion-min-saved-tokens",
+        type=int,
+        default=1,
+        help="Minimum estimated saved tokens for suggestions.",
+    )
+    turns_release_check.add_argument("--check-ollama", action="store_true", help="Include the optional Ollama doctor check.")
+    turns_release_check.add_argument("--ollama-endpoint", default=DEFAULT_OLLAMA_ENDPOINT, help="Ollama endpoint.")
+    turns_release_check.add_argument("--ollama-timeout", type=float, default=2.0, help="Ollama check timeout in seconds.")
+    turns_release_check.add_argument("--json", action="store_true", help="Print release-check JSON.")
 
     turns_suggestions = turns_sub.add_parser("suggestions", help="Suggest next codec improvements from a turn report JSON.")
     turns_suggestions.add_argument("report", type=Path)
@@ -1260,6 +1306,38 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(output, end="")
                 return 0 if report["status"] == "pass" else 1
+            if args.turns_command == "release-check":
+                report = run_turn_release_check(
+                    args.corpus,
+                    out_dir=args.out_dir,
+                    history_paths=args.history,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                    min_count=args.min_count,
+                    limit=args.limit,
+                    max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
+                    min_saved_tokens=args.min_saved_tokens,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                    min_saved_pct=args.min_saved_pct,
+                    max_privacy_findings=args.max_privacy_findings,
+                    max_pass_through_rows=args.max_pass_through_rows,
+                    max_raw_wire_loss_turns=args.max_raw_wire_loss_turns,
+                    suggestion_limit=args.suggestion_limit,
+                    suggestion_min_saved_tokens=args.suggestion_min_saved_tokens,
+                    check_ollama=args.check_ollama,
+                    ollama_endpoint=args.ollama_endpoint,
+                    ollama_timeout=args.ollama_timeout,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_release_check_markdown(report)
+                )
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "warn"} else 1
             if args.turns_command == "suggestions":
                 report = suggest_turn_improvements(
                     args.report,

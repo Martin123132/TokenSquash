@@ -284,6 +284,12 @@ Summarize a chronological run of saved certification packs:
 python -m tokensquash turns certification-history private-turns\cert-before private-turns\cert-after private-turns\cert-latest
 ```
 
+Run the release gate before publishing a codec change:
+
+```powershell
+python -m tokensquash turns release-check private-turns\real.redacted-turns.jsonl --history private-turns\cert-before --out-dir private-turns\release-check --counter tiktoken:cl100k_base --json
+```
+
 Turn a saved report into a prioritized codec-improvement checklist:
 
 ```powershell
@@ -309,7 +315,8 @@ Use this loop:
 8. Run `turns certify` when you need a durable evidence pack.
 9. Run `turns compare-certifications` across saved certification packs.
 10. Run `turns certification-history` across chronological certification packs to spot regressions.
-11. Keep iterating with more capture turns.
+11. Run `turns release-check` before publishing a codec or measurement change.
+12. Keep iterating with more capture turns.
 
 ```powershell
 python -m tokensquash turns validate private-turns\real.jsonl
@@ -321,6 +328,7 @@ python -m tokensquash turns gate private-turns\eval-real\evaluation.json --min-s
 python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification
 python -m tokensquash turns compare-certifications private-turns\cert-before\certification.json private-turns\cert-after\certification.json
 python -m tokensquash turns certification-history private-turns\cert-before private-turns\cert-after private-turns\cert-latest
+python -m tokensquash turns release-check private-turns\real.redacted-turns.jsonl --history private-turns\cert-before --counter tiktoken:cl100k_base --out-dir private-turns\release-check
 python -m tokensquash turns measure private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --target 0
 python -m tokensquash turns diagnose private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns mine private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
@@ -350,6 +358,10 @@ suggestion counts.
 output directories in chronological order, then reports net movement, adjacent
 regressions, best/worst saved percent, and warnings when the latest pack has
 fallen below the best observed result.
+`turns release-check` writes a release evidence pack that runs `turns certify`,
+strict `doctor`, and optional certification history in one command. A supplied
+history regression fails the release check; no history is allowed but reported
+as a warning so first-run projects can still get a usable pack.
 `turns measure` validates the corpus, summarizes it, and reports combined
 savings plus prompt-side and reply-side savings. `turns diagnose` shows the
 largest wins, raw wire losses, and adaptive pass-through rows so the next codec
@@ -516,6 +528,7 @@ python -m tokensquash init --dry-run
 python -m tokensquash doctor --strict
 python -m tokensquash demo --counter chars --out-dir private-turns\demo-output
 python -m tokensquash turns certify examples\sample-turns.jsonl --counter chars --out-dir private-turns\certification
+python -m tokensquash turns release-check examples\sample-turns.jsonl --counter chars --out-dir private-turns\release-check
 ```
 
 `doctor --strict` writes its certification evidence to
@@ -540,7 +553,7 @@ release process needs the evidence somewhere else.
 - Machine-readable product manifest for version, commands, schemas, protocols, and readiness checks.
 - Idempotent workspace initialization for private corpora, aliases, and ignore rules.
 - Local doctor command for install, demo, private-storage, tokenizer, strict readiness, and optional Ollama checks.
-- One-command turn evaluation, certification, comparison, and history report packs for real-corpus measurement.
+- One-command turn evaluation, certification, comparison, history, and release-check report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
 - Pattern mining for repeated reply values and path patterns.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
