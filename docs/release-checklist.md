@@ -135,6 +135,9 @@ artifact provenance policy have been added and reviewed.
 
 ## 7. Post-Release
 
+Follow [post-release-flow.md](post-release-flow.md) for the detailed
+post-release update and verification sequence.
+
 - Add a new `Unreleased` section to `CHANGELOG.md`.
 - Record the released tag, GitHub Actions run, and release-candidate evidence
   location in the published release notes.

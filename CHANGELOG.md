@@ -14,6 +14,14 @@ is produced locally and in GitHub Actions.
 - `release-assets --update-verification-doc` now refreshes the generated
   release asset hash section in `docs/release-verification.md` from the staged
   asset report.
+- `docs/first-real-corpus.md` now gives a short 10-turn local capture,
+  redaction, report, suggestions, and certification workflow.
+- `docs/sidecar-meaning-rubric.md` now defines pass/watch/fail review guidance
+  for experimental sidecar round-trip meaning preservation.
+- `docs/post-release-flow.md` now documents the changelog, release notes,
+  asset-hash, verification-doc, and GitHub Release update flow after publishing.
+- v0.1.0 release notes now record the actual tag, release URL, release commit,
+  CI run ids, verifier status, and release attestation evidence hash.
 - `ROADMAP.md` and `docs/v0.1.1-plan.md` now describe the public product
   direction, experimental boundaries, evidence bar, and next patch-release
   scope.

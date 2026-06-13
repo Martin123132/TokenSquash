@@ -1,10 +1,30 @@
 # TokenSquash v0.1.0 Release Notes
 
-Status: ready for the first source-available TokenSquash release once the
-release checklist passes from a clean commit. The final tag, commit, artifact
-hashes, and GitHub Actions run are generated after this tracked file is
-committed and are recorded in the release-candidate evidence pack and published
-release notes.
+Status: released on 2026-06-12 as the first source-available TokenSquash
+release.
+
+Release evidence:
+
+- tag: `v0.1.0`
+- release URL: <https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.0>
+- release commit: `9583c296f4ada082c88b7bc8149b678ed1529a16`
+- main CI run: `27437797983`
+- tag CI run: `27437873313`
+- release-candidate verifier status: `pass`
+- release attestation evidence hash:
+  `d5dd3482b253bbb38ecf805d1097d301700a2eab80daf149a6f2774354c043d8`
+- published asset hashes are recorded in
+  [release-verification.md](release-verification.md)
+
+Published asset SHA-256 values:
+
+| Asset | SHA-256 |
+|---|---|
+| `tokensquash-0.1.0-py3-none-any.whl` | `5e2118072de2c1e7a879238126afce252825c07c58b2b24c2d1376826e9b2e91` |
+| `tokensquash-0.1.0.tar.gz` | `fa991f10f999f3d121f4778cf842a73aad61cea4de6a549731283d6010776adb` |
+| `release-attestation.json` | `1aa0b166a99bc8361f5bf8887355db7b96ffb89fe5330e52e123b6f40b71081b` |
+| `artifact-manifest.json` | `f8a1539e3cca153afea5bbb8018f0b8eb0e9418f933e06939bbf78add84aa179` |
+| `verify-release-candidate.json` | `f51a60bfae867590ac78b0103b7041eba3d8d9db886c72f34c09c10609f1490e` |
 
 ## Summary
 
@@ -73,7 +93,7 @@ notices, commercial-use examples, request details, and contact channel.
 
 ## Release-Prep Command Block
 
-Run this from a clean checkout before tagging:
+The v0.1.0 release was prepared from a clean checkout with this command block:
 
 ```powershell
 python -m pip install -e ".[tokenizer]"
@@ -97,7 +117,7 @@ gh run download <run-id> --repo Martin123132/TokenSquash --name release-candidat
 
 ## Release Evidence Contract
 
-Before tagging `v0.1.0`, the release owner must confirm:
+For `v0.1.0`, the release owner confirmed:
 
 - local `release-info --require-clean` status is `pass`
 - local `release-candidate --require-clean` status is `pass`

@@ -90,8 +90,10 @@ python -m tokensquash verify-release-candidate private-turns\release-candidate -
 Use [docs/release-checklist.md](docs/release-checklist.md) as the release
 runbook, confirm the [LICENSE](LICENSE) and
 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) terms, and record user-facing
-changes in [CHANGELOG.md](CHANGELOG.md). The draft first-release notes live at
-[docs/release-notes-v0.1.0.md](docs/release-notes-v0.1.0.md). The project
+changes in [CHANGELOG.md](CHANGELOG.md). The first-release notes live at
+[docs/release-notes-v0.1.0.md](docs/release-notes-v0.1.0.md). The
+[post-release flow](docs/post-release-flow.md) keeps release notes, changelog
+entries, uploaded assets, and verification hashes aligned. The project
 direction is tracked in [ROADMAP.md](ROADMAP.md), with the next patch plan in
 [docs/v0.1.1-plan.md](docs/v0.1.1-plan.md).
 
@@ -245,6 +247,9 @@ For paired prompt/reply exports, use a local JSONL turn corpus:
 ```
 
 Keep real files under `turns/` or `private-turns/`; both are ignored by Git.
+For a focused first measurement pass, follow the
+[first real corpus guide](docs/first-real-corpus.md) and collect about 10 local
+turns before making codec claims.
 
 Capture one real turn without hand-editing JSON. This appends the raw turn to
 `private-turns\real.jsonl`, regenerates
@@ -456,6 +461,8 @@ TokenSquash can also experiment with a local model such as Ollama as an optional
 semantic translator. This does not replace the deterministic codec. The local
 model proposes compact semantic JSON, and TokenSquash measures whether that
 semantic form is actually shorter than the original text.
+Use the [sidecar meaning rubric](docs/sidecar-meaning-rubric.md) when reviewing
+round-trip output, warnings, missing fields, and generic decoded text.
 
 Preview the exact Ollama request without calling a model:
 
@@ -698,6 +705,9 @@ For a tag or external release, follow
 the clean release-candidate pack.
 Use [docs/release-verification.md](docs/release-verification.md) to inspect
 published release assets, hashes, attestations, and packaged license evidence.
+Use [docs/post-release-flow.md](docs/post-release-flow.md) after tagging or
+publishing so the changelog, release notes, asset hashes, verification docs, and
+GitHub Release page stay aligned.
 Use [ROADMAP.md](ROADMAP.md) and
 [docs/v0.1.1-plan.md](docs/v0.1.1-plan.md) to keep release scope focused on
 measured product polish rather than broad new claims.
@@ -715,6 +725,7 @@ measured product polish rather than broad new claims.
 - Committed benchmark baseline verifier for detecting stale public benchmark snapshots.
 - Local paired-turn workflow for validating, redacting, splitting, and benchmarking private prompt/reply exports.
 - Safe one-command turn capture with raw private storage and regenerated redacted corpora.
+- First-real-corpus guide for collecting, redacting, reporting, suggesting, and certifying 10 local turns.
 - Bulk turn import into private raw storage with regenerated redacted corpora.
 - Alias-impact reports for learned session dictionaries.
 - Public paired-turn sample corpus and first-run deterministic demo command.
@@ -727,6 +738,7 @@ measured product polish rather than broad new claims.
 - One-command release-candidate gate and verifier for readiness verification, benchmark baseline freshness, exact-tokenizer baselines, wheel/source-distribution metadata, package/install smoke evidence, artifact hash integrity, and local release attestations.
 - One-command turn evaluation, certification, comparison, history, release-check, and release-verification report packs for real-corpus measurement.
 - Experimental local-AI sidecar round-trip, corpus evaluation, experiment/sweep packs, review reports, tuning suggestions, and evaluation comparison.
+- Sidecar meaning-preservation rubric for reviewing warnings, missing fields, generic decoded text, and decoded meaning loss.
 - Pattern mining for repeated reply values and path patterns.
 - Optional exact-tokenizer benchmarks through `tiktoken`.
 - No API keys or model dependency for the deterministic core codec; the optional
