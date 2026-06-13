@@ -11,7 +11,10 @@ from .workspace import GITIGNORE_PATTERNS, WORKSPACE_INIT_SCHEMA_VERSION
 
 MANIFEST_SCHEMA_VERSION = "tokensquash.product.manifest.v1"
 PROJECT_NAME = "tokensquash"
-PROJECT_DESCRIPTION = "Compact AI-agent intent codec and token-savings benchmark tools."
+PROJECT_DESCRIPTION = (
+    "Local-first codec and evidence harness for measuring whether AI-agent task/reply traffic "
+    "can be made shorter without losing meaning."
+)
 PUBLIC_LICENSE_NAME = "PolyForm Noncommercial License 1.0.0"
 PUBLIC_LICENSE_PATH = "LICENSE"
 COMMERCIAL_LICENSE_PATH = "COMMERCIAL-LICENSE.md"
@@ -176,12 +179,18 @@ GOVERNANCE_DOCUMENTS = [
     {"path": "ROADMAP.md", "purpose": "Public product direction, stability boundaries, and evidence bar."},
     {"path": "CONTRIBUTING.md", "purpose": "Contributor setup, quality gates, privacy rules, and release expectations."},
     {"path": "SECURITY.md", "purpose": "Security support, vulnerability reporting, and private-data handling policy."},
+    {"path": "docs/quickstart.md", "purpose": "First commands, demo output shape, and health-check workflow."},
+    {"path": "docs/real-turn-workflow.md", "purpose": "Private turn capture, redaction, reporting, gating, and certification workflow."},
+    {"path": "docs/evidence-packs.md", "purpose": "Readiness, certification, quality-budget, release, and sidecar evidence packs."},
+    {"path": "docs/release-candidate.md", "purpose": "Release-candidate build, verification, asset staging, and upload workflow."},
     {"path": "docs/release-checklist.md", "purpose": "Manual release runbook and evidence checklist."},
     {"path": "docs/release-notes-v0.1.0.md", "purpose": "Published v0.1.0 scope, evidence, and release notes."},
     {"path": "docs/release-verification.md", "purpose": "Published release asset hash and evidence verification guide."},
     {"path": "docs/post-release-flow.md", "purpose": "Post-release changelog, notes, asset, and verification update flow."},
     {"path": "docs/first-real-corpus.md", "purpose": "First local 10-turn capture, redaction, reporting, and certification guide."},
+    {"path": "docs/sidecar-ollama.md", "purpose": "Experimental local Ollama sidecar workflow and review commands."},
     {"path": "docs/sidecar-meaning-rubric.md", "purpose": "Meaning-preservation review rubric for experimental sidecar evidence."},
+    {"path": "docs/commercial-license.md", "purpose": "Plain-language commercial-use boundary and license request guide."},
     {"path": "docs/v0.1.1-plan.md", "purpose": "Next patch-release scope, acceptance checklist, and out-of-scope guardrails."},
     {"path": ".github/PULL_REQUEST_TEMPLATE.md", "purpose": "Pull-request verification and privacy checklist."},
     {"path": ".github/ISSUE_TEMPLATE/config.yml", "purpose": "Issue-template routing and private contact links."},

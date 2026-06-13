@@ -22,6 +22,9 @@ is produced locally and in GitHub Actions.
   asset-hash, verification-doc, and GitHub Release update flow after publishing.
 - v0.1.0 release notes now record the actual tag, release URL, release commit,
   CI run ids, verifier status, and release attestation evidence hash.
+- `README.md` now acts as a concise public front door, with command-heavy
+  workflows moved into focused docs for quickstart, real turns, evidence packs,
+  release candidates, sidecar Ollama use, and commercial licensing.
 - `ROADMAP.md` and `docs/v0.1.1-plan.md` now describe the public product
   direction, experimental boundaries, evidence bar, and next patch-release
   scope.

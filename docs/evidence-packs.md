@@ -1,0 +1,101 @@
+# Evidence Packs
+
+TokenSquash evidence packs make results repeatable. They are local folders or
+JSON reports that preserve inputs, thresholds, summaries, warnings, gates, and
+verification status.
+
+## Product Readiness
+
+```powershell
+python -m tokensquash readiness --out-dir private-turns\readiness --json
+python -m tokensquash verify-readiness private-turns\readiness --require-readiness-pass --json
+```
+
+Readiness writes a product-level evidence pack with nested doctor, demo,
+certification, release-check, and release-verification artifacts. The verifier
+audits the saved files and schemas after the pack is written.
+
+## Strict Doctor
+
+```powershell
+python -m tokensquash doctor --strict --strict-out-dir private-turns\doctor-strict --json
+```
+
+Strict doctor checks:
+
+- packaged public demo corpus
+- deterministic demo workflow
+- private-storage ignore patterns
+- workspace init dry run
+- source governance documents
+- product manifest
+- turn certification workflow
+
+## Turn Certification
+
+```powershell
+python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification --json
+```
+
+Certification writes:
+
+- `certification.json`
+- `certification.md`
+- `report.json`
+- `gate.json`
+- `suggestions.json`
+- nested deterministic evaluation artifacts
+
+## Quality Budgets
+
+```powershell
+python -m tokensquash budget init --out private-turns\quality-budget.json --dry-run --json
+python -m tokensquash budget validate examples\quality-budget.json
+```
+
+Quality budgets define thresholds for saved percent, privacy findings,
+pass-through rows, raw-wire-loss rows, history regressions, and doctor warnings.
+Use source-controlled budgets for release checks.
+
+## Turn Release Evidence
+
+```powershell
+python -m tokensquash turns release-check private-turns\real.redacted-turns.jsonl --budget examples\quality-budget.json --history private-turns\certification --counter tiktoken:cl100k_base --out-dir private-turns\release-check --json
+python -m tokensquash turns verify-release private-turns\release-check --require-release-pass --json
+```
+
+Turn release evidence combines certification, strict doctor, quality budget
+validation, and optional certification history into a release-impact report.
+
+## Release Candidate Evidence
+
+```powershell
+python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
+python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
+```
+
+Release-candidate evidence includes wheel/source-distribution builds, metadata
+checks, package smoke tests, artifact manifests, and release attestations. See
+[release-candidate.md](release-candidate.md) for the full flow.
+
+## Release Asset Evidence
+
+```powershell
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+```
+
+Release asset evidence stages public assets, writes `release-assets.json` and
+`release-assets.md`, and can regenerate the hash section in
+`docs\release-verification.md`. Upload remains explicit through `--upload`.
+
+## Sidecar Evidence
+
+```powershell
+python -m tokensquash sidecar evaluate private-turns\real.redacted-turns.jsonl --mode both --limit 10 --model llama3.2:3b --counter chars --out-dir private-turns\sidecar-eval --json
+python -m tokensquash sidecar review private-turns\sidecar-eval\evaluation.json
+python -m tokensquash sidecar certify private-turns\sidecar-eval\evaluation.json --out-dir private-turns\sidecar-certification --json
+```
+
+Sidecar evidence must be judged with warning counts, missing fields, decoded
+meaning, gate results, and the [sidecar meaning rubric](sidecar-meaning-rubric.md).
+Token savings alone are not success.
