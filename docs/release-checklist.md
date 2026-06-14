@@ -7,7 +7,7 @@ candidate. It assumes the release is being prepared from `main`.
 
 - Read `CHANGELOG.md` and move any completed items from `Unreleased` into the
   target version section.
-- Review `docs/release-notes-v0.1.0.md` and confirm the release evidence
+- Review `docs/release-notes-v0.1.1.md` and confirm the release evidence
   contract matches the final release process.
 - Confirm `pyproject.toml` contains the intended package version.
 - Confirm the README still describes the current command surface accurately.
@@ -45,7 +45,7 @@ python -m tokensquash verify-readiness private-turns\readiness-release --require
 python -m tokensquash release-info --require-clean --json
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 ```
 
 ## 3. Run Product Gates
@@ -65,7 +65,7 @@ All commands above must pass before building release-candidate evidence.
 ```powershell
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 ```
 
 Inspect the saved pack before continuing:
@@ -126,8 +126,8 @@ Only tag or publish after local and GitHub release evidence both pass.
 Suggested local tag command:
 
 ```powershell
-& 'D:\Apps\Git\cmd\git.exe' tag -a v0.1.0 -m "TokenSquash v0.1.0"
-& 'D:\Apps\Git\cmd\git.exe' push origin v0.1.0
+& 'D:\Apps\Git\cmd\git.exe' tag -a v0.1.1 -m "TokenSquash v0.1.1"
+& 'D:\Apps\Git\cmd\git.exe' push origin v0.1.1
 ```
 
 Do not publish to PyPI until a dedicated publishing workflow, credentials, and

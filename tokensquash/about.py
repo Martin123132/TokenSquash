@@ -153,7 +153,7 @@ READINESS_COMMANDS = [
     "python -m tokensquash release-info --json",
     "python -m tokensquash release-candidate --out-dir private-turns\\release-candidate",
     "python -m tokensquash verify-release-candidate private-turns\\release-candidate --require-release-candidate-pass",
-    "python -m tokensquash release-assets private-turns\\release-candidate --tag v0.1.0 --update-verification-doc docs\\release-verification.md",
+    "python -m tokensquash release-assets private-turns\\release-candidate --tag v0.1.1 --update-verification-doc docs\\release-verification.md",
     "python -m tokensquash baselines verify",
     "python -m unittest discover -s tests",
     "python -m tokensquash init --dry-run",
@@ -185,6 +185,7 @@ GOVERNANCE_DOCUMENTS = [
     {"path": "docs/release-candidate.md", "purpose": "Release-candidate build, verification, asset staging, and upload workflow."},
     {"path": "docs/release-checklist.md", "purpose": "Manual release runbook and evidence checklist."},
     {"path": "docs/release-notes-v0.1.0.md", "purpose": "Published v0.1.0 scope, evidence, and release notes."},
+    {"path": "docs/release-notes-v0.1.1.md", "purpose": "v0.1.1 public-polish scope, compatibility boundary, and release evidence contract."},
     {"path": "docs/release-verification.md", "purpose": "Published release asset hash and evidence verification guide."},
     {"path": "docs/post-release-flow.md", "purpose": "Post-release changelog, notes, asset, and verification update flow."},
     {"path": "docs/first-real-corpus.md", "purpose": "First local 10-turn capture, redaction, reporting, and certification guide."},
@@ -350,20 +351,26 @@ def format_product_manifest_markdown(report: dict[str, Any]) -> str:
 
 
 def package_version(cwd: Path | str | None = None) -> str:
+    source_version = _pyproject_value(Path(cwd) if cwd is not None else Path.cwd(), "version")
+    if source_version:
+        return source_version
     try:
         return metadata.version(PROJECT_NAME)
     except metadata.PackageNotFoundError:
-        return _pyproject_value(Path(cwd) if cwd is not None else Path.cwd(), "version") or "0.0.0"
+        return "0.0.0"
 
 
 def package_requires_python(cwd: Path | str | None = None) -> str:
+    source_requires = _pyproject_value(Path(cwd) if cwd is not None else Path.cwd(), "requires-python")
+    if source_requires:
+        return source_requires
     try:
         value = metadata.metadata(PROJECT_NAME).get("Requires-Python")
         if value:
             return value
     except metadata.PackageNotFoundError:
         pass
-    return _pyproject_value(Path(cwd) if cwd is not None else Path.cwd(), "requires-python") or ">=3.10"
+    return ">=3.10"
 
 
 def _pyproject_value(cwd: Path, key: str) -> str | None:

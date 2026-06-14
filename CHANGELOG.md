@@ -11,6 +11,12 @@ is produced locally and in GitHub Actions.
 
 ### Added
 
+- Nothing yet.
+
+## [0.1.1] - 2026-06-14
+
+### Added
+
 - `release-assets --update-verification-doc` now refreshes the generated
   release asset hash section in `docs/release-verification.md` from the staged
   asset report.
@@ -22,6 +28,8 @@ is produced locally and in GitHub Actions.
   asset-hash, verification-doc, and GitHub Release update flow after publishing.
 - v0.1.0 release notes now record the actual tag, release URL, release commit,
   CI run ids, verifier status, and release attestation evidence hash.
+- v0.1.1 release notes now describe the public-polish scope, compatibility
+  boundary, release evidence contract, and known limits for the patch release.
 - `README.md` now acts as a concise public front door, with command-heavy
   workflows moved into focused docs for quickstart, real turns, evidence packs,
   release candidates, sidecar Ollama use, and commercial licensing.

@@ -122,6 +122,8 @@ Start here:
 - [Release checklist](docs/release-checklist.md): manual release runbook.
 - [Release verification](docs/release-verification.md): inspect published
   assets, hashes, attestations, and packaged license evidence.
+- [v0.1.1 release notes](docs/release-notes-v0.1.1.md): public-polish patch
+  scope and release evidence contract.
 - [Post-release flow](docs/post-release-flow.md): keep release notes,
   changelog, GitHub Release text, and verification hashes aligned.
 - [Changelog](CHANGELOG.md): user-facing change history.
@@ -152,6 +154,8 @@ Start here:
 
 The first source-available release is published as
 [TokenSquash v0.1.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.0).
+The v0.1.1 public-polish release is being prepared in
+[v0.1.1 release notes](docs/release-notes-v0.1.1.md).
 
 The release includes a wheel, source distribution, artifact manifest,
 release attestation, and release-candidate verifier output. The tracked

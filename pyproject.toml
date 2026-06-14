@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tokensquash"
-version = "0.1.0"
-description = "Compact AI-agent intent codec and token-savings benchmark tools."
+version = "0.1.1"
+description = "Local-first codec and evidence harness for measuring whether AI-agent task/reply traffic can be made shorter without losing meaning."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Martin Ollett" }]
