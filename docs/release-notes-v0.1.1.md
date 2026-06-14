@@ -1,9 +1,29 @@
 # TokenSquash v0.1.1 Release Notes
 
-Status: release-prep in progress on 2026-06-14. The final tag, release commit,
-GitHub Actions run, release attestation evidence hash, and published asset
-hashes are recorded after the clean release commit is tagged and the release
-assets are uploaded.
+Status: released on 2026-06-14 as a public-polish and release-evidence patch.
+
+Release evidence:
+
+- tag: `v0.1.1`
+- release URL: <https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.1>
+- release commit: `8fd573b46b962f5bddec27bcb86cf62c67c137c6`
+- main CI run: `27515165418`
+- tag CI run: `27515208443`
+- release-candidate verifier status: `pass`
+- release attestation evidence hash:
+  `3a1ad89dc640ee8e383ddeadf51eb55168a26c694228a1d671c12ae412a766a4`
+- published asset hashes are recorded in
+  [release-verification.md](release-verification.md)
+
+Published asset SHA-256 values:
+
+| Asset | SHA-256 |
+|---|---|
+| `tokensquash-0.1.1-py3-none-any.whl` | `bcf1757485b64c7e2466e5618b888738e6c3dbe3900802aec66ed733892c7f35` |
+| `tokensquash-0.1.1.tar.gz` | `18064cb697dc4883dee38aad981cca274a82f448f2196a58a19ecb73be928fa9` |
+| `release-attestation.json` | `f29a6315d8001a3f73e9e6187f99706a5ec0106ec97d918828228cc0106748fb` |
+| `artifact-manifest.json` | `2b552ca9535c2e4c9580ca579a9ce89a31c50defec9a310bae5a858bfed98590` |
+| `verify-release-candidate.json` | `3adfbb8a73853026d98d85e3f4ba9ff71f0ac61fadc0d035a9e6899df6e8e930` |
 
 ## Summary
 
@@ -39,7 +59,7 @@ No wire-format compatibility changes are included in v0.1.1:
 
 ## Evidence Contract
 
-Before publishing `v0.1.1`, the release owner must confirm:
+For `v0.1.1`, the release owner confirmed:
 
 - local `python -m unittest discover -s tests` status is `pass`
 - local `python -m tokensquash doctor --strict` status is `pass`
