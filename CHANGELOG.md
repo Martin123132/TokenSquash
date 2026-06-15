@@ -11,7 +11,17 @@ is produced locally and in GitHub Actions.
 
 ### Added
 
-- Nothing yet.
+- `turns scorecard` now summarizes real-turn corpus health, token savings,
+  alias opportunities, privacy findings, adaptive benchmark behavior, and
+  optional sidecar review evidence in a single report.
+- Sidecar review reports now include pass/watch/fail decisions so experimental
+  local-AI semantic compression can be judged on meaning risk, not token savings
+  alone.
+- `docs/v0.2.0-plan.md` now describes the next development track for real corpus
+  scorecards, corpus growth milestones, sidecar meaning evidence, and release-tag
+  comparison.
+- Quickstart, real-turn, and first-real-corpus docs now show where the new
+  scorecard fits between capture, validation, evaluation, and release evidence.
 
 ## [0.1.1] - 2026-06-14
 

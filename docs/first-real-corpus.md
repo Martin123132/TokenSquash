@@ -54,12 +54,14 @@ python -m tokensquash turns stats private-turns\real.redacted-turns.jsonl
 Build a compact report:
 
 ```powershell
+python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 python -m tokensquash turns report private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json > private-turns\real-report.json
 python -m tokensquash turns suggestions private-turns\real-report.json
 ```
 
 Read the report before changing the codec. Focus on:
 
+- whether the scorecard milestone is `smoke` or better
 - top saved turns
 - raw-wire losses
 - adaptive pass-through rows
@@ -95,6 +97,7 @@ redacted corpus looks sane:
 python -m tokensquash sidecar evaluate private-turns\real.redacted-turns.jsonl --mode both --limit 10 --model llama3.2:3b --counter chars --out-dir private-turns\sidecar-eval --json
 python -m tokensquash sidecar review private-turns\sidecar-eval\evaluation.json
 python -m tokensquash sidecar suggestions private-turns\sidecar-eval\review.json
+python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --sidecar-review private-turns\sidecar-eval\review.json
 ```
 
 Sidecar token savings are not enough. Inspect the decoded meaning and warnings

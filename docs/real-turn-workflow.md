@@ -56,6 +56,7 @@ python -m tokensquash turns import exports\turns.jsonl --evaluate --counter tikt
 python -m tokensquash turns validate private-turns\real.jsonl
 python -m tokensquash turns validate private-turns\real.redacted-turns.jsonl
 python -m tokensquash turns stats private-turns\real.redacted-turns.jsonl
+python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
 ```
 
 Redaction is a safety net, not a privacy guarantee. Review redacted corpora
@@ -72,11 +73,14 @@ python -m tokensquash turns mine private-turns\real.redacted-turns.jsonl --count
 
 Review:
 
+- corpus growth milestone: `seed`, `smoke`, `early_pattern`, or
+  `benchmark_ready`
 - top saved turns
 - raw-wire losses
 - adaptive pass-through rows
 - privacy findings
 - repeated commands, paths, risks, and verification phrases
+- sidecar pass/watch/fail counts when review evidence is present
 
 ## Gate And Certify
 

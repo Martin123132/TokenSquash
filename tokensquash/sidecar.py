@@ -822,6 +822,9 @@ def format_sidecar_review_markdown(report: dict[str, Any]) -> str:
         f"- Status: `{report.get('status')}`",
         f"- Source: `{report.get('source')}`",
         f"- Rows: `{summary.get('row_count', 0)}`",
+        f"- Pass: `{summary.get('pass_count', 0)}`",
+        f"- Watch: `{summary.get('watch_count', 0)}`",
+        f"- Fail: `{summary.get('fail_count', 0)}`",
         f"- Needs review: `{summary.get('review_count', 0)}`",
         f"- High risk: `{summary.get('high_risk_count', 0)}`",
         f"- Warnings: `{summary.get('warning_count', 0)}`",
@@ -839,8 +842,8 @@ def format_sidecar_review_markdown(report: dict[str, Any]) -> str:
     else:
         lines.extend(
             [
-                "| ID | Side | Verdict | Risk | Saved | Flags |",
-                "|---|---|---|---:|---:|---|",
+                "| ID | Side | Decision | Verdict | Risk | Saved | Flags |",
+                "|---|---|---|---|---:|---:|---|",
             ]
         )
         for row in rows:
@@ -849,6 +852,7 @@ def format_sidecar_review_markdown(report: dict[str, Any]) -> str:
                 "| "
                 f"{_markdown_cell(str(row.get('id', '')))} | "
                 f"{row.get('side')} | "
+                f"`{row.get('decision', 'watch')}` | "
                 f"`{row.get('verdict')}` | "
                 f"{row.get('risk_score')} | "
                 f"{row.get('saved_tokens', 0)} ({row.get('saved_pct', 0.0)}%) | "
@@ -865,6 +869,7 @@ def format_sidecar_review_markdown(report: dict[str, Any]) -> str:
                     f"### {row.get('id')} / {row.get('side')}",
                     "",
                     f"- Verdict: `{row.get('verdict')}`",
+                    f"- Decision: `{row.get('decision', 'watch')}`",
                     f"- Risk score: `{row.get('risk_score')}`",
                     f"- Risk level: `{row.get('risk_level')}`",
                     f"- Saved: `{row.get('saved_tokens', 0)}` (`{row.get('saved_pct', 0.0)}%`)",
@@ -1443,11 +1448,13 @@ def _review_sidecar_row(row: dict[str, Any], *, high_savings_pct: float, short_r
         reasons.append("original preview mentions risk text but semantic risks are empty")
 
     risk_score = _sidecar_review_risk_score(flags, warning_count=warning_count, saved_pct=saved_pct)
+    decision = _sidecar_review_decision(flags, risk_score)
     return {
         "index": row.get("index"),
         "id": row.get("id"),
         "side": side,
         "verdict": "review" if flags else "ok",
+        "decision": decision,
         "risk_level": _sidecar_review_risk_level(risk_score),
         "risk_score": risk_score,
         "flags": flags,
@@ -1471,6 +1478,7 @@ def _review_sidecar_failure(failure: dict[str, Any]) -> dict[str, Any]:
         "id": failure.get("id"),
         "side": failure.get("side"),
         "verdict": "review",
+        "decision": "fail",
         "risk_level": "high",
         "risk_score": 100,
         "flags": ["failure"],
@@ -1493,6 +1501,9 @@ def _sidecar_review_summary(rows: list[dict[str, Any]], evaluation_summary: dict
         "row_count": len(rows),
         "ok_count": sum(1 for row in rows if row.get("verdict") == "ok"),
         "review_count": sum(1 for row in rows if row.get("verdict") == "review"),
+        "pass_count": sum(1 for row in rows if row.get("decision") == "pass"),
+        "watch_count": sum(1 for row in rows if row.get("decision") == "watch"),
+        "fail_count": sum(1 for row in rows if row.get("decision") == "fail"),
         "high_risk_count": sum(1 for row in rows if row.get("risk_level") == "high"),
         "medium_risk_count": sum(1 for row in rows if row.get("risk_level") == "medium"),
         "low_risk_count": sum(1 for row in rows if row.get("risk_level") == "low"),
@@ -1688,6 +1699,14 @@ def _sidecar_review_risk_score(flags: list[str], *, warning_count: int, saved_pc
     if flags and saved_pct >= 60:
         score += 10
     return min(score, 100)
+
+
+def _sidecar_review_decision(flags: list[str], risk_score: int) -> str:
+    if risk_score >= 60 or "failure" in flags:
+        return "fail"
+    if flags:
+        return "watch"
+    return "pass"
 
 
 def _sidecar_review_risk_level(score: int) -> str:

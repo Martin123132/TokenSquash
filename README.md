@@ -135,6 +135,8 @@ Start here:
   commercial-use boundaries and contact path.
 - [Roadmap](ROADMAP.md): public product direction and evidence bar.
 - [v0.1.1 plan](docs/v0.1.1-plan.md): next patch-release scope.
+- [v0.2.0 plan](docs/v0.2.0-plan.md): real-corpus scorecard and evidence
+  milestones.
 
 ## Current Scope
 
@@ -142,7 +144,8 @@ Start here:
 - deterministic reply wire format: `tr1`
 - prompt/reply encode, decode, benchmark, and compare commands
 - private turn capture/import with regenerated redacted corpora
-- turn reports, suggestions, gates, certifications, history, and release checks
+- turn scorecards, reports, suggestions, gates, certifications, history, and
+  release checks
 - optional exact-tokenizer measurements through `tiktoken`
 - experimental local-AI sidecar translate/decode/roundtrip/evaluate/review/gate
 - product manifest, strict doctor, readiness, release-info, release-candidate,

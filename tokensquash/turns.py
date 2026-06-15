@@ -1091,6 +1091,99 @@ def report_turn_corpus(
     )
 
 
+def score_turn_corpus(
+    path: Path | str,
+    *,
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+    limit: int = 5,
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+    min_count: int = 2,
+    max_path_prefixes: int = 8,
+    max_field_values: int = 8,
+    min_saved_tokens: int = 1,
+    base_aliases: AliasTable | dict[str, Any] | None = None,
+    sidecar_review: Path | str | None = None,
+    sidecar_evaluation: Path | str | None = None,
+    auto_sidecar: bool = True,
+) -> dict[str, Any]:
+    """Summarize whether a real turn corpus is ready to expand or tune."""
+
+    started = time.time()
+    source = str(Path(path))
+    capped_limit = max(1, int(limit))
+    turn_report = report_turn_corpus(
+        path,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        limit=capped_limit,
+        adaptive=adaptive,
+        guess_reply_fields=guess_reply_fields,
+        min_count=min_count,
+        max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
+        min_saved_tokens=min_saved_tokens,
+        base_aliases=base_aliases,
+    )
+    report_summary = turn_report.get("summary", {})
+    diagnose_summary = (turn_report.get("diagnose") or {}).get("summary", {})
+    milestone = _scorecard_milestone(_int_value(report_summary.get("turn_count")))
+    sidecar = _scorecard_sidecar_summary(
+        sidecar_review=sidecar_review,
+        sidecar_evaluation=sidecar_evaluation,
+        auto_sidecar=auto_sidecar,
+    )
+    recommendations = _scorecard_recommendations(turn_report, milestone, sidecar)
+    score_status = _scorecard_status(turn_report, sidecar)
+    return {
+        "schema_version": "tokensquash.turns.scorecard.v1",
+        "status": score_status,
+        "path": source,
+        "counter": counter,
+        "target_savings_pct": target_savings_pct,
+        "adaptive": adaptive,
+        "summary": {
+            "turn_count": report_summary.get("turn_count", 0),
+            "milestone": milestone.get("name"),
+            "next_milestone_turns": milestone.get("next_turns"),
+            "original_tokens": report_summary.get("original_tokens", 0),
+            "squashed_tokens": report_summary.get("squashed_tokens", 0),
+            "saved_tokens": report_summary.get("saved_tokens", 0),
+            "saved_pct": report_summary.get("saved_pct", 0.0),
+            "prompt_saved_pct": report_summary.get("prompt_saved_pct", 0.0),
+            "reply_saved_pct": report_summary.get("reply_saved_pct", 0.0),
+            "pass_through_rows": diagnose_summary.get("pass_through_rows", 0),
+            "raw_wire_loss_turns": diagnose_summary.get("raw_wire_loss_turns", 0),
+            "privacy_finding_count": report_summary.get("privacy_finding_count", 0),
+            "selected_path_prefix_count": report_summary.get("selected_path_prefix_count", 0),
+            "selected_field_value_count": report_summary.get("selected_field_value_count", 0),
+            "alias_saved_tokens_delta": report_summary.get("alias_saved_tokens_delta", 0),
+            "break_even_corpora": report_summary.get("break_even_corpora"),
+            "sidecar_status": sidecar.get("status"),
+            "sidecar_pass_count": sidecar.get("pass_count", 0),
+            "sidecar_watch_count": sidecar.get("watch_count", 0),
+            "sidecar_fail_count": sidecar.get("fail_count", 0),
+            "recommendation": recommendations[0]["code"] if recommendations else "inspect",
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "milestone": milestone,
+        "sidecar": sidecar,
+        "top_repeated_patterns": {
+            "paths": turn_report.get("top_path_candidates", []),
+            "fields": turn_report.get("top_field_candidates", []),
+        },
+        "turn_report": {
+            "schema_version": turn_report.get("schema_version"),
+            "status": turn_report.get("status"),
+            "summary": report_summary,
+            "top_wins": turn_report.get("top_wins", []),
+            "top_raw_wire_losses": turn_report.get("top_raw_wire_losses", []),
+        },
+        "recommendations": recommendations,
+    }
+
+
 def compare_turn_reports(base: Path | str, target: Path | str) -> dict[str, Any]:
     """Compare two saved turn report JSON files."""
 
@@ -1939,6 +2032,68 @@ def format_turn_report_markdown(report: dict[str, Any]) -> str:
     _append_capture_preview(lines, "Top Raw Wire Loss", report.get("top_raw_wire_losses", []))
     _append_report_candidates(lines, "Top Repeated Path Candidates", report.get("top_path_candidates", []))
     _append_report_candidates(lines, "Top Repeated Field Candidates", report.get("top_field_candidates", []), include_field=True)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_turn_scorecard_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    milestone = report.get("milestone", {})
+    sidecar = report.get("sidecar", {})
+    patterns = report.get("top_repeated_patterns", {})
+    lines = [
+        "# TokenSquash Turn Scorecard",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Path: `{report.get('path')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Milestone: `{summary.get('milestone')}`",
+        f"- Saved tokens: `{summary.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Prompt saved percent: `{summary.get('prompt_saved_pct', 0.0)}%`",
+        f"- Reply saved percent: `{summary.get('reply_saved_pct', 0.0)}%`",
+        f"- Pass-through rows: `{summary.get('pass_through_rows', 0)}`",
+        f"- Raw wire loss turns: `{summary.get('raw_wire_loss_turns', 0)}`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        f"- Sidecar status: `{summary.get('sidecar_status')}`",
+        f"- Recommendation: `{summary.get('recommendation')}`",
+        "",
+        "## Corpus Milestone",
+        "",
+        f"- Name: `{milestone.get('name')}`",
+        f"- Label: `{milestone.get('label')}`",
+        f"- Minimum turns: `{milestone.get('minimum_turns')}`",
+        f"- Next milestone turns: `{milestone.get('next_turns')}`",
+        f"- Message: {milestone.get('message')}",
+        "",
+        "## Sidecar Meaning",
+        "",
+        f"- Source: `{sidecar.get('source')}`",
+        f"- Input type: `{sidecar.get('input_type')}`",
+        f"- Pass: `{sidecar.get('pass_count', 0)}`",
+        f"- Watch: `{sidecar.get('watch_count', 0)}`",
+        f"- Fail: `{sidecar.get('fail_count', 0)}`",
+        f"- Review rows: `{sidecar.get('review_count', 0)}`",
+        f"- Warnings: `{sidecar.get('warning_count', 0)}`",
+    ]
+    flag_counts = sidecar.get("flag_counts", {})
+    if flag_counts:
+        lines.extend(["", "### Sidecar Flags", ""])
+        for flag, count in sorted(flag_counts.items(), key=lambda item: (-int(item[1]), item[0])):
+            lines.append(f"- `{flag}`: `{count}`")
+    lines.append("")
+
+    _append_scorecard_candidates(lines, "Repeated Path Candidates", patterns.get("paths", []))
+    _append_scorecard_candidates(lines, "Repeated Field Candidates", patterns.get("fields", []), include_field=True)
+
+    recommendations = report.get("recommendations", [])
+    lines.extend(["## Recommendations", ""])
+    if not recommendations:
+        lines.extend(["No recommendations.", ""])
+    else:
+        for item in recommendations:
+            lines.append(f"- `{item.get('code')}`: {item.get('message')}")
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -3145,6 +3300,263 @@ def _alias_setup_tokens(alias_report: dict[str, Any], counter: str) -> int:
     return count_tokens(payload, counter)
 
 
+def _scorecard_milestone(turn_count: int) -> dict[str, Any]:
+    if turn_count < 10:
+        return {
+            "name": "seed",
+            "label": "Seed capture",
+            "minimum_turns": 0,
+            "next_turns": 10,
+            "message": "Keep capturing until the first 10-turn smoke pass is available.",
+        }
+    if turn_count < 25:
+        return {
+            "name": "smoke",
+            "label": "10-turn smoke evidence",
+            "minimum_turns": 10,
+            "next_turns": 25,
+            "message": "Enough for a smoke read; keep expanding before treating patterns as strong.",
+        }
+    if turn_count < 100:
+        return {
+            "name": "early_pattern",
+            "label": "25-turn early pattern evidence",
+            "minimum_turns": 25,
+            "next_turns": 100,
+            "message": "Useful for finding repeated workflow language; still not production-scale evidence.",
+        }
+    return {
+        "name": "benchmark_ready",
+        "label": "100-turn benchmark candidate",
+        "minimum_turns": 100,
+        "next_turns": None,
+        "message": "Large enough for a serious local benchmark pass, subject to privacy and meaning review.",
+    }
+
+
+def _scorecard_sidecar_summary(
+    *,
+    sidecar_review: Path | str | None,
+    sidecar_evaluation: Path | str | None,
+    auto_sidecar: bool,
+) -> dict[str, Any]:
+    review_path = Path(sidecar_review) if sidecar_review is not None else None
+    evaluation_path = Path(sidecar_evaluation) if sidecar_evaluation is not None else None
+    if auto_sidecar:
+        if review_path is None and Path("private-turns/sidecar-eval/review.json").exists():
+            review_path = Path("private-turns/sidecar-eval/review.json")
+        if evaluation_path is None and Path("private-turns/sidecar-eval/evaluation.json").exists():
+            evaluation_path = Path("private-turns/sidecar-eval/evaluation.json")
+
+    if review_path is not None and review_path.exists():
+        return _scorecard_sidecar_review_summary(review_path)
+    if sidecar_review is not None:
+        return _scorecard_missing_sidecar(str(review_path), "review")
+    if evaluation_path is not None and evaluation_path.exists():
+        return _scorecard_sidecar_evaluation_summary(evaluation_path)
+    if sidecar_evaluation is not None:
+        return _scorecard_missing_sidecar(str(evaluation_path), "evaluation")
+    return {
+        "status": "missing",
+        "source": None,
+        "input_type": None,
+        "message": "No sidecar review or evaluation evidence was provided.",
+        "pass_count": 0,
+        "watch_count": 0,
+        "fail_count": 0,
+        "review_count": 0,
+        "warning_count": 0,
+        "saved_pct": 0.0,
+        "flag_counts": {},
+    }
+
+
+def _scorecard_missing_sidecar(source: str, input_type: str) -> dict[str, Any]:
+    return {
+        "status": "missing",
+        "source": source,
+        "input_type": input_type,
+        "message": f"Sidecar {input_type} evidence was requested but not found.",
+        "pass_count": 0,
+        "watch_count": 0,
+        "fail_count": 0,
+        "review_count": 0,
+        "warning_count": 0,
+        "saved_pct": 0.0,
+        "flag_counts": {},
+    }
+
+
+def _scorecard_sidecar_review_summary(path: Path) -> dict[str, Any]:
+    report = _load_json_object(path)
+    if report.get("schema_version") != "tokensquash.sidecar.review.v1":
+        raise ValueError(f"not a sidecar review report: {path}")
+    summary = report.get("summary", {})
+    review_count = _int_value(summary.get("review_count"))
+    pass_count = _int_value(summary.get("pass_count", summary.get("ok_count")))
+    fail_count = _int_value(summary.get("fail_count", summary.get("high_risk_count")))
+    watch_count = _int_value(summary.get("watch_count", max(0, review_count - fail_count)))
+    flag_counts: dict[str, int] = {}
+    for row in report.get("rows", []):
+        for flag in row.get("flags", []):
+            flag_text = str(flag)
+            flag_counts[flag_text] = flag_counts.get(flag_text, 0) + 1
+    status = "fail" if fail_count else "watch" if watch_count or _int_value(summary.get("warning_count")) else "pass"
+    return {
+        "status": status,
+        "source": str(path),
+        "input_type": "review",
+        "message": "Sidecar meaning review evidence loaded.",
+        "pass_count": pass_count,
+        "watch_count": watch_count,
+        "fail_count": fail_count,
+        "review_count": review_count,
+        "warning_count": _int_value(summary.get("warning_count")),
+        "saved_pct": _float_value(summary.get("saved_pct")),
+        "flag_counts": dict(sorted(flag_counts.items(), key=lambda item: (-item[1], item[0]))),
+        "summary": summary,
+    }
+
+
+def _scorecard_sidecar_evaluation_summary(path: Path) -> dict[str, Any]:
+    report = _load_json_object(path)
+    if report.get("schema_version") != "tokensquash.sidecar.evaluate.v1":
+        raise ValueError(f"not a sidecar evaluation report: {path}")
+    summary = report.get("summary", {})
+    item_count = _int_value(summary.get("item_count"))
+    failure_count = _int_value(summary.get("failure_count"))
+    warning_count = _int_value(summary.get("warning_count"))
+    pass_count = max(0, item_count - failure_count - warning_count)
+    status = "fail" if failure_count else "watch" if warning_count else "pass" if item_count else "missing"
+    return {
+        "status": status,
+        "source": str(path),
+        "input_type": "evaluation",
+        "message": "Sidecar evaluation loaded; run sidecar review for stronger meaning evidence.",
+        "pass_count": pass_count,
+        "watch_count": warning_count,
+        "fail_count": failure_count,
+        "review_count": 0,
+        "warning_count": warning_count,
+        "saved_pct": _float_value(summary.get("saved_pct")),
+        "flag_counts": {},
+        "summary": summary,
+    }
+
+
+def _scorecard_recommendations(
+    turn_report: dict[str, Any],
+    milestone: dict[str, Any],
+    sidecar: dict[str, Any],
+) -> list[dict[str, str]]:
+    summary = turn_report.get("summary", {})
+    diagnose_summary = (turn_report.get("diagnose") or {}).get("summary", {})
+    recommendations: list[dict[str, str]] = []
+
+    if _int_value(summary.get("privacy_finding_count")):
+        recommendations.append(
+            {
+                "code": "fix_privacy",
+                "message": "Review and redact privacy findings before sharing or using this evidence outside local storage.",
+            }
+        )
+    if milestone.get("name") == "seed":
+        recommendations.append(
+            {
+                "code": "capture_10",
+                "message": "Capture enough real turns to reach the 10-turn smoke milestone.",
+            }
+        )
+    elif milestone.get("name") == "smoke":
+        recommendations.append(
+            {
+                "code": "expand_25",
+                "message": "Expand toward 25 turns before treating repeated patterns as codec input.",
+            }
+        )
+    elif milestone.get("name") == "early_pattern":
+        recommendations.append(
+            {
+                "code": "expand_100",
+                "message": "Continue toward 100 turns for a more useful local benchmark.",
+            }
+        )
+
+    if sidecar.get("status") == "missing":
+        recommendations.append(
+            {
+                "code": "run_sidecar_review",
+                "message": "Run sidecar evaluate and sidecar review if local-AI semantic compression is being considered.",
+            }
+        )
+    elif sidecar.get("status") == "fail":
+        recommendations.append(
+            {
+                "code": "fix_sidecar_meaning",
+                "message": "Inspect high-risk sidecar rows before using sidecar savings as evidence.",
+            }
+        )
+    elif sidecar.get("status") == "watch":
+        recommendations.append(
+            {
+                "code": "inspect_sidecar_watch",
+                "message": "Review sidecar watch rows and warnings before claiming meaning preservation.",
+            }
+        )
+
+    if _int_value(summary.get("alias_saved_tokens_delta")) > 0:
+        recommendations.append(
+            {
+                "code": "promote_alias_candidates",
+                "message": "Alias-impact evidence shows net token savings; inspect candidates before changing deterministic rules.",
+            }
+        )
+    elif turn_report.get("top_path_candidates") or turn_report.get("top_field_candidates"):
+        recommendations.append(
+            {
+                "code": "inspect_patterns",
+                "message": "Repeated path or field candidates exist; check whether they recur across more turns.",
+            }
+        )
+
+    if _int_value(diagnose_summary.get("raw_wire_loss_turns")):
+        recommendations.append(
+            {
+                "code": "keep_adaptive_fallback",
+                "message": "Raw wire losses are present; keep adaptive passthrough enabled for honest savings.",
+            }
+        )
+
+    if not recommendations:
+        recommendations.append(
+            {
+                "code": "benchmark_ready",
+                "message": "Corpus evidence is clean enough for the next benchmark or certification pass.",
+            }
+        )
+    return recommendations
+
+
+def _scorecard_status(turn_report: dict[str, Any], sidecar: dict[str, Any]) -> str:
+    if turn_report.get("status") == "fail":
+        return "fail"
+    summary = turn_report.get("summary", {})
+    if _int_value(summary.get("privacy_finding_count")):
+        return "warn"
+    if sidecar.get("status") == "fail":
+        return "warn"
+    if turn_report.get("status") in {"warn", "miss", "regressed"} or sidecar.get("status") in {"watch", "missing"}:
+        return "watch"
+    return "pass"
+
+
+def _load_json_object(path: Path | str) -> dict[str, Any]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON report must be an object: {path}")
+    return payload
+
+
 def _append_diagnostic_table(lines: list[str], title: str, rows: list[dict[str, Any]]) -> None:
     lines.extend([f"## {title}", ""])
     if not rows:
@@ -3222,6 +3634,39 @@ def _append_report_candidates(
                 "| "
                 f"{_markdown_cell(str(item.get('value')))} | "
                 f"{item.get('count')} | "
+                f"{item.get('estimated_new_saved_tokens', 0)} |"
+            )
+    lines.append("")
+
+
+def _append_scorecard_candidates(
+    lines: list[str],
+    title: str,
+    candidates: list[dict[str, Any]],
+    *,
+    include_field: bool = False,
+) -> None:
+    lines.extend([f"## {title}", ""])
+    if not candidates:
+        lines.extend(["No candidates.", ""])
+        return
+    if include_field:
+        lines.extend(["| Field | Value | Count | Est new saved |", "|---|---|---:|---:|"])
+        for item in candidates:
+            lines.append(
+                "| "
+                f"{_markdown_cell(str(item.get('field', '')))} | "
+                f"{_markdown_cell(str(item.get('value', '')))} | "
+                f"{item.get('count', 0)} | "
+                f"{item.get('estimated_new_saved_tokens', 0)} |"
+            )
+    else:
+        lines.extend(["| Pattern | Count | Est new saved |", "|---|---:|---:|"])
+        for item in candidates:
+            lines.append(
+                "| "
+                f"{_markdown_cell(str(item.get('value', '')))} | "
+                f"{item.get('count', 0)} | "
                 f"{item.get('estimated_new_saved_tokens', 0)} |"
             )
     lines.append("")

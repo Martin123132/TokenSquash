@@ -71,6 +71,7 @@ from tokensquash.turns import (
     measure_turn_corpus,
     mine_turn_patterns,
     redact_turn_corpus,
+    score_turn_corpus,
     split_turn_corpus,
     validate_turn_corpus,
     write_turn_certification_outputs,
@@ -495,6 +496,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
+        self.assertIn("turns scorecard", commands)
         self.assertIn("turns release-check", commands)
         self.assertIn("turns verify-release", commands)
         self.assertIn("sidecar certify", commands)
@@ -515,6 +517,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.turns.certify.compare.v1", schemas)
         self.assertIn("tokensquash.turns.certify.history.v1", schemas)
         self.assertIn("tokensquash.turns.certify.v1", schemas)
+        self.assertIn("tokensquash.turns.scorecard.v1", schemas)
         self.assertIn("tokensquash.turns.release_check.v1", schemas)
         self.assertIn("tokensquash.turns.release_verify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
@@ -528,6 +531,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("release-assets" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
+        self.assertTrue(any("turns scorecard" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
         self.assertIn("LICENSE", governance_paths)
         self.assertIn("COMMERCIAL-LICENSE.md", governance_paths)
@@ -549,6 +553,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("docs/sidecar-meaning-rubric.md", governance_paths)
         self.assertIn("docs/commercial-license.md", governance_paths)
         self.assertIn("docs/v0.1.1-plan.md", governance_paths)
+        self.assertIn("docs/v0.2.0-plan.md", governance_paths)
         self.assertIn(".github/PULL_REQUEST_TEMPLATE.md", governance_paths)
         self.assertIn(".github/ISSUE_TEMPLATE/config.yml", governance_paths)
         self.assertIn(".github/ISSUE_TEMPLATE/bug_report.yml", governance_paths)
@@ -2236,7 +2241,12 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["status"], "warn")
         self.assertEqual(report["summary"]["row_count"], 2)
         self.assertEqual(report["summary"]["review_count"], 1)
+        self.assertEqual(report["summary"]["pass_count"], 1)
+        self.assertEqual(report["summary"]["watch_count"], 0)
+        self.assertEqual(report["summary"]["fail_count"], 1)
         self.assertEqual(report["rows"][0]["id"], "risky")
+        self.assertEqual(report["rows"][0]["decision"], "fail")
+        self.assertEqual(report["rows"][1]["decision"], "pass")
         self.assertIn("high_savings_short_decoded", report["rows"][0]["flags"])
         self.assertIn("generic_summary", report["rows"][0]["flags"])
         self.assertIn("missing_files", report["rows"][0]["flags"])
@@ -2295,6 +2305,10 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["schema_version"], "tokensquash.sidecar.review.v1")
             self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["summary"]["pass_count"], 1)
+            self.assertEqual(payload["summary"]["watch_count"], 0)
+            self.assertEqual(payload["summary"]["fail_count"], 0)
+            self.assertEqual(payload["rows"][0]["decision"], "pass")
             self.assertTrue((out_dir / "review.json").exists())
             self.assertTrue((out_dir / "review.md").exists())
             self.assertIn("TokenSquash Sidecar Review", (out_dir / "review.md").read_text(encoding="utf-8"))
@@ -3261,6 +3275,132 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("top_path_candidates", payload)
             self.assertIn("top_field_candidates", payload)
             self.assertEqual(summary["turn_count"], 2)
+
+    def test_turns_scorecard_cli_json_without_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                '{"id":"t1","prompt":"review packages/mobile/src/screens/login.tsx and summarize files","reply":"Done. I reviewed packages/mobile/src/screens/login.tsx and ran `npm test`."}\n'
+                '{"id":"t2","prompt":"review packages/mobile/src/screens/checkout.tsx and summarize files","reply":"Done. I reviewed packages/mobile/src/screens/checkout.tsx and ran `npm test`."}\n',
+                encoding="utf-8",
+            )
+
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "scorecard",
+                        str(path),
+                        "--counter",
+                        "chars",
+                        "--no-sidecar-auto",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.scorecard.v1")
+            self.assertEqual(payload["summary"]["turn_count"], 2)
+            self.assertEqual(payload["summary"]["milestone"], "seed")
+            self.assertEqual(payload["sidecar"]["status"], "missing")
+            self.assertEqual(payload["summary"]["sidecar_status"], "missing")
+            self.assertIn("top_repeated_patterns", payload)
+            self.assertTrue(any(item["code"] == "capture_10" for item in payload["recommendations"]))
+
+    def test_turns_scorecard_summarizes_sidecar_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            review = Path(tmp) / "review.json"
+            path.write_text(
+                '{"id":"t1","prompt":"fix login in src/auth.py","reply":"Done. I fixed login in src/auth.py and ran tests."}\n'
+                '{"id":"t2","prompt":"fix checkout in src/checkout.py","reply":"Done. I fixed checkout in src/checkout.py and ran tests."}\n',
+                encoding="utf-8",
+            )
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "warn",
+                        "source": "evaluation.json",
+                        "summary": {
+                            "row_count": 3,
+                            "ok_count": 1,
+                            "review_count": 2,
+                            "pass_count": 1,
+                            "watch_count": 1,
+                            "fail_count": 1,
+                            "high_risk_count": 1,
+                            "warning_count": 1,
+                            "saved_tokens": 20,
+                            "saved_pct": 10.0,
+                        },
+                        "rows": [
+                            {"id": "ok", "side": "reply", "decision": "pass", "verdict": "ok", "flags": []},
+                            {
+                                "id": "watch",
+                                "side": "reply",
+                                "decision": "watch",
+                                "verdict": "review",
+                                "flags": ["missing_files"],
+                                "warning_count": 1,
+                            },
+                            {
+                                "id": "fail",
+                                "side": "reply",
+                                "decision": "fail",
+                                "verdict": "review",
+                                "flags": ["failure"],
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = score_turn_corpus(path, counter="chars", sidecar_review=review, auto_sidecar=False)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.scorecard.v1")
+            self.assertEqual(report["sidecar"]["status"], "fail")
+            self.assertEqual(report["sidecar"]["pass_count"], 1)
+            self.assertEqual(report["sidecar"]["watch_count"], 1)
+            self.assertEqual(report["sidecar"]["fail_count"], 1)
+            self.assertEqual(report["sidecar"]["flag_counts"]["failure"], 1)
+            self.assertTrue(any(item["code"] == "fix_sidecar_meaning" for item in report["recommendations"]))
+
+    def test_turns_scorecard_cli_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "turns.jsonl"
+            out = Path(tmp) / "scorecard.md"
+            path.write_text(
+                '{"id":"t1","prompt":"review src/auth.py","reply":"Done. I reviewed src/auth.py and ran tests."}\n',
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "scorecard",
+                        str(path),
+                        "--counter",
+                        "chars",
+                        "--no-sidecar-auto",
+                        "--out",
+                        str(out),
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Scorecard", output)
+            self.assertIn("## Corpus Milestone", output)
+            self.assertIn("## Sidecar Meaning", output)
+            self.assertIn("## Recommendations", output)
+            self.assertTrue(out.exists())
 
     def test_turns_compare_reports_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
