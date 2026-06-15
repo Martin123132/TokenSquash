@@ -1392,6 +1392,108 @@ def build_turn_scorecard_history(scorecards: Iterable[Path | str]) -> dict[str, 
     }
 
 
+def write_turn_scorecard_pack(
+    path: Path | str,
+    *,
+    out_dir: Path | str,
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+    limit: int = 5,
+    adaptive: bool = True,
+    guess_reply_fields: bool = True,
+    min_count: int = 2,
+    max_path_prefixes: int = 8,
+    max_field_values: int = 8,
+    min_saved_tokens: int = 1,
+    base_aliases: AliasTable | dict[str, Any] | None = None,
+    sidecar_review: Path | str | None = None,
+    sidecar_evaluation: Path | str | None = None,
+    auto_sidecar: bool = True,
+    history_scorecards: Iterable[Path | str] | None = None,
+) -> dict[str, Any]:
+    """Write a reusable scorecard evidence pack for a real turn corpus."""
+
+    started = time.time()
+    target_dir = Path(out_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    scorecard = score_turn_corpus(
+        path,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        limit=limit,
+        adaptive=adaptive,
+        guess_reply_fields=guess_reply_fields,
+        min_count=min_count,
+        max_path_prefixes=max_path_prefixes,
+        max_field_values=max_field_values,
+        min_saved_tokens=min_saved_tokens,
+        base_aliases=base_aliases,
+        sidecar_review=sidecar_review,
+        sidecar_evaluation=sidecar_evaluation,
+        auto_sidecar=auto_sidecar,
+    )
+    scorecard_json = target_dir / "scorecard.json"
+    scorecard_markdown = target_dir / "scorecard.md"
+    scorecard_json.write_text(json.dumps(scorecard, indent=2) + "\n", encoding="utf-8")
+    scorecard_markdown.write_text(format_turn_scorecard_markdown(scorecard), encoding="utf-8")
+
+    history_report: dict[str, Any] | None = None
+    history_json: Path | None = None
+    history_markdown: Path | None = None
+    history_inputs = [Path(item) for item in history_scorecards or []]
+    if history_inputs:
+        history_json = target_dir / "history.json"
+        history_markdown = target_dir / "history.md"
+        history_report = build_turn_scorecard_history([*history_inputs, scorecard_json])
+        history_json.write_text(json.dumps(history_report, indent=2) + "\n", encoding="utf-8")
+        history_markdown.write_text(format_turn_scorecard_history_markdown(history_report), encoding="utf-8")
+
+    pack_status = _scorecard_pack_status(scorecard, history_report)
+    outputs = {
+        "output_dir": str(target_dir),
+        "scorecard_json": str(scorecard_json),
+        "scorecard_markdown": str(scorecard_markdown),
+    }
+    if history_json and history_markdown:
+        outputs["history_json"] = str(history_json)
+        outputs["history_markdown"] = str(history_markdown)
+    return {
+        "schema_version": "tokensquash.turns.scorecard.pack.v1",
+        "status": pack_status,
+        "path": str(Path(path)),
+        "counter": counter,
+        "target_savings_pct": target_savings_pct,
+        "adaptive": adaptive,
+        "summary": {
+            "scorecard_status": scorecard.get("status"),
+            "history_status": history_report.get("status") if history_report else None,
+            "history_included": history_report is not None,
+            "history_input_count": len(history_inputs),
+            "artifact_count": len(outputs) - 1,
+            "turn_count": (scorecard.get("summary") or {}).get("turn_count", 0),
+            "milestone": (scorecard.get("summary") or {}).get("milestone"),
+            "saved_pct": (scorecard.get("summary") or {}).get("saved_pct", 0.0),
+            "privacy_finding_count": (scorecard.get("summary") or {}).get("privacy_finding_count", 0),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "outputs": outputs,
+        "scorecard": {
+            "schema_version": scorecard.get("schema_version"),
+            "status": scorecard.get("status"),
+            "summary": scorecard.get("summary", {}),
+        },
+        "history": (
+            {
+                "schema_version": history_report.get("schema_version"),
+                "status": history_report.get("status"),
+                "summary": history_report.get("summary", {}),
+            }
+            if history_report
+            else None
+        ),
+    }
+
+
 def compare_turn_certifications(base: Path | str, target: Path | str) -> dict[str, Any]:
     """Compare two saved turn certification JSON files."""
 
@@ -2382,6 +2484,39 @@ def format_turn_scorecard_history_markdown(report: dict[str, Any]) -> str:
         lines.extend(["", "## Warnings", ""])
         for warning in warnings:
             lines.append(f"- {warning}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_turn_scorecard_pack_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    outputs = report.get("outputs", {})
+    lines = [
+        "# TokenSquash Turn Scorecard Pack",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Corpus: `{report.get('path')}`",
+        f"- Output directory: `{outputs.get('output_dir')}`",
+        f"- Counter: `{report.get('counter')}`",
+        f"- Scorecard status: `{summary.get('scorecard_status')}`",
+        f"- History status: `{summary.get('history_status')}`",
+        f"- History included: `{summary.get('history_included')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Milestone: `{summary.get('milestone')}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        "",
+        "## Artifacts",
+        "",
+        f"- Scorecard JSON: `{outputs.get('scorecard_json')}`",
+        f"- Scorecard Markdown: `{outputs.get('scorecard_markdown')}`",
+    ]
+    if outputs.get("history_json") or outputs.get("history_markdown"):
+        lines.extend(
+            [
+                f"- History JSON: `{outputs.get('history_json')}`",
+                f"- History Markdown: `{outputs.get('history_markdown')}`",
+            ]
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -3916,6 +4051,16 @@ def _scorecard_history_status(latest: dict[str, Any], fail_step_count: int, watc
     if latest_status == "fail" or fail_step_count:
         return "fail"
     if latest_status in {"watch", "warn"} or watch_step_count:
+        return "watch"
+    return "pass"
+
+
+def _scorecard_pack_status(scorecard: dict[str, Any], history: dict[str, Any] | None) -> str:
+    scorecard_status = str(scorecard.get("status", "fail"))
+    history_status = str(history.get("status")) if history else None
+    if scorecard_status == "fail" or history_status == "fail":
+        return "fail"
+    if scorecard_status in {"watch", "warn"} or history_status in {"watch", "warn"}:
         return "watch"
     return "pass"
 

@@ -14,6 +14,8 @@ is produced locally and in GitHub Actions.
 - `turns scorecard` now summarizes real-turn corpus health, token savings,
   alias opportunities, privacy findings, adaptive benchmark behavior, and
   optional sidecar review evidence in a single report.
+- `turns scorecard-pack` now writes reusable scorecard evidence directories
+  with `scorecard.json`, `scorecard.md`, and optional history artifacts.
 - `turns compare-scorecards` now compares saved scorecard JSON files for
   release-review deltas across corpus size, savings, privacy findings, alias
   impact, and sidecar pass/watch/fail counts.

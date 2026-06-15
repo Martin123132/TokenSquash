@@ -108,6 +108,7 @@ from .turns import (
     format_turn_gate_markdown,
     format_turn_scorecard_compare_markdown,
     format_turn_scorecard_history_markdown,
+    format_turn_scorecard_pack_markdown,
     format_turn_suggestions_markdown,
     format_turn_evaluate_markdown,
     format_turn_import_markdown,
@@ -130,6 +131,7 @@ from .turns import (
     turn_stats,
     validate_turn_corpus,
     write_turn_certification_outputs,
+    write_turn_scorecard_pack,
 )
 from .workspace import format_workspace_init_markdown, initialize_workspace
 
@@ -670,6 +672,25 @@ def main(argv: list[str] | None = None) -> int:
     turns_scorecard.add_argument("--no-sidecar-auto", action="store_true", help="Do not auto-load private-turns/sidecar-eval evidence.")
     turns_scorecard.add_argument("--out", type=Path, help="Write scorecard output to this file.")
     turns_scorecard.add_argument("--json", action="store_true")
+
+    turns_scorecard_pack = turns_sub.add_parser("scorecard-pack", help="Write scorecard evidence artifacts into a directory.")
+    turns_scorecard_pack.add_argument("corpus", nargs="?", type=Path, default=Path("private-turns/real.redacted-turns.jsonl"))
+    turns_scorecard_pack.add_argument("--out-dir", type=Path, default=Path("private-turns/scorecard-pack"))
+    turns_scorecard_pack.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_scorecard_pack.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_scorecard_pack.add_argument("--limit", type=int, default=5, help="Rows or candidates to keep in the scorecard.")
+    turns_scorecard_pack.add_argument("--no-adaptive", action="store_true", help="Always use wire format even when it is longer.")
+    turns_scorecard_pack.add_argument("--no-guess", action="store_true", help="Do not guess reply fields from raw reply text.")
+    turns_scorecard_pack.add_argument("--min-count", type=int, default=2, help="Minimum alias/pattern occurrences before reporting.")
+    turns_scorecard_pack.add_argument("--max-prefixes", type=int, default=8, help="Maximum custom path prefixes to show.")
+    turns_scorecard_pack.add_argument("--max-fields", type=int, default=8, help="Maximum custom field values to show.")
+    turns_scorecard_pack.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token savings per alias.")
+    turns_scorecard_pack.add_argument("--base-aliases", type=Path, help="Existing session alias JSON to extend.")
+    turns_scorecard_pack.add_argument("--sidecar-review", type=Path, help="Saved sidecar review.json to summarize.")
+    turns_scorecard_pack.add_argument("--sidecar-evaluation", type=Path, help="Saved sidecar evaluation.json to summarize when review is unavailable.")
+    turns_scorecard_pack.add_argument("--no-sidecar-auto", action="store_true", help="Do not auto-load private-turns/sidecar-eval evidence.")
+    turns_scorecard_pack.add_argument("--history", dest="history_scorecards", action="append", type=Path, default=[], help="Prior scorecard JSON or scorecard pack directory to include before the current scorecard.")
+    turns_scorecard_pack.add_argument("--json", action="store_true")
 
     turns_compare_reports = turns_sub.add_parser("compare-reports", help="Compare two saved turn report JSON files.")
     turns_compare_reports.add_argument("base", type=Path)
@@ -1592,6 +1613,32 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0 if report["status"] in {"pass", "watch", "warn"} else 1
+            if args.turns_command == "scorecard-pack":
+                report = write_turn_scorecard_pack(
+                    args.corpus,
+                    out_dir=args.out_dir,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    limit=args.limit,
+                    adaptive=not args.no_adaptive,
+                    guess_reply_fields=not args.no_guess,
+                    min_count=args.min_count,
+                    max_path_prefixes=args.max_prefixes,
+                    max_field_values=args.max_fields,
+                    min_saved_tokens=args.min_saved_tokens,
+                    base_aliases=_load_optional_aliases(args.base_aliases),
+                    sidecar_review=args.sidecar_review,
+                    sidecar_evaluation=args.sidecar_evaluation,
+                    auto_sidecar=not args.no_sidecar_auto,
+                    history_scorecards=args.history_scorecards,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_scorecard_pack_markdown(report)
+                )
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "watch"} else 1
             if args.turns_command == "compare-reports":
                 report = compare_turn_reports(args.base, args.target)
                 output = (

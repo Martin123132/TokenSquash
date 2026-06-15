@@ -55,6 +55,7 @@ Build a compact report:
 
 ```powershell
 python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out private-turns\scorecards\first-10.json
+python -m tokensquash turns scorecard-pack private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\scorecard-pack --json
 python -m tokensquash turns report private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json > private-turns\real-report.json
 python -m tokensquash turns suggestions private-turns\real-report.json
 ```

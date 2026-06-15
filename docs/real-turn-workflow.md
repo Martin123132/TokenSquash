@@ -57,6 +57,7 @@ python -m tokensquash turns validate private-turns\real.jsonl
 python -m tokensquash turns validate private-turns\real.redacted-turns.jsonl
 python -m tokensquash turns stats private-turns\real.redacted-turns.jsonl
 python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out private-turns\scorecards\current.json
+python -m tokensquash turns scorecard-pack private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\scorecard-pack --json
 ```
 
 Redaction is a safety net, not a privacy guarantee. Review redacted corpora
