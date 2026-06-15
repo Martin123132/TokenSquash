@@ -864,6 +864,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(steps["release_info"]["status"], "pass")
             self.assertEqual(steps["readiness"]["status"], "pass")
             self.assertEqual(steps["verify_readiness"]["status"], "pass")
+            self.assertEqual(steps["scorecard_pack"]["status"], "pass")
             self.assertEqual(steps["benchmark_baselines"]["status"], "pass")
             self.assertEqual(steps["exact_tokenizer_baselines"]["status"], "skip")
             self.assertEqual(steps["wheel_build"]["status"], "pass")
@@ -876,6 +877,10 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "release-info.json").exists())
             self.assertTrue((out_dir / "readiness" / "readiness.json").exists())
             self.assertTrue((out_dir / "readiness-verify.json").exists())
+            self.assertTrue((out_dir / "scorecard-pack.json").exists())
+            self.assertTrue((out_dir / "scorecard-pack.md").exists())
+            self.assertTrue((out_dir / "scorecard-pack" / "scorecard.json").exists())
+            self.assertTrue((out_dir / "scorecard-pack" / "scorecard.md").exists())
             self.assertTrue((out_dir / "wheel-smoke.txt").exists())
             self.assertTrue((out_dir / "sdist-build.txt").exists())
             manifest = json.loads((out_dir / "artifact-manifest.json").read_text(encoding="utf-8"))
@@ -884,6 +889,10 @@ class TokenSquashCodecTests(unittest.TestCase):
             artifact_paths = {artifact["relative_path"] for artifact in manifest["artifacts"]}
             self.assertIn("release-candidate.json", artifact_paths)
             self.assertIn("release-info.json", artifact_paths)
+            self.assertIn("scorecard-pack.json", artifact_paths)
+            self.assertIn("scorecard-pack.md", artifact_paths)
+            self.assertIn("scorecard-pack/scorecard.json", artifact_paths)
+            self.assertIn("scorecard-pack/scorecard.md", artifact_paths)
             self.assertIn("wheel-smoke.txt", artifact_paths)
             self.assertIn("wheel/tokensquash-0.0.0-py3-none-any.whl", artifact_paths)
             self.assertIn("sdist-build.txt", artifact_paths)
@@ -892,6 +901,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
             self.assertTrue(any("--skip-tests" in command for command in report["commands"]))
             self.assertTrue(any("--skip-exact-tokenizer" in command for command in report["commands"]))
+            self.assertTrue(any("turns scorecard-pack" in command for command in report["commands"]))
             self.assertFalse(any("--require-clean" in command for command in report["commands"]))
 
     def test_release_candidate_require_clean_records_and_verifies_policy(self) -> None:
@@ -964,6 +974,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
             self.assertTrue((out_dir / "wheel-build.txt").exists())
             self.assertTrue((out_dir / "wheel-smoke.txt").exists())
+            self.assertTrue((out_dir / "scorecard-pack" / "scorecard.json").exists())
             self.assertTrue((out_dir / "sdist-build.txt").exists())
 
     def test_verify_release_candidate_pack_passes(self) -> None:
@@ -987,12 +998,17 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertGreater(report["summary"]["artifact_manifest_artifact_count"], 0)
             self.assertEqual(report["summary"]["release_attestation_status"], "pass")
             self.assertRegex(report["summary"]["release_attestation_evidence_hash"], r"^[0-9a-f]{64}$")
+            self.assertEqual(report["summary"]["scorecard_pack_status"], "watch")
+            self.assertEqual(report["summary"]["scorecard_status"], "watch")
+            self.assertEqual(report["summary"]["scorecard_turn_count"], 5)
             self.assertEqual(report["summary"]["wheel_smoke_status"], "pass")
             self.assertEqual(report["summary"]["sdist_status"], "pass")
             self.assertIn(report["summary"]["release_info_status"], {"pass", "warn"})
             self.assertEqual(report["summary"]["nested_readiness_verify_status"], "pass")
             self.assertEqual(report["summary"]["baseline_verify_status"], "partial")
             checks = {check["name"]: check for check in report["checks"]}
+            self.assertEqual(checks["scorecard_pack_status"]["status"], "pass")
+            self.assertEqual(checks["scorecard_status"]["status"], "pass")
             self.assertEqual(checks["wheel"]["data"]["license_files"]["LICENSE"], True)
             self.assertEqual(checks["wheel"]["data"]["license_files"]["COMMERCIAL-LICENSE.md"], True)
             self.assertEqual(checks["sdist"]["data"]["license_files"]["LICENSE"], True)
@@ -1008,6 +1024,8 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertRegex(attestation["materials"]["wheel"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertRegex(attestation["materials"]["sdist"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertRegex(attestation["materials"]["artifact_manifest"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(attestation["materials"]["scorecard_pack"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(attestation["materials"]["scorecard"]["sha256"], r"^[0-9a-f]{64}$")
             self.assertFalse(attestation["signature"]["signed"])
 
     def test_verify_release_candidate_pack_fails_on_missing_wheel(self) -> None:

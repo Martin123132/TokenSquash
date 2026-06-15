@@ -74,8 +74,9 @@ python -m tokensquash release-candidate --require-clean --out-dir private-turns\
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
 ```
 
-Release-candidate evidence includes wheel/source-distribution builds, metadata
-checks, package smoke tests, artifact manifests, and release attestations. See
+Release-candidate evidence includes bundled sample scorecard-pack artifacts,
+wheel/source-distribution builds, metadata checks, package smoke tests, artifact
+manifests, and release attestations. See
 [release-candidate.md](release-candidate.md) for the full flow.
 
 ## Release Asset Evidence

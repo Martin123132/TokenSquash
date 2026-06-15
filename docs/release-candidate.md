@@ -32,6 +32,7 @@ python -m tokensquash verify-release-candidate private-turns\release-candidate -
 The candidate gate verifies:
 
 - readiness evidence
+- bundled sample scorecard-pack evidence
 - dependency-free and exact-tokenizer benchmark baselines
 - wheel build
 - source distribution build
@@ -41,6 +42,11 @@ The candidate gate verifies:
 - `LICENSE` and `COMMERCIAL-LICENSE.md` in the wheel and source distribution
 - artifact-manifest integrity
 - release attestation status
+
+The scorecard pack is written under `private-turns\release-candidate\scorecard-pack`
+with a root `scorecard-pack.json` summary. The bundled public corpus may report
+`watch` because it is intentionally small seed data; the release gate records
+that status while verifying that the evidence files are present and hashed.
 
 ## Stage Public Release Assets
 

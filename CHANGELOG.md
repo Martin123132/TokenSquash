@@ -16,6 +16,8 @@ is produced locally and in GitHub Actions.
   optional sidecar review evidence in a single report.
 - `turns scorecard-pack` now writes reusable scorecard evidence directories
   with `scorecard.json`, `scorecard.md`, and optional history artifacts.
+- `release-candidate` now includes bundled sample scorecard-pack evidence in
+  its report, artifact manifest, verifier summary, and local attestation.
 - `turns compare-scorecards` now compares saved scorecard JSON files for
   release-review deltas across corpus size, savings, privacy findings, alias
   impact, and sidecar pass/watch/fail counts.

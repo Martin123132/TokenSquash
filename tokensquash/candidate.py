@@ -15,12 +15,14 @@ from zipfile import BadZipFile, ZipFile
 
 from .about import PROJECT_NAME, package_requires_python, package_version
 from .baselines import format_benchmark_baseline_verify_markdown, verify_benchmark_baselines
+from .demo import DEFAULT_DEMO_CORPUS
 from .readiness import (
     format_product_readiness_verify_markdown,
     run_product_readiness,
     verify_product_readiness_pack,
 )
 from .release_info import build_release_info, format_release_info_markdown
+from .turns import format_turn_scorecard_pack_markdown, write_turn_scorecard_pack
 
 
 RELEASE_CANDIDATE_SCHEMA_VERSION = "tokensquash.release_candidate.v1"
@@ -59,6 +61,7 @@ def run_release_candidate(
         output_dir = root / output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     readiness_dir = output_dir / "readiness"
+    scorecard_pack_dir = output_dir / "scorecard-pack"
     wheel_dir = output_dir / "wheel"
     sdist_dir = output_dir / "sdist"
     steps: list[dict[str, Any]] = []
@@ -103,6 +106,22 @@ def run_release_candidate(
         command=_command("verify-readiness", str(readiness_dir), "--require-readiness-pass"),
         required=True,
         action=lambda: _run_readiness_verify(readiness_dir, output_dir),
+    )
+    _run_candidate_step(
+        steps,
+        "scorecard_pack",
+        command=_command(
+            "turns",
+            "scorecard-pack",
+            str(DEFAULT_DEMO_CORPUS),
+            "--counter",
+            counter,
+            "--out-dir",
+            str(scorecard_pack_dir),
+            "--no-sidecar-auto",
+        ),
+        required=True,
+        action=lambda: _run_scorecard_pack(output_dir, scorecard_pack_dir, counter=counter),
     )
     _run_candidate_step(
         steps,
@@ -175,6 +194,7 @@ def run_release_candidate(
             root,
             output_dir,
             readiness_dir,
+            scorecard_pack_dir,
             wheel_dir,
             sdist_dir,
             counter,
@@ -198,6 +218,11 @@ def run_release_candidate(
             "readiness": str(readiness_dir / "readiness.json"),
             "readiness_verify": str(output_dir / "readiness-verify.json"),
             "readiness_verify_markdown": str(output_dir / "readiness-verify.md"),
+            "scorecard_pack_dir": str(scorecard_pack_dir),
+            "scorecard_pack_report": str(output_dir / "scorecard-pack.json"),
+            "scorecard_pack_markdown": str(output_dir / "scorecard-pack.md"),
+            "scorecard": str(scorecard_pack_dir / "scorecard.json"),
+            "scorecard_markdown": str(scorecard_pack_dir / "scorecard.md"),
             "baseline_verify": str(output_dir / "baseline-verify.json"),
             "baseline_verify_markdown": str(output_dir / "baseline-verify.md"),
             "exact_baseline_verify": str(output_dir / "exact-baseline-verify.json"),
@@ -272,6 +297,11 @@ def format_release_candidate_markdown(report: dict[str, Any]) -> str:
         "release_info",
         "readiness",
         "readiness_verify",
+        "scorecard_pack_dir",
+        "scorecard_pack_report",
+        "scorecard_pack_markdown",
+        "scorecard",
+        "scorecard_markdown",
         "baseline_verify",
         "exact_baseline_verify",
         "wheel_dir",
@@ -347,6 +377,8 @@ def format_release_candidate_attestation_markdown(report: dict[str, Any]) -> str
     wheel = materials.get("wheel") or {}
     sdist = materials.get("sdist") or {}
     artifact_manifest = materials.get("artifact_manifest") or {}
+    scorecard_pack = materials.get("scorecard_pack") or {}
+    scorecard = materials.get("scorecard") or {}
     lines = [
         "# TokenSquash Release Attestation",
         "",
@@ -362,6 +394,8 @@ def format_release_candidate_attestation_markdown(report: dict[str, Any]) -> str
         f"- Wheel SHA-256: `{wheel.get('sha256')}`",
         f"- Sdist SHA-256: `{sdist.get('sha256')}`",
         f"- Artifact manifest SHA-256: `{artifact_manifest.get('sha256')}`",
+        f"- Scorecard pack SHA-256: `{scorecard_pack.get('sha256')}`",
+        f"- Scorecard SHA-256: `{scorecard.get('sha256')}`",
         f"- Signature: `{(report.get('signature') or {}).get('type')}`",
     ]
     return "\n".join(lines).rstrip() + "\n"
@@ -504,6 +538,73 @@ def verify_release_candidate_pack(
         required=True,
     )
 
+    scorecard_pack_report_path = _resolve_candidate_artifact(
+        candidate_dir,
+        outputs.get("scorecard_pack_report"),
+        Path("scorecard-pack.json"),
+    )
+    scorecard_pack, scorecard_pack_check = _verify_candidate_json_artifact(
+        "scorecard_pack",
+        scorecard_pack_report_path,
+        "tokensquash.turns.scorecard.pack.v1",
+        required=True,
+        allowed_statuses={"pass", "watch", "fail"},
+    )
+    checks.append(scorecard_pack_check)
+    _append_status_expectation_check(
+        checks,
+        "scorecard_pack_status",
+        scorecard_pack,
+        required=True,
+        allowed_statuses={"pass", "watch"},
+    )
+    _append_candidate_file_check(
+        checks,
+        "scorecard_pack_markdown",
+        _resolve_candidate_artifact(
+            candidate_dir,
+            outputs.get("scorecard_pack_markdown"),
+            Path("scorecard-pack.md"),
+        ),
+        required=True,
+    )
+    scorecard_pack_dir = _resolve_candidate_artifact(
+        candidate_dir,
+        outputs.get("scorecard_pack_dir"),
+        Path("scorecard-pack"),
+    )
+    _append_candidate_directory_check(checks, "scorecard_pack_dir", scorecard_pack_dir, required=True)
+    scorecard_path = _resolve_candidate_artifact(
+        candidate_dir,
+        outputs.get("scorecard"),
+        Path("scorecard-pack") / "scorecard.json",
+    )
+    scorecard, scorecard_check = _verify_candidate_json_artifact(
+        "scorecard",
+        scorecard_path,
+        "tokensquash.turns.scorecard.v1",
+        required=True,
+        allowed_statuses={"pass", "watch", "fail"},
+    )
+    checks.append(scorecard_check)
+    _append_status_expectation_check(
+        checks,
+        "scorecard_status",
+        scorecard,
+        required=True,
+        allowed_statuses={"pass", "watch"},
+    )
+    _append_candidate_file_check(
+        checks,
+        "scorecard_markdown",
+        _resolve_candidate_artifact(
+            candidate_dir,
+            outputs.get("scorecard_markdown"),
+            Path("scorecard-pack") / "scorecard.md",
+        ),
+        required=True,
+    )
+
     baseline_verify, baseline_verify_check = _verify_candidate_json_artifact(
         "baseline_verify",
         _resolve_candidate_artifact(candidate_dir, outputs.get("baseline_verify"), Path("baseline-verify.json")),
@@ -605,6 +706,10 @@ def verify_release_candidate_pack(
         wheel_path=wheel_path,
         stored_readiness_verify=stored_readiness_verify,
         readiness_verify_report=readiness_verify_report,
+        scorecard_pack=scorecard_pack,
+        scorecard_pack_path=scorecard_pack_report_path,
+        scorecard=scorecard,
+        scorecard_path=scorecard_path,
         baseline_verify=baseline_verify,
         exact_baseline_verify=exact_baseline_verify,
         sdist_path=sdist_path,
@@ -653,6 +758,9 @@ def verify_release_candidate_pack(
             "release_info_commit": ((release_info.get("git") or {}).get("commit") if release_info else None),
             "readiness_verify_status": stored_readiness_verify.get("status") if stored_readiness_verify else None,
             "nested_readiness_verify_status": readiness_verify_report.get("status") if readiness_verify_report else None,
+            "scorecard_pack_status": scorecard_pack.get("status") if scorecard_pack else None,
+            "scorecard_status": scorecard.get("status") if scorecard else None,
+            "scorecard_turn_count": ((scorecard.get("summary") or {}).get("turn_count") if scorecard else None),
             "baseline_verify_status": baseline_verify.get("status") if baseline_verify else None,
             "exact_baseline_verify_status": exact_baseline_verify.get("status") if exact_baseline_verify else None,
             "wheel": str(wheel_path) if wheel_path else None,
@@ -668,6 +776,8 @@ def verify_release_candidate_pack(
             "release_info": _candidate_artifact_reference(release_info),
             "readiness_verification": _candidate_artifact_reference(readiness_verify_report),
             "stored_readiness_verify": _candidate_artifact_reference(stored_readiness_verify),
+            "scorecard_pack": _candidate_artifact_reference(scorecard_pack),
+            "scorecard": _candidate_artifact_reference(scorecard),
             "baseline_verify": _candidate_artifact_reference(baseline_verify),
             "exact_baseline_verify": _candidate_artifact_reference(exact_baseline_verify),
         },
@@ -700,6 +810,9 @@ def format_release_candidate_verify_markdown(report: dict[str, Any]) -> str:
         f"- Git commit: `{summary.get('release_info_commit')}`",
         f"- Git dirty: `{summary.get('release_info_dirty')}`",
         f"- Nested readiness verify: `{summary.get('nested_readiness_verify_status')}`",
+        f"- Scorecard pack: `{summary.get('scorecard_pack_status')}`",
+        f"- Scorecard: `{summary.get('scorecard_status')}`",
+        f"- Scorecard turns: `{summary.get('scorecard_turn_count')}`",
         f"- Baseline verify: `{summary.get('baseline_verify_status')}`",
         f"- Exact baseline verify: `{summary.get('exact_baseline_verify_status')}`",
         f"- Wheel: `{summary.get('wheel')}`",
@@ -807,6 +920,39 @@ def _run_readiness_verify(readiness_dir: Path, output_dir: Path) -> tuple[str, s
         "report": str(json_path),
         "markdown": str(markdown_path),
         "failed_check_count": (report.get("summary") or {}).get("failed_check_count", 0),
+    }
+
+
+def _run_scorecard_pack(
+    output_dir: Path,
+    scorecard_pack_dir: Path,
+    *,
+    counter: str,
+) -> tuple[str, str, dict[str, Any]]:
+    report = write_turn_scorecard_pack(
+        DEFAULT_DEMO_CORPUS,
+        out_dir=scorecard_pack_dir,
+        counter=counter,
+        auto_sidecar=False,
+    )
+    json_path = output_dir / "scorecard-pack.json"
+    markdown_path = output_dir / "scorecard-pack.md"
+    _write_json(json_path, report)
+    markdown_path.write_text(format_turn_scorecard_pack_markdown(report), encoding="utf-8")
+    report_status = report.get("status")
+    scorecard_summary = (report.get("scorecard") or {}).get("summary") or {}
+    status = "pass" if report_status in {"pass", "watch"} else "fail"
+    return status, f"Scorecard pack returned {report_status}.", {
+        "report": str(json_path),
+        "markdown": str(markdown_path),
+        "output_dir": str(scorecard_pack_dir),
+        "scorecard_json": str(scorecard_pack_dir / "scorecard.json"),
+        "scorecard_markdown": str(scorecard_pack_dir / "scorecard.md"),
+        "pack_status": report_status,
+        "scorecard_status": (report.get("summary") or {}).get("scorecard_status"),
+        "turn_count": scorecard_summary.get("turn_count", 0),
+        "saved_pct": scorecard_summary.get("saved_pct", 0.0),
+        "milestone": scorecard_summary.get("milestone"),
     }
 
 
@@ -1312,6 +1458,8 @@ def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: 
         ("release_info_markdown", Path("release-info.md")),
         ("readiness_verify", Path("readiness-verify.json")),
         ("readiness_verify_markdown", Path("readiness-verify.md")),
+        ("scorecard_pack_report", Path("scorecard-pack.json")),
+        ("scorecard_pack_markdown", Path("scorecard-pack.md")),
         ("baseline_verify", Path("baseline-verify.json")),
         ("baseline_verify_markdown", Path("baseline-verify.md")),
         ("exact_baseline_verify", Path("exact-baseline-verify.json")),
@@ -1324,6 +1472,13 @@ def _candidate_artifact_manifest_expected_files(candidate_dir: Path, candidate: 
 
     readiness_dir = _resolve_candidate_artifact(candidate_dir, outputs.get("readiness_dir"), Path("readiness"))
     add_path(readiness_dir)
+
+    scorecard_pack_dir = _resolve_candidate_artifact(
+        candidate_dir,
+        outputs.get("scorecard_pack_dir"),
+        Path("scorecard-pack"),
+    )
+    add_path(scorecard_pack_dir)
 
     wheel_dir = _resolve_candidate_artifact(candidate_dir, outputs.get("wheel_dir"), Path("wheel"))
     add_path(wheel_dir)
@@ -1362,6 +1517,10 @@ def _build_release_candidate_attestation(
     wheel_path: Path | None,
     stored_readiness_verify: dict[str, Any] | None,
     readiness_verify_report: dict[str, Any] | None,
+    scorecard_pack: dict[str, Any] | None,
+    scorecard_pack_path: Path | None,
+    scorecard: dict[str, Any] | None,
+    scorecard_path: Path | None,
     baseline_verify: dict[str, Any] | None,
     exact_baseline_verify: dict[str, Any] | None,
     sdist_path: Path | None,
@@ -1381,6 +1540,8 @@ def _build_release_candidate_attestation(
     materials = {
         "release_candidate": _candidate_file_reference(candidate_dir, candidate_path),
         "artifact_manifest": _candidate_file_reference(candidate_dir, candidate_dir / "artifact-manifest.json"),
+        "scorecard_pack": _candidate_file_reference(candidate_dir, scorecard_pack_path),
+        "scorecard": _candidate_file_reference(candidate_dir, scorecard_path),
         "wheel": _candidate_file_reference(candidate_dir, wheel_path),
         "sdist": _candidate_file_reference(candidate_dir, sdist_path),
     }
@@ -1391,6 +1552,8 @@ def _build_release_candidate_attestation(
         "artifact_manifest_status": artifact_manifest.get("status") if artifact_manifest else None,
         "readiness_verify_status": stored_readiness_verify.get("status") if stored_readiness_verify else None,
         "nested_readiness_verify_status": readiness_verify_report.get("status") if readiness_verify_report else None,
+        "scorecard_pack_status": scorecard_pack.get("status") if scorecard_pack else None,
+        "scorecard_status": scorecard.get("status") if scorecard else None,
         "baseline_verify_status": baseline_verify.get("status") if baseline_verify else None,
         "exact_baseline_verify_status": exact_baseline_verify.get("status") if exact_baseline_verify else None,
         "wheel_smoke_status": _candidate_step_status(candidate, "wheel_smoke"),
@@ -1404,6 +1567,8 @@ def _build_release_candidate_attestation(
         "verification_status": verification_status,
         "release_candidate_sha256": (materials.get("release_candidate") or {}).get("sha256"),
         "artifact_manifest_sha256": (materials.get("artifact_manifest") or {}).get("sha256"),
+        "scorecard_pack_sha256": (materials.get("scorecard_pack") or {}).get("sha256"),
+        "scorecard_sha256": (materials.get("scorecard") or {}).get("sha256"),
         "wheel_sha256": (materials.get("wheel") or {}).get("sha256"),
         "sdist_sha256": (materials.get("sdist") or {}).get("sha256"),
     }
@@ -2081,6 +2246,7 @@ def _append_candidate_steps_check(
         "release_info",
         "readiness",
         "verify_readiness",
+        "scorecard_pack",
         "benchmark_baselines",
         "exact_tokenizer_baselines",
         "wheel_build",
@@ -2260,6 +2426,7 @@ def _release_candidate_commands(
     root: Path,
     output_dir: Path,
     readiness_dir: Path,
+    scorecard_pack_dir: Path,
     wheel_dir: Path,
     sdist_dir: Path,
     counter: str,
@@ -2290,6 +2457,10 @@ def _release_candidate_commands(
         + (" --require-clean" if require_clean_git else ""),
         readiness,
         f"python -m tokensquash verify-readiness {readiness_dir} --require-readiness-pass",
+        (
+            f"python -m tokensquash turns scorecard-pack {DEFAULT_DEMO_CORPUS} "
+            f"--counter {counter} --out-dir {scorecard_pack_dir} --no-sidecar-auto"
+        ),
         "python -m tokensquash baselines verify",
     ]
     if require_exact_tokenizer:
