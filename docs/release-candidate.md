@@ -66,6 +66,8 @@ The staged public assets should include:
 - source distribution
 - `release-attestation.json`
 - `artifact-manifest.json`
+- `scorecard-pack.json`
+- `scorecard.json`
 - `verify-release-candidate.json`
 
 ## Upload After Review

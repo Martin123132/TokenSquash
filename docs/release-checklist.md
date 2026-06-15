@@ -89,13 +89,13 @@ Required release-candidate evidence:
 - source distribution build is `pass`
 - wheel and source distribution include `LICENSE` and `COMMERCIAL-LICENSE.md`
 - artifact-manifest integrity is `pass`
-- release attestation contains wheel, sdist, and artifact-manifest SHA-256
-  hashes
+- release attestation contains wheel, sdist, artifact-manifest, scorecard-pack,
+  and scorecard SHA-256 hashes
 - `docs/release-verification.md` can be updated with the public release asset
   names, hashes, CI run, and license-file evidence
 - staged release assets include the wheel, source distribution,
-  `release-attestation.json`, `artifact-manifest.json`, and
-  `verify-release-candidate.json`
+  `release-attestation.json`, `artifact-manifest.json`, `scorecard-pack.json`,
+  `scorecard.json`, and `verify-release-candidate.json`
 - `docs/release-verification.md` has been refreshed from the
   `release-assets.json` report and reviewed before upload
 
@@ -142,8 +142,8 @@ post-release update and verification sequence.
 - Record the released tag, GitHub Actions run, and release-candidate evidence
   location in the published release notes.
 - Upload public release assets for the wheel, source distribution,
-  `release-attestation.json`, `artifact-manifest.json`, and
-  `verify-release-candidate.json`.
+  `release-attestation.json`, `artifact-manifest.json`, `scorecard-pack.json`,
+  `scorecard.json`, and `verify-release-candidate.json`.
 - Prefer `python -m tokensquash release-assets private-turns\release-candidate
   --tag <tag> --update-verification-doc docs\release-verification.md --upload`
   for the upload after reviewing the staged `release-assets.json` report and

@@ -95,6 +95,16 @@ Open `release-attestation.json` and confirm:
 - `materials.wheel.sha256` matches the wheel hash
 - `materials.sdist.sha256` matches the source-distribution hash
 - `materials.artifact_manifest.sha256` matches the artifact-manifest hash
+- for releases that include scorecard assets,
+  `materials.scorecard_pack.sha256` matches `scorecard-pack.json` and
+  `materials.scorecard.sha256` matches `scorecard.json`
+
+Open `scorecard-pack.json` and `scorecard.json` when present and confirm:
+
+- `schema_version` is `tokensquash.turns.scorecard.pack.v1` for the pack
+- `schema_version` is `tokensquash.turns.scorecard.v1` for the scorecard
+- `status` is `pass` or `watch`
+- the scorecard summary reports the public corpus turn count and saved percent
 
 ## Install Smoke Check
 

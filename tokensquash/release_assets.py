@@ -97,9 +97,14 @@ def prepare_release_assets(
             "release_candidate_status": (verification.get("summary") or {}).get("release_candidate_status"),
             "release_info_commit": (verification.get("summary") or {}).get("release_info_commit"),
             "release_attestation_status": (verification.get("summary") or {}).get("release_attestation_status"),
+            "scorecard_pack_status": (verification.get("summary") or {}).get("scorecard_pack_status"),
+            "scorecard_status": (verification.get("summary") or {}).get("scorecard_status"),
+            "scorecard_turn_count": (verification.get("summary") or {}).get("scorecard_turn_count"),
             "wheel": _asset_hash(assets, "wheel"),
             "sdist": _asset_hash(assets, "sdist"),
             "artifact_manifest": _asset_hash(assets, "artifact_manifest"),
+            "scorecard_pack": _asset_hash(assets, "scorecard_pack"),
+            "scorecard": _asset_hash(assets, "scorecard"),
             "verify_release_candidate": _asset_hash(assets, "verify_release_candidate"),
             "uploaded": bool(upload_result and upload_result.get("status") == "pass"),
             "elapsed_seconds": round(time.time() - started, 4),
@@ -169,6 +174,9 @@ def format_release_assets_markdown(report: dict[str, Any]) -> str:
         f"- Verification status: `{summary.get('verification_status')}`",
         f"- Release-candidate status: `{summary.get('release_candidate_status')}`",
         f"- Git commit: `{summary.get('release_info_commit')}`",
+        f"- Scorecard pack status: `{summary.get('scorecard_pack_status')}`",
+        f"- Scorecard status: `{summary.get('scorecard_status')}`",
+        f"- Scorecard turns: `{summary.get('scorecard_turn_count')}`",
         f"- Assets: `{summary.get('asset_count', 0)}`",
         f"- Uploaded: `{summary.get('uploaded')}`",
         "",
@@ -267,6 +275,9 @@ def format_release_verification_section(report: dict[str, Any], *, ci_run: str |
             f"- release-candidate status: `{summary.get('release_candidate_status')}`",
             f"- release attestation status: `{summary.get('release_attestation_status')}`",
             f"- release attestation evidence hash: `{verification_summary.get('release_attestation_evidence_hash')}`",
+            f"- scorecard pack status: `{summary.get('scorecard_pack_status')}`",
+            f"- scorecard status: `{summary.get('scorecard_status')}`",
+            f"- scorecard turns: `{summary.get('scorecard_turn_count')}`",
         ]
     )
     if ci_run_value:
@@ -275,6 +286,8 @@ def format_release_verification_section(report: dict[str, Any], *, ci_run: str |
         [
             "- packaged license evidence: inspect `verify-release-candidate.json` "
             "for `LICENSE` and `COMMERCIAL-LICENSE.md` checks on the wheel and source distribution",
+            "- scorecard evidence: inspect `scorecard-pack.json` and `scorecard.json` for public-corpus "
+            "codec health, saved percent, and milestone status",
         ]
     )
     return "\n".join(lines).rstrip() + "\n"
@@ -322,6 +335,8 @@ def _stage_pack_assets(
         ("sdist", _summary_path(summary, "sdist"), None),
         ("release_attestation", candidate_dir / "release-attestation.json", "release-attestation.json"),
         ("artifact_manifest", candidate_dir / "artifact-manifest.json", "artifact-manifest.json"),
+        ("scorecard_pack", candidate_dir / "scorecard-pack.json", "scorecard-pack.json"),
+        ("scorecard", candidate_dir / "scorecard-pack" / "scorecard.json", "scorecard.json"),
     ]
     staged: list[dict[str, Any]] = []
     for role, source, destination_name in sources:

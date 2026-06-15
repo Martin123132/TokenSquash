@@ -20,6 +20,8 @@ For a new release, use the actual tag and run id. The release should have:
 - public wheel and source distribution assets
 - `release-attestation.json`
 - `artifact-manifest.json`
+- `scorecard-pack.json`
+- `scorecard.json`
 - `verify-release-candidate.json`
 
 ## 2. Refresh Asset Verification

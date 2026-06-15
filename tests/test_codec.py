@@ -1232,6 +1232,8 @@ class TokenSquashCodecTests(unittest.TestCase):
                     "tokensquash-0.1.1.tar.gz",
                     "release-attestation.json",
                     "artifact-manifest.json",
+                    "scorecard-pack.json",
+                    "scorecard.json",
                     "verify-release-candidate.json",
                 },
             )
@@ -1240,11 +1242,15 @@ class TokenSquashCodecTests(unittest.TestCase):
                 self.assertRegex(asset["sha256"], r"^[0-9a-f]{64}$")
             self.assertTrue((asset_dir / "release-assets.json").exists())
             self.assertTrue((asset_dir / "release-assets.md").exists())
+            self.assertTrue((asset_dir / "scorecard-pack.json").exists())
+            self.assertTrue((asset_dir / "scorecard.json").exists())
             self.assertTrue((asset_dir / "verify-release-candidate.json").exists())
             doc_text = verification_doc.read_text(encoding="utf-8")
             self.assertIn("## v0.1.0 Assets", doc_text)
             self.assertIn("GitHub Actions run: `12345`", doc_text)
             self.assertIn("tokensquash-0.0.0-py3-none-any.whl", doc_text)
+            self.assertIn("scorecard-pack.json", doc_text)
+            self.assertIn("scorecard status: `watch`", doc_text)
             self.assertIn("verify-release-candidate.json", doc_text)
             self.assertNotIn("old generated section", doc_text)
             self.assertIn("Tail.", doc_text)
@@ -1288,7 +1294,9 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(payload["schema_version"], "tokensquash.release_assets.v1")
             self.assertEqual(payload["status"], "pass")
-            self.assertEqual(payload["summary"]["asset_count"], 5)
+            self.assertEqual(payload["summary"]["asset_count"], 7)
+            self.assertEqual(payload["summary"]["scorecard_pack_status"], "watch")
+            self.assertEqual(payload["summary"]["scorecard_status"], "watch")
             self.assertTrue(payload["summary"]["verification_doc_updated"])
             self.assertTrue((asset_dir / "release-assets.json").exists())
             self.assertIn("GitHub Actions run: `12345`", verification_doc.read_text(encoding="utf-8"))
