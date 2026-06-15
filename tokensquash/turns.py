@@ -1288,6 +1288,110 @@ def compare_turn_scorecards(base: Path | str, target: Path | str) -> dict[str, A
     }
 
 
+def build_turn_scorecard_history(scorecards: Iterable[Path | str]) -> dict[str, Any]:
+    """Summarize trend history across saved turn scorecard JSON files."""
+
+    if isinstance(scorecards, (str, Path)):
+        paths = [Path(scorecards)]
+    else:
+        paths = [Path(path) for path in scorecards]
+    if len(paths) < 2:
+        raise ValueError("turn scorecard history requires at least two scorecard files")
+
+    reports = [_load_turn_scorecard(path) for path in paths]
+    entries: list[dict[str, Any]] = []
+    for index, (path, report) in enumerate(zip(paths, reports), start=1):
+        identity = _turn_scorecard_identity(path, report)
+        identity["index"] = index
+        entries.append(identity)
+
+    steps: list[dict[str, Any]] = []
+    for index in range(1, len(paths)):
+        comparison = compare_turn_scorecards(paths[index - 1], paths[index])
+        steps.append(
+            {
+                "from_index": index,
+                "to_index": index + 1,
+                "status": comparison.get("status"),
+                "base": comparison.get("base"),
+                "target": comparison.get("target"),
+                "delta": comparison.get("delta", {}),
+                "recommendations": comparison.get("recommendations", []),
+            }
+        )
+
+    net_comparison = compare_turn_scorecards(paths[0], paths[-1])
+    latest = entries[-1]
+    best = max(entries, key=lambda item: _float_value(item.get("saved_pct")))
+    worst = min(entries, key=lambda item: _float_value(item.get("saved_pct")))
+    pass_step_count = sum(1 for step in steps if step.get("status") == "pass")
+    watch_step_count = sum(1 for step in steps if step.get("status") == "watch")
+    fail_step_count = sum(1 for step in steps if step.get("status") == "fail")
+    pass_scorecard_count = sum(1 for entry in entries if entry.get("status") == "pass")
+    watch_scorecard_count = sum(1 for entry in entries if entry.get("status") in {"watch", "warn"})
+    fail_scorecard_count = sum(1 for entry in entries if entry.get("status") == "fail")
+    saved_pct_drop_from_best = round(
+        _float_value(latest.get("saved_pct")) - _float_value(best.get("saved_pct")),
+        4,
+    )
+    warnings: list[str] = []
+    if latest.get("status") == "fail":
+        warnings.append("latest scorecard is failing")
+    elif latest.get("status") in {"watch", "warn"}:
+        warnings.append(f"latest scorecard is {latest.get('status')}")
+    if fail_step_count:
+        warnings.append(f"history contains {fail_step_count} adjacent failing comparison(s)")
+    if watch_step_count:
+        warnings.append(f"history contains {watch_step_count} adjacent watch comparison(s)")
+    if saved_pct_drop_from_best < 0:
+        warnings.append(f"latest saved_pct is {abs(saved_pct_drop_from_best)}% below best observed")
+
+    return {
+        "schema_version": "tokensquash.turns.scorecard.history.v1",
+        "status": _scorecard_history_status(latest, fail_step_count, watch_step_count),
+        "summary": {
+            "scorecard_count": len(entries),
+            "first_scorecard_path": entries[0].get("scorecard_path"),
+            "latest_scorecard_path": latest.get("scorecard_path"),
+            "first_status": entries[0].get("status"),
+            "latest_status": latest.get("status"),
+            "first_milestone": entries[0].get("milestone"),
+            "latest_milestone": latest.get("milestone"),
+            "first_turn_count": entries[0].get("turn_count"),
+            "latest_turn_count": latest.get("turn_count"),
+            "turn_count_delta": (net_comparison.get("delta") or {}).get("turn_count"),
+            "first_saved_pct": entries[0].get("saved_pct"),
+            "latest_saved_pct": latest.get("saved_pct"),
+            "saved_pct_delta": (net_comparison.get("delta") or {}).get("saved_pct"),
+            "first_saved_tokens": entries[0].get("saved_tokens"),
+            "latest_saved_tokens": latest.get("saved_tokens"),
+            "saved_tokens_delta": (net_comparison.get("delta") or {}).get("saved_tokens"),
+            "privacy_finding_delta": (net_comparison.get("delta") or {}).get("privacy_finding_count"),
+            "raw_wire_loss_turn_delta": (net_comparison.get("delta") or {}).get("raw_wire_loss_turns"),
+            "pass_through_row_delta": (net_comparison.get("delta") or {}).get("pass_through_rows"),
+            "sidecar_pass_delta": (net_comparison.get("delta") or {}).get("sidecar_pass_count"),
+            "sidecar_watch_delta": (net_comparison.get("delta") or {}).get("sidecar_watch_count"),
+            "sidecar_fail_delta": (net_comparison.get("delta") or {}).get("sidecar_fail_count"),
+            "milestone_rank_delta": (net_comparison.get("delta") or {}).get("milestone_rank"),
+            "pass_scorecard_count": pass_scorecard_count,
+            "watch_scorecard_count": watch_scorecard_count,
+            "fail_scorecard_count": fail_scorecard_count,
+            "pass_step_count": pass_step_count,
+            "watch_step_count": watch_step_count,
+            "fail_step_count": fail_step_count,
+            "best_saved_pct": best.get("saved_pct"),
+            "best_scorecard_path": best.get("scorecard_path"),
+            "worst_saved_pct": worst.get("saved_pct"),
+            "worst_scorecard_path": worst.get("scorecard_path"),
+            "saved_pct_drop_from_best": saved_pct_drop_from_best,
+        },
+        "scorecards": entries,
+        "steps": steps,
+        "net": net_comparison,
+        "warnings": warnings,
+    }
+
+
 def compare_turn_certifications(base: Path | str, target: Path | str) -> dict[str, Any]:
     """Compare two saved turn certification JSON files."""
 
@@ -2209,6 +2313,78 @@ def format_turn_scorecard_compare_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_turn_scorecard_history_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Turn Scorecard History",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Scorecards: `{summary.get('scorecard_count', 0)}`",
+        f"- First: `{summary.get('first_scorecard_path')}` saved=`{summary.get('first_saved_pct')}%` milestone=`{summary.get('first_milestone')}`",
+        f"- Latest: `{summary.get('latest_scorecard_path')}` saved=`{summary.get('latest_saved_pct')}%` milestone=`{summary.get('latest_milestone')}`",
+        f"- Net saved percent delta: `{summary.get('saved_pct_delta')}%`",
+        f"- Net saved token delta: `{summary.get('saved_tokens_delta')}`",
+        f"- Net turn count delta: `{summary.get('turn_count_delta')}`",
+        f"- Net privacy finding delta: `{summary.get('privacy_finding_delta')}`",
+        f"- Net sidecar fail delta: `{summary.get('sidecar_fail_delta')}`",
+        f"- Best saved percent: `{summary.get('best_saved_pct')}%` at `{summary.get('best_scorecard_path')}`",
+        f"- Worst saved percent: `{summary.get('worst_saved_pct')}%` at `{summary.get('worst_scorecard_path')}`",
+        f"- Adjacent passes: `{summary.get('pass_step_count', 0)}`",
+        f"- Adjacent watches: `{summary.get('watch_step_count', 0)}`",
+        f"- Adjacent failures: `{summary.get('fail_step_count', 0)}`",
+        "",
+        "## Scorecard Timeline",
+        "",
+        "| # | Scorecard | Status | Milestone | Turns | Saved % | Saved Tokens | Privacy | Sidecar P/W/F |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for entry in report.get("scorecards", []):
+        sidecar = (
+            f"{entry.get('sidecar_pass_count', 0)}/"
+            f"{entry.get('sidecar_watch_count', 0)}/"
+            f"{entry.get('sidecar_fail_count', 0)}"
+        )
+        lines.append(
+            "| "
+            f"{entry.get('index')} | "
+            f"{_markdown_cell(str(entry.get('scorecard_path', '')))} | "
+            f"`{entry.get('status')}` | "
+            f"`{entry.get('milestone')}` | "
+            f"{entry.get('turn_count')} | "
+            f"{entry.get('saved_pct')}% | "
+            f"{entry.get('saved_tokens')} | "
+            f"{entry.get('privacy_finding_count')} | "
+            f"{sidecar} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Adjacent Steps",
+            "",
+            "| From | To | Status | Saved % Delta | Turn Delta | Privacy Delta | Sidecar Fail Delta |",
+            "|---:|---:|---|---:|---:|---:|---:|",
+        ]
+    )
+    for step in report.get("steps", []):
+        delta = step.get("delta", {})
+        lines.append(
+            "| "
+            f"{step.get('from_index')} | "
+            f"{step.get('to_index')} | "
+            f"`{step.get('status')}` | "
+            f"{delta.get('saved_pct')}% | "
+            f"{delta.get('turn_count')} | "
+            f"{delta.get('privacy_finding_count')} | "
+            f"{delta.get('sidecar_fail_count')} |"
+        )
+    warnings = report.get("warnings", [])
+    if warnings:
+        lines.extend(["", "## Warnings", ""])
+        for warning in warnings:
+            lines.append(f"- {warning}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_turn_report_compare_markdown(report: dict[str, Any]) -> str:
     delta = report.get("delta", {})
     base = report.get("base", {})
@@ -2542,11 +2718,18 @@ def _load_turn_report(path: Path | str) -> dict[str, Any]:
 
 
 def _load_turn_scorecard(path: Path | str) -> dict[str, Any]:
-    source = Path(path)
+    source = _resolve_turn_scorecard_path(path)
     payload = json.loads(source.read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict) or payload.get("schema_version") != "tokensquash.turns.scorecard.v1":
         raise ValueError(f"Not a TokenSquash turn scorecard: {source}")
     return payload
+
+
+def _resolve_turn_scorecard_path(path: Path | str) -> Path:
+    source = Path(path)
+    if source.is_dir():
+        return source / "scorecard.json"
+    return source
 
 
 def _load_turn_certification(path: Path | str) -> dict[str, Any]:
@@ -2662,7 +2845,7 @@ def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str,
 def _turn_scorecard_identity(path: Path | str, report: dict[str, Any]) -> dict[str, Any]:
     summary = report.get("summary", {})
     return {
-        "scorecard_path": str(path),
+        "scorecard_path": str(_resolve_turn_scorecard_path(path)),
         "corpus_path": report.get("path"),
         "status": report.get("status"),
         "counter": report.get("counter"),
@@ -3724,6 +3907,15 @@ def _scorecard_compare_status(target_report: dict[str, Any], delta: dict[str, An
     if _int_value(delta.get("sidecar_pass_count")) < 0:
         return "watch"
     if _int_value(delta.get("turn_count")) < 0:
+        return "watch"
+    return "pass"
+
+
+def _scorecard_history_status(latest: dict[str, Any], fail_step_count: int, watch_step_count: int) -> str:
+    latest_status = str(latest.get("status", "fail"))
+    if latest_status == "fail" or fail_step_count:
+        return "fail"
+    if latest_status in {"watch", "warn"} or watch_step_count:
         return "watch"
     return "pass"
 

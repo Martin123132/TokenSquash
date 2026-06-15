@@ -93,6 +93,7 @@ Compare saved certification packs after a codec or documentation change:
 
 ```powershell
 python -m tokensquash turns compare-scorecards private-turns\scorecards\v0.1.1.json private-turns\scorecards\current.json
+python -m tokensquash turns scorecard-history private-turns\scorecards\v0.1.1.json private-turns\scorecards\current.json private-turns\scorecards\latest.json
 python -m tokensquash turns compare-certifications private-turns\cert-before\certification.json private-turns\cert-after\certification.json
 python -m tokensquash turns certification-history private-turns\cert-before private-turns\cert-after private-turns\cert-latest
 ```

@@ -74,6 +74,7 @@ release claims:
 ```powershell
 python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out private-turns\scorecards\current.json
 python -m tokensquash turns compare-scorecards private-turns\scorecards\first-10.json private-turns\scorecards\current.json
+python -m tokensquash turns scorecard-history private-turns\scorecards\first-10.json private-turns\scorecards\current.json
 ```
 
 ## Certify A Baseline

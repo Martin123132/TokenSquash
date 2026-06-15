@@ -87,6 +87,7 @@ from .turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     build_turn_certification_history,
+    build_turn_scorecard_history,
     capture_turn_record,
     certify_turn_corpus,
     compare_turn_certifications,
@@ -106,6 +107,7 @@ from .turns import (
     format_turn_report_compare_markdown,
     format_turn_gate_markdown,
     format_turn_scorecard_compare_markdown,
+    format_turn_scorecard_history_markdown,
     format_turn_suggestions_markdown,
     format_turn_evaluate_markdown,
     format_turn_import_markdown,
@@ -680,6 +682,19 @@ def main(argv: list[str] | None = None) -> int:
     turns_compare_scorecards.add_argument("target", type=Path)
     turns_compare_scorecards.add_argument("--out", type=Path, help="Write comparison output to this file.")
     turns_compare_scorecards.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    turns_scorecard_history = turns_sub.add_parser(
+        "scorecard-history",
+        help="Summarize trends across saved real-corpus scorecard JSON files.",
+    )
+    turns_scorecard_history.add_argument(
+        "scorecards",
+        nargs="+",
+        type=Path,
+        help="Scorecard JSON files or directories containing scorecard.json, in chronological order.",
+    )
+    turns_scorecard_history.add_argument("--out", type=Path, help="Write history output to this file.")
+    turns_scorecard_history.add_argument("--json", action="store_true", help="Print history JSON.")
 
     turns_compare_certifications = turns_sub.add_parser(
         "compare-certifications",
@@ -1595,6 +1610,18 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(report, indent=2) + "\n"
                     if args.json
                     else format_turn_scorecard_compare_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "watch"} else 1
+            if args.turns_command == "scorecard-history":
+                report = build_turn_scorecard_history(args.scorecards)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_scorecard_history_markdown(report)
                 )
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)

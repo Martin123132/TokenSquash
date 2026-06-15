@@ -59,6 +59,7 @@ from tokensquash.turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     build_turn_certification_history,
+    build_turn_scorecard_history,
     capture_turn_record,
     certify_turn_corpus,
     compare_turn_certifications,
@@ -496,6 +497,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("release-assets", commands)
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns compare-scorecards", commands)
+        self.assertIn("turns scorecard-history", commands)
         self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
         self.assertIn("turns scorecard", commands)
@@ -521,6 +523,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.turns.certify.v1", schemas)
         self.assertIn("tokensquash.turns.scorecard.v1", schemas)
         self.assertIn("tokensquash.turns.scorecard.compare.v1", schemas)
+        self.assertIn("tokensquash.turns.scorecard.history.v1", schemas)
         self.assertIn("tokensquash.turns.release_check.v1", schemas)
         self.assertIn("tokensquash.turns.release_verify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
@@ -536,6 +539,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(any("turns scorecard" in command for command in readiness_commands))
         self.assertTrue(any("turns compare-scorecards" in command for command in readiness_commands))
+        self.assertTrue(any("turns scorecard-history" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
         self.assertIn("LICENSE", governance_paths)
         self.assertIn("COMMERCIAL-LICENSE.md", governance_paths)
@@ -3596,6 +3600,129 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("# TokenSquash Turn Scorecard Compare", output)
             self.assertIn("## Delta Table", output)
             self.assertIn("## Recommendations", output)
+            self.assertTrue(out.exists())
+
+    def test_turns_scorecard_history_reports_trend(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "scorecard-1.json"
+            second = Path(tmp) / "scorecard-2.json"
+            third = Path(tmp) / "scorecard-3.json"
+
+            def write_scorecard(
+                path: Path,
+                *,
+                status: str,
+                turns: int,
+                milestone: str,
+                saved_pct: float,
+                saved_tokens: int,
+            ) -> None:
+                path.write_text(
+                    json.dumps(
+                        {
+                            "schema_version": "tokensquash.turns.scorecard.v1",
+                            "status": status,
+                            "path": "private-turns/real.redacted-turns.jsonl",
+                            "counter": "chars",
+                            "adaptive": True,
+                            "summary": {
+                                "turn_count": turns,
+                                "milestone": milestone,
+                                "original_tokens": 1000 + turns,
+                                "squashed_tokens": 900 + turns,
+                                "saved_tokens": saved_tokens,
+                                "saved_pct": saved_pct,
+                                "prompt_saved_pct": saved_pct - 1.0,
+                                "reply_saved_pct": saved_pct + 1.0,
+                                "privacy_finding_count": 0,
+                                "pass_through_rows": 0,
+                                "raw_wire_loss_turns": 0,
+                                "selected_path_prefix_count": 1,
+                                "selected_field_value_count": 1,
+                                "alias_saved_tokens_delta": 10,
+                                "break_even_corpora": 3,
+                                "sidecar_status": "pass" if status == "pass" else "missing",
+                                "sidecar_pass_count": 2 if status == "pass" else 0,
+                                "sidecar_watch_count": 0,
+                                "sidecar_fail_count": 0,
+                            },
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            write_scorecard(first, status="pass", turns=10, milestone="smoke", saved_pct=4.0, saved_tokens=40)
+            write_scorecard(second, status="pass", turns=25, milestone="early_pattern", saved_pct=6.0, saved_tokens=75)
+            write_scorecard(third, status="watch", turns=30, milestone="early_pattern", saved_pct=5.5, saved_tokens=82)
+
+            report = build_turn_scorecard_history([first, second, third])
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.scorecard.history.v1")
+            self.assertEqual(report["status"], "watch")
+            self.assertEqual(report["summary"]["scorecard_count"], 3)
+            self.assertEqual(report["summary"]["turn_count_delta"], 20)
+            self.assertEqual(report["summary"]["saved_pct_delta"], 1.5)
+            self.assertEqual(report["summary"]["saved_tokens_delta"], 42)
+            self.assertEqual(report["summary"]["pass_step_count"], 1)
+            self.assertEqual(report["summary"]["watch_step_count"], 1)
+            self.assertEqual(report["summary"]["fail_step_count"], 0)
+            self.assertEqual(report["summary"]["best_scorecard_path"], str(second))
+            self.assertEqual(report["summary"]["saved_pct_drop_from_best"], -0.5)
+            self.assertEqual(len(report["scorecards"]), 3)
+            self.assertEqual(len(report["steps"]), 2)
+            self.assertTrue(any("latest scorecard is watch" in warning for warning in report["warnings"]))
+
+    def test_turns_scorecard_history_cli_markdown_accepts_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first_dir = Path(tmp) / "first"
+            second_dir = Path(tmp) / "second"
+            first_dir.mkdir()
+            second_dir.mkdir()
+            out = Path(tmp) / "scorecard-history.md"
+            first_payload = {
+                "schema_version": "tokensquash.turns.scorecard.v1",
+                "status": "pass",
+                "summary": {
+                    "turn_count": 10,
+                    "milestone": "smoke",
+                    "saved_pct": 3.0,
+                    "saved_tokens": 30,
+                    "privacy_finding_count": 0,
+                    "pass_through_rows": 0,
+                    "raw_wire_loss_turns": 0,
+                    "sidecar_pass_count": 1,
+                    "sidecar_watch_count": 0,
+                    "sidecar_fail_count": 0,
+                },
+            }
+            second_payload = {
+                "schema_version": "tokensquash.turns.scorecard.v1",
+                "status": "pass",
+                "summary": {
+                    "turn_count": 25,
+                    "milestone": "early_pattern",
+                    "saved_pct": 5.0,
+                    "saved_tokens": 80,
+                    "privacy_finding_count": 0,
+                    "pass_through_rows": 0,
+                    "raw_wire_loss_turns": 0,
+                    "sidecar_pass_count": 2,
+                    "sidecar_watch_count": 0,
+                    "sidecar_fail_count": 0,
+                },
+            }
+            (first_dir / "scorecard.json").write_text(json.dumps(first_payload), encoding="utf-8")
+            (second_dir / "scorecard.json").write_text(json.dumps(second_payload), encoding="utf-8")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "scorecard-history", str(first_dir), str(second_dir), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Scorecard History", output)
+            self.assertIn("## Scorecard Timeline", output)
+            self.assertIn("## Adjacent Steps", output)
             self.assertTrue(out.exists())
 
     def test_turns_compare_reports_cli_json(self) -> None:

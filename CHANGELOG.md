@@ -17,6 +17,8 @@ is produced locally and in GitHub Actions.
 - `turns compare-scorecards` now compares saved scorecard JSON files for
   release-review deltas across corpus size, savings, privacy findings, alias
   impact, and sidecar pass/watch/fail counts.
+- `turns scorecard-history` now summarizes saved scorecards over time, including
+  timeline rows, adjacent pass/watch/fail comparisons, net deltas, and warnings.
 - Sidecar review reports now include pass/watch/fail decisions so experimental
   local-AI semantic compression can be judged on meaning risk, not token savings
   alone.
