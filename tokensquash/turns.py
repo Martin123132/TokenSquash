@@ -1231,6 +1231,63 @@ def compare_turn_reports(base: Path | str, target: Path | str) -> dict[str, Any]
     }
 
 
+def compare_turn_scorecards(base: Path | str, target: Path | str) -> dict[str, Any]:
+    """Compare two saved real-corpus scorecard JSON files."""
+
+    base_report = _load_turn_scorecard(base)
+    target_report = _load_turn_scorecard(target)
+    base_summary = base_report.get("summary", {})
+    target_summary = target_report.get("summary", {})
+    saved_pct_delta = _float_value(target_summary.get("saved_pct")) - _float_value(base_summary.get("saved_pct"))
+    delta = {
+        "turn_count": _int_value(target_summary.get("turn_count")) - _int_value(base_summary.get("turn_count")),
+        "original_tokens": _int_value(target_summary.get("original_tokens")) - _int_value(base_summary.get("original_tokens")),
+        "squashed_tokens": _int_value(target_summary.get("squashed_tokens")) - _int_value(base_summary.get("squashed_tokens")),
+        "saved_tokens": _int_value(target_summary.get("saved_tokens")) - _int_value(base_summary.get("saved_tokens")),
+        "saved_pct": round(saved_pct_delta, 4),
+        "prompt_saved_pct": round(
+            _float_value(target_summary.get("prompt_saved_pct")) - _float_value(base_summary.get("prompt_saved_pct")),
+            4,
+        ),
+        "reply_saved_pct": round(
+            _float_value(target_summary.get("reply_saved_pct")) - _float_value(base_summary.get("reply_saved_pct")),
+            4,
+        ),
+        "privacy_finding_count": _int_value(target_summary.get("privacy_finding_count"))
+        - _int_value(base_summary.get("privacy_finding_count")),
+        "pass_through_rows": _int_value(target_summary.get("pass_through_rows"))
+        - _int_value(base_summary.get("pass_through_rows")),
+        "raw_wire_loss_turns": _int_value(target_summary.get("raw_wire_loss_turns"))
+        - _int_value(base_summary.get("raw_wire_loss_turns")),
+        "selected_path_prefix_count": _int_value(target_summary.get("selected_path_prefix_count"))
+        - _int_value(base_summary.get("selected_path_prefix_count")),
+        "selected_field_value_count": _int_value(target_summary.get("selected_field_value_count"))
+        - _int_value(base_summary.get("selected_field_value_count")),
+        "alias_saved_tokens_delta": _int_value(target_summary.get("alias_saved_tokens_delta"))
+        - _int_value(base_summary.get("alias_saved_tokens_delta")),
+        "break_even_corpora": _nullable_int_delta(
+            target_summary.get("break_even_corpora"),
+            base_summary.get("break_even_corpora"),
+        ),
+        "sidecar_pass_count": _int_value(target_summary.get("sidecar_pass_count"))
+        - _int_value(base_summary.get("sidecar_pass_count")),
+        "sidecar_watch_count": _int_value(target_summary.get("sidecar_watch_count"))
+        - _int_value(base_summary.get("sidecar_watch_count")),
+        "sidecar_fail_count": _int_value(target_summary.get("sidecar_fail_count"))
+        - _int_value(base_summary.get("sidecar_fail_count")),
+        "milestone_rank": _scorecard_milestone_rank(str(target_summary.get("milestone", "")))
+        - _scorecard_milestone_rank(str(base_summary.get("milestone", ""))),
+    }
+    return {
+        "schema_version": "tokensquash.turns.scorecard.compare.v1",
+        "status": _scorecard_compare_status(target_report, delta),
+        "base": _turn_scorecard_identity(base, base_report),
+        "target": _turn_scorecard_identity(target, target_report),
+        "delta": delta,
+        "recommendations": _scorecard_compare_recommendations(target_report, delta),
+    }
+
+
 def compare_turn_certifications(base: Path | str, target: Path | str) -> dict[str, Any]:
     """Compare two saved turn certification JSON files."""
 
@@ -2097,6 +2154,61 @@ def format_turn_scorecard_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def format_turn_scorecard_compare_markdown(report: dict[str, Any]) -> str:
+    delta = report.get("delta", {})
+    base = report.get("base", {})
+    target = report.get("target", {})
+    lines = [
+        "# TokenSquash Turn Scorecard Compare",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Base scorecard: `{base.get('scorecard_path')}` saved=`{base.get('saved_pct')}%` milestone=`{base.get('milestone')}`",
+        f"- Target scorecard: `{target.get('scorecard_path')}` saved=`{target.get('saved_pct')}%` milestone=`{target.get('milestone')}`",
+        f"- Saved percent delta: `{delta.get('saved_pct')}%`",
+        f"- Saved token delta: `{delta.get('saved_tokens')}`",
+        f"- Turn count delta: `{delta.get('turn_count')}`",
+        f"- Privacy finding delta: `{delta.get('privacy_finding_count')}`",
+        f"- Sidecar fail delta: `{delta.get('sidecar_fail_count')}`",
+        "",
+        "## Delta Table",
+        "",
+        "| Metric | Delta |",
+        "|---|---:|",
+    ]
+    for key in (
+        "turn_count",
+        "milestone_rank",
+        "original_tokens",
+        "squashed_tokens",
+        "saved_tokens",
+        "saved_pct",
+        "prompt_saved_pct",
+        "reply_saved_pct",
+        "privacy_finding_count",
+        "pass_through_rows",
+        "raw_wire_loss_turns",
+        "selected_path_prefix_count",
+        "selected_field_value_count",
+        "alias_saved_tokens_delta",
+        "break_even_corpora",
+        "sidecar_pass_count",
+        "sidecar_watch_count",
+        "sidecar_fail_count",
+    ):
+        value = delta.get(key)
+        suffix = "%" if key.endswith("_pct") else ""
+        rendered = "n/a" if value is None else f"{value}{suffix}"
+        lines.append(f"| `{key}` | `{rendered}` |")
+    recommendations = report.get("recommendations", [])
+    lines.extend(["", "## Recommendations", ""])
+    if not recommendations:
+        lines.append("No recommendations.")
+    else:
+        for item in recommendations:
+            lines.append(f"- `{item.get('code')}`: {item.get('message')}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def format_turn_report_compare_markdown(report: dict[str, Any]) -> str:
     delta = report.get("delta", {})
     base = report.get("base", {})
@@ -2429,6 +2541,14 @@ def _load_turn_report(path: Path | str) -> dict[str, Any]:
     return payload
 
 
+def _load_turn_scorecard(path: Path | str) -> dict[str, Any]:
+    source = Path(path)
+    payload = json.loads(source.read_text(encoding="utf-8-sig"))
+    if not isinstance(payload, dict) or payload.get("schema_version") != "tokensquash.turns.scorecard.v1":
+        raise ValueError(f"Not a TokenSquash turn scorecard: {source}")
+    return payload
+
+
 def _load_turn_certification(path: Path | str) -> dict[str, Any]:
     source = _resolve_turn_certification_path(path)
     payload = json.loads(source.read_text(encoding="utf-8-sig"))
@@ -2536,6 +2656,37 @@ def _turn_report_identity(path: Path | str, report: dict[str, Any]) -> dict[str,
         "alias_saved_tokens_delta": summary.get("alias_saved_tokens_delta"),
         "alias_saved_pct_delta": summary.get("alias_saved_pct_delta"),
         "break_even_corpora": summary.get("break_even_corpora"),
+    }
+
+
+def _turn_scorecard_identity(path: Path | str, report: dict[str, Any]) -> dict[str, Any]:
+    summary = report.get("summary", {})
+    return {
+        "scorecard_path": str(path),
+        "corpus_path": report.get("path"),
+        "status": report.get("status"),
+        "counter": report.get("counter"),
+        "adaptive": report.get("adaptive"),
+        "turn_count": summary.get("turn_count"),
+        "milestone": summary.get("milestone"),
+        "original_tokens": summary.get("original_tokens"),
+        "squashed_tokens": summary.get("squashed_tokens"),
+        "saved_tokens": summary.get("saved_tokens"),
+        "saved_pct": summary.get("saved_pct"),
+        "prompt_saved_pct": summary.get("prompt_saved_pct"),
+        "reply_saved_pct": summary.get("reply_saved_pct"),
+        "privacy_finding_count": summary.get("privacy_finding_count"),
+        "pass_through_rows": summary.get("pass_through_rows"),
+        "raw_wire_loss_turns": summary.get("raw_wire_loss_turns"),
+        "selected_path_prefix_count": summary.get("selected_path_prefix_count"),
+        "selected_field_value_count": summary.get("selected_field_value_count"),
+        "alias_saved_tokens_delta": summary.get("alias_saved_tokens_delta"),
+        "break_even_corpora": summary.get("break_even_corpora"),
+        "sidecar_status": summary.get("sidecar_status"),
+        "sidecar_pass_count": summary.get("sidecar_pass_count"),
+        "sidecar_watch_count": summary.get("sidecar_watch_count"),
+        "sidecar_fail_count": summary.get("sidecar_fail_count"),
+        "recommendation": summary.get("recommendation"),
     }
 
 
@@ -3548,6 +3699,118 @@ def _scorecard_status(turn_report: dict[str, Any], sidecar: dict[str, Any]) -> s
     if turn_report.get("status") in {"warn", "miss", "regressed"} or sidecar.get("status") in {"watch", "missing"}:
         return "watch"
     return "pass"
+
+
+def _scorecard_compare_status(target_report: dict[str, Any], delta: dict[str, Any]) -> str:
+    target_status = str(target_report.get("status", "fail"))
+    if target_status == "fail":
+        return "fail"
+    if _int_value(delta.get("privacy_finding_count")) > 0:
+        return "fail"
+    if _int_value(delta.get("sidecar_fail_count")) > 0:
+        return "fail"
+    if _int_value(delta.get("raw_wire_loss_turns")) > 0:
+        return "fail"
+    if target_status in {"watch", "warn"}:
+        return "watch"
+    if _float_value(delta.get("saved_pct")) < 0:
+        return "watch"
+    if _int_value(delta.get("saved_tokens")) < 0:
+        return "watch"
+    if _int_value(delta.get("pass_through_rows")) > 0:
+        return "watch"
+    if _int_value(delta.get("sidecar_watch_count")) > 0:
+        return "watch"
+    if _int_value(delta.get("sidecar_pass_count")) < 0:
+        return "watch"
+    if _int_value(delta.get("turn_count")) < 0:
+        return "watch"
+    return "pass"
+
+
+def _scorecard_compare_recommendations(target_report: dict[str, Any], delta: dict[str, Any]) -> list[dict[str, str]]:
+    recommendations: list[dict[str, str]] = []
+    target_summary = target_report.get("summary", {})
+    if str(target_report.get("status")) == "fail":
+        recommendations.append(
+            {
+                "code": "fix_target_scorecard",
+                "message": "Target scorecard failed; resolve its underlying corpus or evaluation issue before release.",
+            }
+        )
+    if _int_value(delta.get("privacy_finding_count")) > 0:
+        recommendations.append(
+            {
+                "code": "fix_privacy_regression",
+                "message": "Privacy findings increased; inspect redaction before using this scorecard as release evidence.",
+            }
+        )
+    if _int_value(delta.get("sidecar_fail_count")) > 0:
+        recommendations.append(
+            {
+                "code": "fix_sidecar_regression",
+                "message": "Sidecar fail count increased; review meaning-risk rows before promoting local-AI semantics.",
+            }
+        )
+    if _int_value(delta.get("raw_wire_loss_turns")) > 0:
+        recommendations.append(
+            {
+                "code": "inspect_wire_losses",
+                "message": "Raw wire loss turns increased; inspect adaptive behavior and repeated long fields.",
+            }
+        )
+    if _float_value(delta.get("saved_pct")) < 0:
+        recommendations.append(
+            {
+                "code": "inspect_savings_regression",
+                "message": "Saved percent decreased; compare top wins and repeated candidates before changing claims.",
+            }
+        )
+    if _int_value(delta.get("turn_count")) < 0:
+        recommendations.append(
+            {
+                "code": "restore_corpus_size",
+                "message": "Turn count decreased; compare against the same corpus scope or explain the smaller sample.",
+            }
+        )
+    if str(target_report.get("status")) in {"watch", "warn"}:
+        recommendations.append(
+            {
+                "code": "clear_target_watch_status",
+                "message": f"Target scorecard status is {target_report.get('status')}; clear its top recommendation before release.",
+            }
+        )
+    if not recommendations and _int_value(delta.get("milestone_rank")) > 0:
+        recommendations.append(
+            {
+                "code": "promote_release_evidence",
+                "message": "Corpus milestone improved without new hard-risk deltas; keep this scorecard in the release evidence pack.",
+            }
+        )
+    if not recommendations and _int_value(target_summary.get("sidecar_fail_count")) == 0:
+        recommendations.append(
+            {
+                "code": "keep_monitoring",
+                "message": "No scorecard regression detected; keep growing the corpus and compare again before tagging.",
+            }
+        )
+    return recommendations
+
+
+def _scorecard_milestone_rank(value: str) -> int:
+    ranks = {
+        "seed": 0,
+        "smoke": 1,
+        "early_pattern": 2,
+        "benchmark_ready": 3,
+    }
+    return ranks.get(value, -1)
+
+
+def _nullable_int_delta(target: Any, base: Any) -> int | None:
+    if target is None or base is None:
+        return None
+    return _int_value(target) - _int_value(base)
 
 
 def _load_json_object(path: Path | str) -> dict[str, Any]:

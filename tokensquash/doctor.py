@@ -396,6 +396,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "tokensquash.turns.release_check.v1",
         "tokensquash.turns.release_verify.v1",
         "tokensquash.turns.scorecard.v1",
+        "tokensquash.turns.scorecard.compare.v1",
         "tokensquash.sidecar.certify.v1",
     }
     required_commands = {
@@ -413,6 +414,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "baselines verify",
         "turns certify",
         "turns scorecard",
+        "turns compare-scorecards",
         "turns release-check",
         "turns verify-release",
         "sidecar certify",
@@ -548,6 +550,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "turns import",
             "turns report",
             "turns scorecard",
+            "turns compare-scorecards",
             "turns certify",
             "turns release-check",
             "private-turns/",
@@ -685,7 +688,9 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Sidecar Meaning Evidence",
             "Release-Tag Comparison",
             "tokensquash.turns.scorecard.v1",
+            "tokensquash.turns.scorecard.compare.v1",
             "turns scorecard",
+            "turns compare-scorecards",
             "pass",
             "watch",
             "fail",

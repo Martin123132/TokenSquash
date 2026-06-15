@@ -34,7 +34,7 @@ Write the demo evidence to ignored local storage:
 
 ```powershell
 python -m tokensquash demo --counter chars --out-dir private-turns\demo-output --json
-python -m tokensquash turns scorecard examples\sample-turns.jsonl --counter chars
+python -m tokensquash turns scorecard examples\sample-turns.jsonl --counter chars --json --out private-turns\scorecards\sample.json
 ```
 
 `private-turns/` is ignored local storage and should not be committed.

@@ -56,7 +56,7 @@ python -m tokensquash turns import exports\turns.jsonl --evaluate --counter tikt
 python -m tokensquash turns validate private-turns\real.jsonl
 python -m tokensquash turns validate private-turns\real.redacted-turns.jsonl
 python -m tokensquash turns stats private-turns\real.redacted-turns.jsonl
-python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base
+python -m tokensquash turns scorecard private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --json --out private-turns\scorecards\current.json
 ```
 
 Redaction is a safety net, not a privacy guarantee. Review redacted corpora
@@ -92,6 +92,7 @@ python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --co
 Compare saved certification packs after a codec or documentation change:
 
 ```powershell
+python -m tokensquash turns compare-scorecards private-turns\scorecards\v0.1.1.json private-turns\scorecards\current.json
 python -m tokensquash turns compare-certifications private-turns\cert-before\certification.json private-turns\cert-after\certification.json
 python -m tokensquash turns certification-history private-turns\cert-before private-turns\cert-after private-turns\cert-latest
 ```

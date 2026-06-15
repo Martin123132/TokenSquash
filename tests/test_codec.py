@@ -62,6 +62,7 @@ from tokensquash.turns import (
     capture_turn_record,
     certify_turn_corpus,
     compare_turn_certifications,
+    compare_turn_scorecards,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
     gate_turn_report,
@@ -494,6 +495,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("verify-release-candidate", commands)
         self.assertIn("release-assets", commands)
         self.assertIn("turns compare-certifications", commands)
+        self.assertIn("turns compare-scorecards", commands)
         self.assertIn("turns certification-history", commands)
         self.assertIn("turns certify", commands)
         self.assertIn("turns scorecard", commands)
@@ -518,6 +520,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.turns.certify.history.v1", schemas)
         self.assertIn("tokensquash.turns.certify.v1", schemas)
         self.assertIn("tokensquash.turns.scorecard.v1", schemas)
+        self.assertIn("tokensquash.turns.scorecard.compare.v1", schemas)
         self.assertIn("tokensquash.turns.release_check.v1", schemas)
         self.assertIn("tokensquash.turns.release_verify.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
@@ -532,6 +535,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(any("turns scorecard" in command for command in readiness_commands))
+        self.assertTrue(any("turns compare-scorecards" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
         self.assertIn("LICENSE", governance_paths)
         self.assertIn("COMMERCIAL-LICENSE.md", governance_paths)
@@ -3399,6 +3403,198 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("# TokenSquash Turn Scorecard", output)
             self.assertIn("## Corpus Milestone", output)
             self.assertIn("## Sidecar Meaning", output)
+            self.assertIn("## Recommendations", output)
+            self.assertTrue(out.exists())
+
+    def test_turns_compare_scorecards_reports_release_delta(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "scorecard-before.json"
+            target = Path(tmp) / "scorecard-after.json"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.scorecard.v1",
+                        "status": "pass",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "adaptive": True,
+                        "summary": {
+                            "turn_count": 10,
+                            "milestone": "smoke",
+                            "original_tokens": 1000,
+                            "squashed_tokens": 970,
+                            "saved_tokens": 30,
+                            "saved_pct": 3.0,
+                            "prompt_saved_pct": 2.0,
+                            "reply_saved_pct": 4.0,
+                            "privacy_finding_count": 0,
+                            "pass_through_rows": 0,
+                            "raw_wire_loss_turns": 0,
+                            "selected_path_prefix_count": 1,
+                            "selected_field_value_count": 1,
+                            "alias_saved_tokens_delta": 5,
+                            "break_even_corpora": 4,
+                            "sidecar_status": "pass",
+                            "sidecar_pass_count": 2,
+                            "sidecar_watch_count": 0,
+                            "sidecar_fail_count": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.scorecard.v1",
+                        "status": "pass",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "adaptive": True,
+                        "summary": {
+                            "turn_count": 25,
+                            "milestone": "early_pattern",
+                            "original_tokens": 1600,
+                            "squashed_tokens": 1520,
+                            "saved_tokens": 80,
+                            "saved_pct": 5.0,
+                            "prompt_saved_pct": 3.0,
+                            "reply_saved_pct": 7.0,
+                            "privacy_finding_count": 0,
+                            "pass_through_rows": 0,
+                            "raw_wire_loss_turns": 0,
+                            "selected_path_prefix_count": 2,
+                            "selected_field_value_count": 2,
+                            "alias_saved_tokens_delta": 12,
+                            "break_even_corpora": 3,
+                            "sidecar_status": "pass",
+                            "sidecar_pass_count": 3,
+                            "sidecar_watch_count": 0,
+                            "sidecar_fail_count": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = compare_turn_scorecards(base, target)
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.scorecard.compare.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["base"]["scorecard_path"], str(base))
+            self.assertEqual(report["target"]["scorecard_path"], str(target))
+            self.assertEqual(report["delta"]["turn_count"], 15)
+            self.assertEqual(report["delta"]["saved_pct"], 2.0)
+            self.assertEqual(report["delta"]["saved_tokens"], 50)
+            self.assertEqual(report["delta"]["selected_path_prefix_count"], 1)
+            self.assertEqual(report["delta"]["selected_field_value_count"], 1)
+            self.assertEqual(report["delta"]["alias_saved_tokens_delta"], 7)
+            self.assertEqual(report["delta"]["break_even_corpora"], -1)
+            self.assertEqual(report["delta"]["sidecar_pass_count"], 1)
+            self.assertEqual(report["delta"]["milestone_rank"], 1)
+            self.assertTrue(any(item["code"] == "promote_release_evidence" for item in report["recommendations"]))
+
+    def test_turns_compare_scorecards_cli_json_fails_on_new_risk(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "scorecard-before.json"
+            target = Path(tmp) / "scorecard-after.json"
+            common_summary = {
+                "turn_count": 10,
+                "milestone": "smoke",
+                "original_tokens": 1000,
+                "squashed_tokens": 950,
+                "saved_tokens": 50,
+                "saved_pct": 5.0,
+                "prompt_saved_pct": 4.0,
+                "reply_saved_pct": 6.0,
+                "privacy_finding_count": 0,
+                "pass_through_rows": 0,
+                "raw_wire_loss_turns": 0,
+                "selected_path_prefix_count": 1,
+                "selected_field_value_count": 0,
+                "alias_saved_tokens_delta": 5,
+                "break_even_corpora": 3,
+                "sidecar_status": "pass",
+                "sidecar_pass_count": 2,
+                "sidecar_watch_count": 0,
+                "sidecar_fail_count": 0,
+            }
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.scorecard.v1",
+                        "status": "pass",
+                        "summary": common_summary,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target_summary = dict(common_summary)
+            target_summary.update(
+                {
+                    "privacy_finding_count": 1,
+                    "sidecar_status": "fail",
+                    "sidecar_fail_count": 1,
+                }
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.scorecard.v1",
+                        "status": "pass",
+                        "summary": target_summary,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "compare-scorecards", str(base), str(target), "--json"])
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 1)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.scorecard.compare.v1")
+            self.assertEqual(payload["status"], "fail")
+            self.assertEqual(payload["delta"]["privacy_finding_count"], 1)
+            self.assertEqual(payload["delta"]["sidecar_fail_count"], 1)
+            self.assertTrue(any(item["code"] == "fix_privacy_regression" for item in payload["recommendations"]))
+            self.assertTrue(any(item["code"] == "fix_sidecar_regression" for item in payload["recommendations"]))
+
+    def test_turns_compare_scorecards_cli_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "scorecard-before.json"
+            target = Path(tmp) / "scorecard-after.json"
+            out = Path(tmp) / "scorecard-compare.md"
+            base.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.scorecard.v1",
+                        "status": "pass",
+                        "summary": {"turn_count": 10, "milestone": "smoke", "saved_pct": 4.0, "saved_tokens": 40},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            target.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.scorecard.v1",
+                        "status": "watch",
+                        "summary": {"turn_count": 12, "milestone": "smoke", "saved_pct": 4.0, "saved_tokens": 48},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(["turns", "compare-scorecards", str(base), str(target), "--out", str(out)])
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash Turn Scorecard Compare", output)
+            self.assertIn("## Delta Table", output)
             self.assertIn("## Recommendations", output)
             self.assertTrue(out.exists())
 

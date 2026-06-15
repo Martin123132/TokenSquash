@@ -91,6 +91,7 @@ from .turns import (
     certify_turn_corpus,
     compare_turn_certifications,
     compare_turn_reports,
+    compare_turn_scorecards,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
     format_turn_alias_impact_markdown,
@@ -104,6 +105,7 @@ from .turns import (
     format_turn_report_markdown,
     format_turn_report_compare_markdown,
     format_turn_gate_markdown,
+    format_turn_scorecard_compare_markdown,
     format_turn_suggestions_markdown,
     format_turn_evaluate_markdown,
     format_turn_import_markdown,
@@ -672,6 +674,12 @@ def main(argv: list[str] | None = None) -> int:
     turns_compare_reports.add_argument("target", type=Path)
     turns_compare_reports.add_argument("--out", type=Path, help="Write comparison output to this file.")
     turns_compare_reports.add_argument("--json", action="store_true", help="Print comparison JSON.")
+
+    turns_compare_scorecards = turns_sub.add_parser("compare-scorecards", help="Compare two saved real-corpus scorecard JSON files.")
+    turns_compare_scorecards.add_argument("base", type=Path)
+    turns_compare_scorecards.add_argument("target", type=Path)
+    turns_compare_scorecards.add_argument("--out", type=Path, help="Write comparison output to this file.")
+    turns_compare_scorecards.add_argument("--json", action="store_true", help="Print comparison JSON.")
 
     turns_compare_certifications = turns_sub.add_parser(
         "compare-certifications",
@@ -1581,6 +1589,18 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0
+            if args.turns_command == "compare-scorecards":
+                report = compare_turn_scorecards(args.base, args.target)
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_scorecard_compare_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "watch"} else 1
             if args.turns_command == "compare-certifications":
                 report = compare_turn_certifications(args.base, args.target)
                 output = (

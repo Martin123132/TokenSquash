@@ -14,6 +14,9 @@ is produced locally and in GitHub Actions.
 - `turns scorecard` now summarizes real-turn corpus health, token savings,
   alias opportunities, privacy findings, adaptive benchmark behavior, and
   optional sidecar review evidence in a single report.
+- `turns compare-scorecards` now compares saved scorecard JSON files for
+  release-review deltas across corpus size, savings, privacy findings, alias
+  impact, and sidecar pass/watch/fail counts.
 - Sidecar review reports now include pass/watch/fail decisions so experimental
   local-AI semantic compression can be judged on meaning risk, not token savings
   alone.
