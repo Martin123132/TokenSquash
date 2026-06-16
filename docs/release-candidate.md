@@ -52,12 +52,14 @@ that status while verifying that the evidence files are present and hashed.
 
 ```powershell
 python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --out private-turns\release-assets\release-assets.verify.json --json
 ```
 
 Review:
 
 - `private-turns\release-assets\release-assets.json`
 - `private-turns\release-assets\release-assets.md`
+- `private-turns\release-assets\release-assets.verify.json` if you write verifier output with `--out`
 - the generated section in `docs\release-verification.md`
 
 The staged public assets should include:

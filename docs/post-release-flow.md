@@ -30,12 +30,14 @@ Stage public assets from the verified local release-candidate pack:
 
 ```powershell
 python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --ci-run 27437873313 --json
+python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
 ```
 
 Review:
 
 - `private-turns\release-assets\release-assets.json`
 - `private-turns\release-assets\release-assets.md`
+- `verify-release-assets` output/status
 - the generated section in `docs\release-verification.md`
 
 Only upload after reviewing the staged report and generated verification

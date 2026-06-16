@@ -54,7 +54,12 @@ from .readiness import (
     verify_product_readiness_pack,
 )
 from .release_info import build_release_info, format_release_info_markdown
-from .release_assets import format_release_assets_markdown, prepare_release_assets
+from .release_assets import (
+    format_release_assets_markdown,
+    format_release_assets_verify_markdown,
+    prepare_release_assets,
+    verify_release_assets,
+)
 from .sidecar import (
     DEFAULT_OLLAMA_ENDPOINT,
     DEFAULT_OLLAMA_MODEL,
@@ -137,6 +142,13 @@ from .workspace import format_workspace_init_markdown, initialize_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    else:
+        argv = list(argv)
+    if len(argv) >= 2 and argv[0] == "release-assets" and argv[1] == "verify":
+        argv = ["verify-release-assets", *argv[2:]]
+
     parser = argparse.ArgumentParser(
         prog="tokensquash",
         description="Compact AI-agent intent codec and benchmark tools.",
@@ -297,6 +309,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     release_assets.add_argument("--ci-run", help="Optional GitHub Actions run id to include in generated verification docs.")
     release_assets.add_argument("--json", action="store_true", help="Print release asset JSON.")
+
+    verify_release_assets_parser = sub.add_parser(
+        "verify-release-assets",
+        help="Verify staged or downloaded public release assets from a release-assets report.",
+    )
+    verify_release_assets_parser.add_argument("report", type=Path, help="release-assets.json or release-assets directory.")
+    verify_release_assets_parser.add_argument(
+        "--asset-dir",
+        type=Path,
+        help="Directory containing downloaded assets; defaults to the report directory.",
+    )
+    verify_release_assets_parser.add_argument("--out", type=Path, help="Write verification output to this file.")
+    verify_release_assets_parser.add_argument("--json", action="store_true", help="Print release asset verification JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -1196,6 +1221,15 @@ def main(argv: list[str] | None = None) -> int:
                 ci_run=args.ci_run,
             )
             output = json.dumps(report, indent=2) + "\n" if args.json else format_release_assets_markdown(report)
+            print(output, end="")
+            return 0 if report["status"] == "pass" else 1
+
+        if args.command == "verify-release-assets":
+            report = verify_release_assets(args.report, asset_dir=args.asset_dir)
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_release_assets_verify_markdown(report)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
             print(output, end="")
             return 0 if report["status"] == "pass" else 1
 

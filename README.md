@@ -150,8 +150,8 @@ Start here:
 - optional exact-tokenizer measurements through `tiktoken`
 - experimental local-AI sidecar translate/decode/roundtrip/evaluate/review/gate
 - product manifest, strict doctor, readiness, release-info, release-candidate,
-  release-assets, scorecard release evidence, artifact manifests, and release
-  attestations
+  release-assets, release-asset verification, scorecard release evidence,
+  artifact manifests, and release attestations
 - PolyForm Noncommercial License 1.0.0 public terms plus commercial licensing
   contact for TWO HANDS NETWORK LTD
 

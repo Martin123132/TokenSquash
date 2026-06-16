@@ -54,6 +54,7 @@ Release evidence:
 
 ```powershell
 gh release download v0.1.1 --repo Martin123132/TokenSquash --dir private-turns\download-v0.1.1
+python -m tokensquash release-assets verify private-turns\release-assets\release-assets.json --asset-dir private-turns\download-v0.1.1 --json
 ```
 
 `private-turns/` is ignored local storage, so downloaded release evidence should

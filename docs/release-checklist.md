@@ -46,6 +46,7 @@ python -m tokensquash release-info --require-clean --json
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
 python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
 ```
 
 ## 3. Run Product Gates
@@ -66,6 +67,7 @@ All commands above must pass before building release-candidate evidence.
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
 python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
 ```
 
 Inspect the saved pack before continuing:
@@ -98,6 +100,7 @@ Required release-candidate evidence:
   `scorecard.json`, and `verify-release-candidate.json`
 - `docs/release-verification.md` has been refreshed from the
   `release-assets.json` report and reviewed before upload
+- `verify-release-assets` passes against the staged release assets
 
 ## 5. Verify GitHub Actions
 

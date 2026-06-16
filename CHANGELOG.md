@@ -20,6 +20,8 @@ is produced locally and in GitHub Actions.
   its report, artifact manifest, verifier summary, and local attestation.
 - `release-assets` now stages `scorecard-pack.json` and `scorecard.json` so
   public release evidence exposes codec health alongside build evidence.
+- `verify-release-assets` now verifies staged or downloaded release assets
+  against `release-assets.json`, including hashes and JSON schemas.
 - `turns compare-scorecards` now compares saved scorecard JSON files for
   release-review deltas across corpus size, savings, privacy findings, alias
   impact, and sidecar pass/watch/fail counts.

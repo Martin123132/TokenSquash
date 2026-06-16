@@ -12,9 +12,17 @@ from .candidate import verify_release_candidate_pack
 
 
 RELEASE_ASSETS_SCHEMA_VERSION = "tokensquash.release_assets.v1"
+RELEASE_ASSETS_VERIFY_SCHEMA_VERSION = "tokensquash.release_assets.verify.v1"
 DEFAULT_RELEASE_ASSETS_OUT_DIR = Path("private-turns/release-assets")
 RELEASE_VERIFICATION_SECTION_START = "<!-- tokensquash-release-assets:start -->"
 RELEASE_VERIFICATION_SECTION_END = "<!-- tokensquash-release-assets:end -->"
+RELEASE_ASSET_JSON_SCHEMAS = {
+    "release_attestation": ("tokensquash.release_candidate.attestation.v1", {"pass"}),
+    "artifact_manifest": ("tokensquash.release_candidate.artifacts.v1", {"pass"}),
+    "scorecard_pack": ("tokensquash.turns.scorecard.pack.v1", {"pass", "watch"}),
+    "scorecard": ("tokensquash.turns.scorecard.v1", {"pass", "watch"}),
+    "verify_release_candidate": ("tokensquash.release_candidate.verify.v1", {"pass"}),
+}
 
 
 def prepare_release_assets(
@@ -203,6 +211,138 @@ def format_release_assets_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def verify_release_assets(
+    report: Path | str,
+    *,
+    asset_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Verify staged or downloaded public release assets from a release-assets report."""
+
+    started = time.time()
+    source = Path(report)
+    report_path = source / "release-assets.json" if source.is_dir() else source
+    report_dir = report_path.parent
+    asset_root = Path(asset_dir) if asset_dir is not None else report_dir
+    checks: list[dict[str, Any]] = []
+    release_assets, report_check = _verify_release_asset_json(
+        "release_assets_report",
+        report_path,
+        RELEASE_ASSETS_SCHEMA_VERSION,
+        required=True,
+        allowed_statuses={"pass"},
+    )
+    checks.append(report_check)
+    assets = release_assets.get("assets") if release_assets else None
+    release_summary = (release_assets.get("summary") if release_assets else {}) or {}
+    if isinstance(assets, list):
+        expected_count = int(release_summary.get("asset_count", -1))
+        duplicate_names = _duplicate_release_asset_values(assets, "name")
+        duplicate_roles = _duplicate_release_asset_values(assets, "role")
+        passed_count = expected_count == len(assets) and not duplicate_names and not duplicate_roles
+        checks.append(
+            _release_asset_check(
+                "release_assets_manifest",
+                "pass" if passed_count else "fail",
+                required=True,
+                path=report_path,
+                message=(
+                    f"Release-assets report lists {len(assets)} asset(s)."
+                    if passed_count
+                    else "Release-assets report asset count, names, or roles are inconsistent."
+                ),
+                data={
+                    "asset_count": len(assets),
+                    "summary_asset_count": expected_count,
+                    "duplicate_names": duplicate_names,
+                    "duplicate_roles": duplicate_roles,
+                },
+            )
+        )
+        for asset in assets:
+            _append_release_asset_file_checks(
+                checks,
+                report_dir,
+                asset_root,
+                asset,
+                use_asset_root=asset_dir is not None,
+            )
+    else:
+        checks.append(
+            _release_asset_check(
+                "release_assets_manifest",
+                "fail",
+                required=True,
+                path=report_path,
+                message="release-assets report must contain an assets list.",
+            )
+        )
+
+    failed = [check for check in checks if check.get("status") == "fail" and check.get("required")]
+    warnings = [check for check in checks if check.get("status") == "warn"]
+    status = "fail" if failed else "warn" if warnings else "pass"
+    verified_assets = [
+        check
+        for check in checks
+        if check.get("name", "").startswith("asset_")
+        and not check.get("name", "").startswith("asset_schema_")
+        and check.get("status") == "pass"
+    ]
+    return {
+        "schema_version": RELEASE_ASSETS_VERIFY_SCHEMA_VERSION,
+        "status": status,
+        "source": str(source),
+        "report": str(report_path),
+        "asset_dir": str(asset_root),
+        "summary": {
+            "check_count": len(checks),
+            "failed_check_count": len(failed),
+            "warning_count": len(warnings),
+            "asset_count": len(assets) if isinstance(assets, list) else 0,
+            "verified_asset_count": len(verified_assets),
+            "tag": release_assets.get("tag") if release_assets else None,
+            "release_assets_status": release_assets.get("status") if release_assets else None,
+            "scorecard_pack_status": release_summary.get("scorecard_pack_status"),
+            "scorecard_status": release_summary.get("scorecard_status"),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "checks": checks,
+    }
+
+
+def format_release_assets_verify_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    lines = [
+        "# TokenSquash Release Assets Verify",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Report: `{report.get('report')}`",
+        f"- Asset dir: `{report.get('asset_dir')}`",
+        f"- Tag: `{summary.get('tag')}`",
+        f"- Release-assets status: `{summary.get('release_assets_status')}`",
+        f"- Scorecard pack: `{summary.get('scorecard_pack_status')}`",
+        f"- Scorecard: `{summary.get('scorecard_status')}`",
+        f"- Assets: `{summary.get('asset_count', 0)}`",
+        f"- Verified assets: `{summary.get('verified_asset_count', 0)}`",
+        f"- Checks: `{summary.get('check_count', 0)}`",
+        f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
+        f"- Warnings: `{summary.get('warning_count', 0)}`",
+        "",
+        "## Checks",
+        "",
+        "| Check | Status | Required | Detail |",
+        "|---|---|---:|---|",
+    ]
+    for check in report.get("checks", []):
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(check.get('name', '')))} | "
+            f"`{check.get('status')}` | "
+            f"{check.get('required')} | "
+            f"{_markdown_cell(str(check.get('message', '')))} |"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def update_release_verification_doc(
     report: dict[str, Any],
     path: Path | str,
@@ -347,6 +487,203 @@ def _stage_pack_assets(
         _copy_file(source, destination)
         staged.append(_asset_entry(role, destination, source))
     return staged
+
+
+def _append_release_asset_file_checks(
+    checks: list[dict[str, Any]],
+    report_dir: Path,
+    asset_root: Path,
+    asset: Any,
+    *,
+    use_asset_root: bool,
+) -> None:
+    if not isinstance(asset, dict):
+        checks.append(
+            _release_asset_check(
+                "asset_entry",
+                "fail",
+                required=True,
+                message="Asset entry is not an object.",
+            )
+        )
+        return
+    role = str(asset.get("role") or "unknown")
+    name = asset.get("name")
+    if not isinstance(name, str) or not name:
+        checks.append(
+            _release_asset_check(
+                f"asset_{role}",
+                "fail",
+                required=True,
+                message="Asset entry is missing a non-empty name.",
+                data={"role": role},
+            )
+        )
+        return
+    path = _resolve_release_asset_path(report_dir, asset_root, asset, use_asset_root=use_asset_root)
+    expected_sha = asset.get("sha256")
+    expected_bytes = asset.get("bytes")
+    if not path.exists() or not path.is_file():
+        checks.append(
+            _release_asset_check(
+                f"asset_{role}",
+                "fail",
+                required=True,
+                path=path,
+                message=f"Missing release asset: {path}.",
+                data={"role": role, "name": name},
+            )
+        )
+        return
+    actual_bytes = path.stat().st_size
+    actual_sha = _sha256_file(path)
+    passed = expected_sha == actual_sha and expected_bytes == actual_bytes
+    checks.append(
+        _release_asset_check(
+            f"asset_{role}",
+            "pass" if passed else "fail",
+            required=True,
+            path=path,
+            message="Asset exists and matches recorded hash." if passed else "Asset hash or byte size does not match.",
+            data={
+                "role": role,
+                "name": name,
+                "expected_bytes": expected_bytes,
+                "actual_bytes": actual_bytes,
+                "expected_sha256": expected_sha,
+                "actual_sha256": actual_sha,
+            },
+        )
+    )
+    schema = RELEASE_ASSET_JSON_SCHEMAS.get(role)
+    if schema:
+        expected_schema, allowed_statuses = schema
+        payload, schema_check = _verify_release_asset_json(
+            f"asset_schema_{role}",
+            path,
+            expected_schema,
+            required=True,
+            allowed_statuses=allowed_statuses,
+        )
+        if payload is not None:
+            schema_check.setdefault("data", {})["role"] = role
+        checks.append(schema_check)
+
+
+def _resolve_release_asset_path(
+    report_dir: Path,
+    asset_root: Path,
+    asset: dict[str, Any],
+    *,
+    use_asset_root: bool,
+) -> Path:
+    name = str(asset.get("name"))
+    if use_asset_root:
+        return asset_root / name
+    recorded_value = asset.get("path")
+    if isinstance(recorded_value, str) and recorded_value:
+        recorded = Path(recorded_value)
+        if recorded.exists():
+            return recorded
+    return report_dir / name
+
+
+def _verify_release_asset_json(
+    name: str,
+    path: Path,
+    schema_version: str,
+    *,
+    required: bool,
+    allowed_statuses: set[str],
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    if not path.exists():
+        return None, _release_asset_check(
+            name,
+            "fail" if required else "skip",
+            required=required,
+            path=path,
+            message=f"Missing JSON artifact: {path}.",
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception as exc:
+        return None, _release_asset_check(
+            name,
+            "fail" if required else "skip",
+            required=required,
+            path=path,
+            message=f"Could not read JSON artifact: {exc}",
+        )
+    if not isinstance(payload, dict):
+        return None, _release_asset_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            message="JSON artifact must contain an object.",
+        )
+    if payload.get("schema_version") != schema_version:
+        return payload, _release_asset_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            message=f"Expected schema {schema_version}, found {payload.get('schema_version')}.",
+            data={"schema_version": payload.get("schema_version"), "expected_schema_version": schema_version},
+        )
+    if payload.get("status") not in allowed_statuses:
+        return payload, _release_asset_check(
+            name,
+            "fail",
+            required=required,
+            path=path,
+            message=f"Unexpected status {payload.get('status')}.",
+            data={"status": payload.get("status"), "allowed_statuses": sorted(allowed_statuses)},
+        )
+    return payload, _release_asset_check(
+        name,
+        "pass",
+        required=required,
+        path=path,
+        message=f"Verified {schema_version} JSON artifact.",
+        data={"schema_version": payload.get("schema_version"), "status": payload.get("status")},
+    )
+
+
+def _release_asset_check(
+    name: str,
+    status: str,
+    *,
+    required: bool,
+    path: Path | None = None,
+    message: str,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    check = {
+        "name": name,
+        "status": status,
+        "required": required,
+        "message": message,
+        "data": data or {},
+    }
+    if path is not None:
+        check["path"] = str(path)
+    return check
+
+
+def _duplicate_release_asset_values(assets: list[Any], key: str) -> list[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        value = asset.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    return sorted(duplicates)
 
 
 def _summary_path(summary: dict[str, Any], key: str) -> Path | None:

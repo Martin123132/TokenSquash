@@ -40,7 +40,7 @@ from tokensquash.release import (
     verify_turn_release_pack,
 )
 from tokensquash.release_info import build_release_info
-from tokensquash.release_assets import prepare_release_assets
+from tokensquash.release_assets import prepare_release_assets, verify_release_assets
 from tokensquash.readiness import run_product_readiness, verify_product_readiness_pack
 from tokensquash.sidecar import (
     certify_sidecar_report,
@@ -496,6 +496,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("release-candidate", commands)
         self.assertIn("verify-release-candidate", commands)
         self.assertIn("release-assets", commands)
+        self.assertIn("verify-release-assets", commands)
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns compare-scorecards", commands)
         self.assertIn("turns scorecard-history", commands)
@@ -516,6 +517,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.release_candidate.attestation.v1", schemas)
         self.assertIn("tokensquash.release_candidate.verify.v1", schemas)
         self.assertIn("tokensquash.release_assets.v1", schemas)
+        self.assertIn("tokensquash.release_assets.verify.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
         self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
@@ -538,6 +540,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("release-candidate" in command for command in readiness_commands))
         self.assertTrue(any("verify-release-candidate" in command for command in readiness_commands))
         self.assertTrue(any("release-assets" in command for command in readiness_commands))
+        self.assertTrue(any("verify-release-assets" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(any("turns scorecard" in command for command in readiness_commands))
@@ -1245,6 +1248,11 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((asset_dir / "scorecard-pack.json").exists())
             self.assertTrue((asset_dir / "scorecard.json").exists())
             self.assertTrue((asset_dir / "verify-release-candidate.json").exists())
+            verified = verify_release_assets(asset_dir / "release-assets.json")
+            self.assertEqual(verified["schema_version"], "tokensquash.release_assets.verify.v1")
+            self.assertEqual(verified["status"], "pass")
+            self.assertEqual(verified["summary"]["asset_count"], 7)
+            self.assertEqual(verified["summary"]["verified_asset_count"], 7)
             doc_text = verification_doc.read_text(encoding="utf-8")
             self.assertIn("## v0.1.0 Assets", doc_text)
             self.assertIn("GitHub Actions run: `12345`", doc_text)
@@ -1254,6 +1262,31 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("verify-release-candidate.json", doc_text)
             self.assertNotIn("old generated section", doc_text)
             self.assertIn("Tail.", doc_text)
+
+    def test_verify_release_assets_fails_on_tampered_asset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            asset_dir = Path(tmp) / "release-assets"
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
+            ):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            prepare_release_assets(out_dir, tag="v0.1.0", out_dir=asset_dir)
+            (asset_dir / "scorecard.json").write_text("tampered\n", encoding="utf-8")
+
+            report = verify_release_assets(asset_dir / "release-assets.json")
+
+            self.assertEqual(report["status"], "fail")
+            failed_names = {check["name"] for check in report["checks"] if check["status"] == "fail"}
+            self.assertIn("asset_scorecard", failed_names)
+            self.assertIn("asset_schema_scorecard", failed_names)
 
     def test_release_assets_cli_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1300,6 +1333,24 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue(payload["summary"]["verification_doc_updated"])
             self.assertTrue((asset_dir / "release-assets.json").exists())
             self.assertIn("GitHub Actions run: `12345`", verification_doc.read_text(encoding="utf-8"))
+
+            verify_stdout = StringIO()
+            with redirect_stdout(verify_stdout):
+                verify_code = cli_main(
+                    [
+                        "release-assets",
+                        "verify",
+                        str(asset_dir / "release-assets.json"),
+                        "--asset-dir",
+                        str(asset_dir),
+                        "--json",
+                    ]
+                )
+            verified = json.loads(verify_stdout.getvalue())
+            self.assertEqual(verify_code, 0)
+            self.assertEqual(verified["schema_version"], "tokensquash.release_assets.verify.v1")
+            self.assertEqual(verified["status"], "pass")
+            self.assertEqual(verified["summary"]["verified_asset_count"], 7)
 
     def _fake_wheel_build(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:
         wheel_dir.mkdir(parents=True, exist_ok=True)

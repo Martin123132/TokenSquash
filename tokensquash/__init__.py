@@ -19,7 +19,7 @@ from .release import (
     verify_turn_release_pack,
 )
 from .release_info import build_release_info
-from .release_assets import prepare_release_assets, update_release_verification_doc
+from .release_assets import prepare_release_assets, update_release_verification_doc, verify_release_assets
 from .readiness import run_product_readiness, verify_product_readiness_pack
 from .turns import (
     append_turn_record,
@@ -98,6 +98,7 @@ __all__ = [
     "validate_corpus",
     "validate_turn_corpus",
     "verify_release_candidate_pack",
+    "verify_release_assets",
     "verify_product_readiness_pack",
     "verify_benchmark_baselines",
     "verify_turn_release_pack",
