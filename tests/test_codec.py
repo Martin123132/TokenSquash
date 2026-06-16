@@ -13,7 +13,7 @@ from unittest.mock import patch
 from zipfile import ZipFile
 
 import tokensquash
-from tokensquash.about import build_product_manifest
+from tokensquash.about import build_product_manifest, package_version
 from tokensquash.aliases import AliasTable, learn_reply_aliases, load_alias_table, write_alias_table
 from tokensquash.baselines import verify_benchmark_baselines
 from tokensquash.candidate import run_release_candidate, verify_release_candidate_pack
@@ -898,9 +898,10 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("scorecard-pack/scorecard.json", artifact_paths)
             self.assertIn("scorecard-pack/scorecard.md", artifact_paths)
             self.assertIn("wheel-smoke.txt", artifact_paths)
-            self.assertIn("wheel/tokensquash-0.0.0-py3-none-any.whl", artifact_paths)
+            version = package_version()
+            self.assertIn(f"wheel/tokensquash-{version}-py3-none-any.whl", artifact_paths)
             self.assertIn("sdist-build.txt", artifact_paths)
-            self.assertIn("sdist/tokensquash-0.1.1.tar.gz", artifact_paths)
+            self.assertIn(f"sdist/tokensquash-{version}.tar.gz", artifact_paths)
             self.assertNotIn("artifact-manifest.json", artifact_paths)
             self.assertIn("TokenSquash Release Candidate", (out_dir / "release-candidate.md").read_text(encoding="utf-8"))
             self.assertTrue(any("--skip-tests" in command for command in report["commands"]))
@@ -1229,11 +1230,12 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(report["outputs"]["verification_doc"], str(verification_doc))
             self.assertIn("gh release upload v0.1.0", report["commands"]["upload"])
             asset_names = {asset["name"] for asset in report["assets"]}
+            version = package_version()
             self.assertEqual(
                 asset_names,
                 {
-                    "tokensquash-0.0.0-py3-none-any.whl",
-                    "tokensquash-0.1.1.tar.gz",
+                    f"tokensquash-{version}-py3-none-any.whl",
+                    f"tokensquash-{version}.tar.gz",
                     "release-attestation.json",
                     "artifact-manifest.json",
                     "scorecard-pack.json",
@@ -1257,7 +1259,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             doc_text = verification_doc.read_text(encoding="utf-8")
             self.assertIn("## v0.1.0 Assets", doc_text)
             self.assertIn("GitHub Actions run: `12345`", doc_text)
-            self.assertIn("tokensquash-0.0.0-py3-none-any.whl", doc_text)
+            self.assertIn(f"tokensquash-{version}-py3-none-any.whl", doc_text)
             self.assertIn("scorecard-pack.json", doc_text)
             self.assertIn("scorecard status: `watch`", doc_text)
             self.assertIn("verify-release-candidate.json", doc_text)
@@ -1355,19 +1357,21 @@ class TokenSquashCodecTests(unittest.TestCase):
 
     def _fake_wheel_build(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:
         wheel_dir.mkdir(parents=True, exist_ok=True)
-        wheel_path = wheel_dir / "tokensquash-0.0.0-py3-none-any.whl"
+        version = package_version(root)
+        wheel_path = wheel_dir / f"tokensquash-{version}-py3-none-any.whl"
+        dist_info = f"tokensquash-{version}.dist-info"
         with ZipFile(wheel_path, "w") as archive:
             archive.writestr("tokensquash/data/sample-turns.jsonl", "{}\n")
-            archive.writestr("tokensquash-0.1.1.dist-info/licenses/LICENSE", "license\n")
+            archive.writestr(f"{dist_info}/licenses/LICENSE", "license\n")
             archive.writestr(
-                "tokensquash-0.1.1.dist-info/licenses/COMMERCIAL-LICENSE.md",
+                f"{dist_info}/licenses/COMMERCIAL-LICENSE.md",
                 "commercial license\n",
             )
             archive.writestr(
-                "tokensquash-0.1.1.dist-info/METADATA",
+                f"{dist_info}/METADATA",
                 "Metadata-Version: 2.1\n"
                 "Name: tokensquash\n"
-                "Version: 0.1.1\n"
+                f"Version: {version}\n"
                 "Requires-Python: >=3.10\n",
             )
         log_path = output_dir / "wheel-build.txt"
@@ -1383,8 +1387,9 @@ class TokenSquashCodecTests(unittest.TestCase):
 
     def _fake_sdist_build(self, root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str, str, dict[str, object]]:
         sdist_dir.mkdir(parents=True, exist_ok=True)
-        sdist_path = sdist_dir / "tokensquash-0.1.1.tar.gz"
-        self._write_fake_sdist(sdist_path)
+        version = package_version(root)
+        sdist_path = sdist_dir / f"tokensquash-{version}.tar.gz"
+        self._write_fake_sdist(sdist_path, version=version)
         log_path = output_dir / "sdist-build.txt"
         log_path.write_text("fake source distribution build\n", encoding="utf-8")
         return "pass", "Source distribution build faked for unit test.", {
@@ -1396,17 +1401,18 @@ class TokenSquashCodecTests(unittest.TestCase):
             "license_files": {"LICENSE": True, "COMMERCIAL-LICENSE.md": True},
             "sdist_metadata": {
                 "present": True,
-                "metadata_path": "tokensquash-0.1.1/PKG-INFO",
+                "metadata_path": f"tokensquash-{version}/PKG-INFO",
                 "name": "tokensquash",
-                "version": "0.1.1",
+                "version": version,
                 "requires_python": ">=3.10",
                 "message": "Source distribution metadata captured.",
             },
             "sdist_metadata_mismatches": [],
         }
 
-    def _write_fake_sdist(self, path: Path, *, version: str = "0.1.1") -> None:
-        root = "tokensquash-0.1.1"
+    def _write_fake_sdist(self, path: Path, *, version: str | None = None) -> None:
+        version = version or package_version()
+        root = f"tokensquash-{version}"
         with tarfile.open(path, "w:gz") as archive:
             self._tar_write_text(
                 archive,
@@ -1433,6 +1439,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         *,
         require_clean: bool = False,
     ) -> tuple[str, str, dict[str, object]]:
+        version = package_version(root)
         report = {
             "schema_version": "tokensquash.release_info.v1",
             "status": "pass",
@@ -1440,7 +1447,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             "require_clean": require_clean,
             "project": {
                 "name": "tokensquash",
-                "version": "0.1.1",
+                "version": version,
                 "requires_python": ">=3.10",
             },
             "git": {
@@ -1471,7 +1478,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             "markdown": str(markdown_path),
             "git_commit": "abc123",
             "git_dirty": False,
-            "version": "0.1.1",
+            "version": version,
         }
 
     def _fake_wheel_smoke(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:

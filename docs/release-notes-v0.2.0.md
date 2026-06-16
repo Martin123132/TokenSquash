@@ -1,6 +1,6 @@
 # TokenSquash v0.2.0 Release Notes
 
-Status: draft. v0.2.0 has not been tagged or published yet.
+Status: release preparation. v0.2.0 has not been tagged or published yet.
 
 These notes describe the intended release bar for the next minor release. The
 final tag, release URL, release commit, CI run, evidence hash, and asset hashes
@@ -17,7 +17,7 @@ truth. The local-AI sidecar remains experimental. Token savings alone are not
 success unless the corpus, redaction, scorecard, sidecar review, gate, and
 release evidence support the result.
 
-## Expected Scope
+## Included
 
 - real-turn scorecards for corpus size, savings, privacy findings, adaptive
   pass-through rows, raw wire loss rows, alias impact, and sidecar review

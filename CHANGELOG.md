@@ -9,6 +9,10 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.2.0] - 2026-06-17
+
 ### Added
 
 - `turns scorecard` now summarizes real-turn corpus health, token savings,
