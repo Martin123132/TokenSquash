@@ -90,7 +90,9 @@ After pushing a release-prep commit, confirm the `tests` workflow passes:
 - `unittest (3.10)`: success
 - `unittest (3.13)`: success
 - `exact-tokenizer`: success
-- uploaded artifact: `release-candidate-evidence`
+- uploaded artifact: `release-candidate-evidence`, including release-candidate,
+  release-assets, `verify-release-candidate.json`, and
+  `verify-release-assets.json` evidence
 
 ## Related Docs
 

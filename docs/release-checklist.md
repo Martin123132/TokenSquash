@@ -112,7 +112,9 @@ The workflow must show:
 - `unittest (3.10)`: success
 - `unittest (3.13)`: success
 - `exact-tokenizer`: success
-- uploaded artifact: `release-candidate-evidence`
+- uploaded artifact: `release-candidate-evidence` with release-candidate,
+  release-assets, `verify-release-candidate.json`, and
+  `verify-release-assets.json` evidence
 
 Download or inspect the `release-candidate-evidence` artifact if the release is
 being reviewed outside the local machine.

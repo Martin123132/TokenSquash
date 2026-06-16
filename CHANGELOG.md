@@ -22,6 +22,8 @@ is produced locally and in GitHub Actions.
   public release evidence exposes codec health alongside build evidence.
 - `verify-release-assets` now verifies staged or downloaded release assets
   against `release-assets.json`, including hashes and JSON schemas.
+- GitHub Actions now stages and verifies release assets inside the
+  exact-tokenizer release-candidate job and uploads that evidence.
 - `turns compare-scorecards` now compares saved scorecard JSON files for
   release-review deltas across corpus size, savings, privacy findings, alias
   impact, and sidecar pass/watch/fail counts.

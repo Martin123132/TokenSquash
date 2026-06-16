@@ -144,6 +144,10 @@ jobs:
         run: python -m tokensquash release-candidate --skip-tests --out-dir /tmp/tokensquash-release-candidate --json
       - name: Verify release candidate gate
         run: python -m tokensquash verify-release-candidate /tmp/tokensquash-release-candidate --require-release-candidate-pass --out /tmp/tokensquash-release-candidate-verify.json --json
+      - name: Stage release assets
+        run: python -m tokensquash release-assets /tmp/tokensquash-release-candidate --tag ci-release-candidate --out-dir /tmp/tokensquash-release-assets --json
+      - name: Verify release assets
+        run: python -m tokensquash verify-release-assets /tmp/tokensquash-release-assets/release-assets.json --asset-dir /tmp/tokensquash-release-assets --out /tmp/tokensquash-release-assets-verify.json --json
       - name: Assert release package evidence
         run: |
           python - <<'PY'
@@ -152,31 +156,67 @@ jobs:
 
           pack = Path("/tmp/tokensquash-release-candidate")
           verify_path = Path("/tmp/tokensquash-release-candidate-verify.json")
+          assets_path = Path("/tmp/tokensquash-release-assets/release-assets.json")
+          assets_verify_path = Path("/tmp/tokensquash-release-assets-verify.json")
           candidate = json.loads((pack / "release-candidate.json").read_text(encoding="utf-8"))
           verify = json.loads(verify_path.read_text(encoding="utf-8"))
+          assets = json.loads(assets_path.read_text(encoding="utf-8"))
+          assets_verify = json.loads(assets_verify_path.read_text(encoding="utf-8"))
           steps = {step["name"]: step for step in candidate["steps"]}
           checks = {check["name"]: check for check in verify["checks"]}
+          asset_roles = {asset["role"] for asset in assets["assets"]}
           expectations = {
               "candidate.status": candidate.get("status"),
               "verify.status": verify.get("status"),
+              "release_assets.status": assets.get("status"),
+              "release_assets_verify.status": assets_verify.get("status"),
+              "steps.scorecard_pack": steps["scorecard_pack"]["status"],
               "steps.exact_tokenizer_baselines": steps["exact_tokenizer_baselines"]["status"],
               "steps.wheel_build": steps["wheel_build"]["status"],
               "steps.wheel_smoke": steps["wheel_smoke"]["status"],
               "steps.sdist_build": steps["sdist_build"]["status"],
+              "checks.scorecard_pack_status": checks["scorecard_pack_status"]["status"],
+              "checks.scorecard_status": checks["scorecard_status"]["status"],
               "checks.wheel": checks["wheel"]["status"],
               "checks.sdist": checks["sdist"]["status"],
               "checks.artifact_manifest_integrity": checks["artifact_manifest_integrity"]["status"],
+              "summary.scorecard_pack_status": verify["summary"]["scorecard_pack_status"],
+              "summary.scorecard_status": verify["summary"]["scorecard_status"],
               "summary.wheel_smoke_status": verify["summary"]["wheel_smoke_status"],
               "summary.sdist_status": verify["summary"]["sdist_status"],
           }
-          failures = {key: value for key, value in expectations.items() if value != "pass"}
+          allowed = {
+              "summary.scorecard_pack_status": {"pass", "watch"},
+              "summary.scorecard_status": {"pass", "watch"},
+          }
+          failures = {
+              key: value
+              for key, value in expectations.items()
+              if value not in allowed.get(key, {"pass"})
+          }
           if failures:
               raise SystemExit(f"Release package evidence did not pass: {failures}")
+          required_roles = {
+              "wheel",
+              "sdist",
+              "release_attestation",
+              "artifact_manifest",
+              "scorecard_pack",
+              "scorecard",
+              "verify_release_candidate",
+          }
+          missing_roles = sorted(required_roles - asset_roles)
+          if missing_roles:
+              raise SystemExit(f"Release assets missing roles: {missing_roles}")
           for relative in (
               "artifact-manifest.json",
               "artifact-manifest.md",
               "release-attestation.json",
               "release-attestation.md",
+              "scorecard-pack.json",
+              "scorecard-pack.md",
+              "scorecard-pack/scorecard.json",
+              "scorecard-pack/scorecard.md",
               "wheel-build.txt",
               "wheel-smoke.txt",
               "sdist-build.txt",
@@ -184,6 +224,16 @@ jobs:
               path = pack / relative
               if not path.exists() or path.stat().st_size <= 0:
                   raise SystemExit(f"Missing or empty release evidence artifact: {path}")
+          for relative in (
+              "release-assets.json",
+              "release-assets.md",
+              "scorecard-pack.json",
+              "scorecard.json",
+              "verify-release-candidate.json",
+          ):
+              path = Path("/tmp/tokensquash-release-assets") / relative
+              if not path.exists() or path.stat().st_size <= 0:
+                  raise SystemExit(f"Missing or empty release asset artifact: {path}")
           PY
       - name: Collect release candidate evidence
         if: always()
@@ -195,6 +245,12 @@ jobs:
           fi
           if [ -f /tmp/tokensquash-release-candidate-verify.json ]; then
             cp /tmp/tokensquash-release-candidate-verify.json ci-release-candidate-evidence/verify-release-candidate.json
+          fi
+          if [ -d /tmp/tokensquash-release-assets ]; then
+            cp -R /tmp/tokensquash-release-assets ci-release-candidate-evidence/release-assets
+          fi
+          if [ -f /tmp/tokensquash-release-assets-verify.json ]; then
+            cp /tmp/tokensquash-release-assets-verify.json ci-release-candidate-evidence/verify-release-assets.json
           fi
       - name: Upload release candidate evidence
         if: always()
