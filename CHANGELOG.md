@@ -24,6 +24,9 @@ is produced locally and in GitHub Actions.
   against `release-assets.json`, including hashes and JSON schemas.
 - GitHub Actions now stages and verifies release assets inside the
   exact-tokenizer release-candidate job and uploads that evidence.
+- v0.2.0 draft release notes now define the release bar, required public
+  assets, CI evidence expectations, and final evidence fields in
+  `docs/release-notes-v0.2.0.md`.
 - `turns compare-scorecards` now compares saved scorecard JSON files for
   release-review deltas across corpus size, savings, privacy findings, alias
   impact, and sidecar pass/watch/fail counts.
@@ -33,8 +36,8 @@ is produced locally and in GitHub Actions.
   local-AI semantic compression can be judged on meaning risk, not token savings
   alone.
 - `docs/v0.2.0-plan.md` now describes the next development track for real corpus
-  scorecards, corpus growth milestones, sidecar meaning evidence, and release-tag
-  comparison.
+  scorecards, corpus growth milestones, sidecar meaning evidence, release-tag
+  comparison, and the completed release-evidence chain.
 - Quickstart, real-turn, and first-real-corpus docs now show where the new
   scorecard fits between capture, validation, evaluation, and release evidence.
 

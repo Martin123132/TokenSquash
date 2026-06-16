@@ -82,7 +82,7 @@ manifests, and release attestations. See
 ## Release Asset Evidence
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.2.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
 ```
 

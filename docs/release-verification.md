@@ -8,7 +8,7 @@ Future releases should stage their public assets from a verified
 release-candidate pack before upload:
 
 ```powershell
-$tag = "v0.1.1"
+$tag = "v0.2.0"
 python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md
 ```
 

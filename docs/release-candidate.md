@@ -51,7 +51,7 @@ that status while verifying that the evidence files are present and hashed.
 ## Stage Public Release Assets
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.2.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --out private-turns\release-assets\release-assets.verify.json --json
 ```
 
@@ -77,7 +77,7 @@ The staged public assets should include:
 Only upload after local and GitHub evidence both pass:
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.1 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --upload
+python -m tokensquash release-assets private-turns\release-candidate --tag v0.2.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --upload
 ```
 
 `--upload` runs the generated `gh release upload` command. Keep it explicit and
@@ -99,4 +99,5 @@ After pushing a release-prep commit, confirm the `tests` workflow passes:
 - [release-checklist.md](release-checklist.md)
 - [release-verification.md](release-verification.md)
 - [post-release-flow.md](post-release-flow.md)
+- [release-notes-v0.2.0.md](release-notes-v0.2.0.md)
 - [release-notes-v0.1.1.md](release-notes-v0.1.1.md)
