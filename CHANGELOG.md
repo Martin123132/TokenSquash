@@ -28,8 +28,8 @@ No unreleased changes yet.
   against `release-assets.json`, including hashes and JSON schemas.
 - GitHub Actions now stages and verifies release assets inside the
   exact-tokenizer release-candidate job and uploads that evidence.
-- v0.2.0 draft release notes now define the release bar, required public
-  assets, CI evidence expectations, and final evidence fields in
+- v0.2.0 release notes now define the release bar, required public assets, CI
+  evidence expectations, and final evidence fields in
   `docs/release-notes-v0.2.0.md`.
 - `turns compare-scorecards` now compares saved scorecard JSON files for
   release-review deltas across corpus size, savings, privacy findings, alias

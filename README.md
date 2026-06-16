@@ -122,8 +122,8 @@ Start here:
 - [Release checklist](docs/release-checklist.md): manual release runbook.
 - [Release verification](docs/release-verification.md): inspect published
   assets, hashes, attestations, and packaged license evidence.
-- [v0.2.0 draft release notes](docs/release-notes-v0.2.0.md): next minor
-  release bar, required evidence, and final evidence fields.
+- [v0.2.0 release notes](docs/release-notes-v0.2.0.md): scorecard evidence,
+  release assets, CI evidence, and known limits.
 - [v0.1.1 release notes](docs/release-notes-v0.1.1.md): public-polish patch
   scope and release evidence contract.
 - [Post-release flow](docs/post-release-flow.md): keep release notes,
@@ -161,17 +161,18 @@ Start here:
 
 The first source-available release is published as
 [TokenSquash v0.1.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.0).
-The latest public-polish release is
+The latest release is
+[TokenSquash v0.2.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.0).
+The previous public-polish release is
 [TokenSquash v0.1.1](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.1).
 
-The release includes a wheel, source distribution, artifact manifest,
+Releases include a wheel, source distribution, artifact manifest,
 release attestation, and release-candidate verifier output. The tracked
-[v0.2.0 draft release notes](docs/release-notes-v0.2.0.md),
+[v0.2.0 release notes](docs/release-notes-v0.2.0.md),
 [v0.1.1 release notes](docs/release-notes-v0.1.1.md),
 [v0.1.0 release notes](docs/release-notes-v0.1.0.md), and
 [release verification guide](docs/release-verification.md) record the release
-commit, CI runs, asset hashes, packaged license evidence, and the release bar
-for the next minor release.
+commit, CI runs, asset hashes, packaged license evidence, and release evidence.
 
 PyPI publishing is not configured yet.
 
