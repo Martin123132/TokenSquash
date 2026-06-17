@@ -3453,6 +3453,96 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue(out.exists())
             self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["schema_version"], "tokensquash.turns.claim.v1")
 
+    def test_turns_claim_cli_claim_only_can_fail_on_unsupported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = Path(tmp) / "gate.json"
+            gate.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.gate.v1",
+                        "status": "pass",
+                        "source": "report.json",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 12,
+                            "original_tokens": 100,
+                            "squashed_tokens": 92,
+                            "saved_tokens": 8,
+                            "saved_pct": 8.0,
+                            "privacy_finding_count": 0,
+                            "pass_through_rows": 0,
+                            "raw_wire_loss_turns": 0,
+                            "failed_check_count": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "claim",
+                        str(gate),
+                        "--corpus-label",
+                        "public sample corpus",
+                        "--claim-only",
+                        "--fail-on-unsupported",
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("On public sample corpus, TokenSquash", output)
+            self.assertNotIn("# TokenSquash Claim", output)
+
+    def test_turns_claim_cli_limits_only_fails_unsupported_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.json"
+            report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "examples/sample-turns.jsonl",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 10,
+                            "original_tokens": 100,
+                            "squashed_tokens": 95,
+                            "saved_tokens": 5,
+                            "saved_pct": 5.0,
+                            "privacy_finding_count": 0,
+                            "pass_through_rows": 1,
+                            "raw_wire_loss_turns": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "claim",
+                        str(report),
+                        "--corpus-label",
+                        "public sample corpus",
+                        "--limits-only",
+                        "--fail-on-unsupported",
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 1)
+            self.assertIn("No gate status was present", output)
+            self.assertIn("adaptive pass-through", output)
+            self.assertNotIn("# TokenSquash Claim", output)
+
     def test_turns_report_cli_markdown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"

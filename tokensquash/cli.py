@@ -883,7 +883,15 @@ def main(argv: list[str] | None = None) -> int:
     turns_claim.add_argument("--command", dest="claim_command", help="Command that generated the evidence, for audit context.")
     turns_claim.add_argument("--version", help="TokenSquash version or release tag to cite.")
     turns_claim.add_argument("--out", type=Path, help="Write claim output to this file.")
-    turns_claim.add_argument("--json", action="store_true", help="Print claim JSON.")
+    turns_claim.add_argument(
+        "--fail-on-unsupported",
+        action="store_true",
+        help="Exit non-zero unless the generated claim is supported by passed deterministic evidence.",
+    )
+    turns_claim_output = turns_claim.add_mutually_exclusive_group()
+    turns_claim_output.add_argument("--json", action="store_true", help="Print claim JSON.")
+    turns_claim_output.add_argument("--claim-only", action="store_true", help="Print only the copyable claim paragraph.")
+    turns_claim_output.add_argument("--limits-only", action="store_true", help="Print only known limits for review.")
 
     turns_import = turns_sub.add_parser("import", help="Import a JSON/JSONL turn corpus into private raw/redacted storage.")
     turns_import.add_argument("corpus", type=Path)
@@ -1859,15 +1867,18 @@ def main(argv: list[str] | None = None) -> int:
                     command=args.claim_command,
                     version=args.version,
                 )
-                output = (
-                    json.dumps(report, indent=2) + "\n"
-                    if args.json
-                    else format_turn_claim_markdown(report)
+                output = _format_turn_claim_cli_output(
+                    report,
+                    json_output=args.json,
+                    claim_only=args.claim_only,
+                    limits_only=args.limits_only,
                 )
                 if args.out:
                     args.out.parent.mkdir(parents=True, exist_ok=True)
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
+                if args.fail_on_unsupported:
+                    return 0 if report["status"] == "pass" and report["classification"] == "supported" else 1
                 return 0 if report["status"] in {"pass", "watch"} else 1
             if args.turns_command == "import":
                 report = import_turn_corpus(
@@ -2137,6 +2148,26 @@ def main(argv: list[str] | None = None) -> int:
 
 def _load_optional_aliases(path: Path | None):
     return load_alias_table(path) if path else None
+
+
+def _format_turn_claim_cli_output(
+    report: dict,
+    *,
+    json_output: bool = False,
+    claim_only: bool = False,
+    limits_only: bool = False,
+) -> str:
+    if json_output:
+        return json.dumps(report, indent=2) + "\n"
+    claim = report.get("claim") or {}
+    if claim_only:
+        return str(claim.get("text", "")).strip() + "\n"
+    if limits_only:
+        limitations = claim.get("limitations") or []
+        if not limitations:
+            return "No known limits were reported by the claim generator.\n"
+        return "\n".join(f"- {item}" for item in limitations) + "\n"
+    return format_turn_claim_markdown(report)
 
 
 def _read_required_text(path: Path | None, label: str) -> str:

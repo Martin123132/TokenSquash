@@ -39,6 +39,8 @@ Strict doctor checks:
 ```powershell
 python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification --json
 python -m tokensquash turns claim private-turns\certification\certification.json --corpus-label "redacted local turn corpus"
+python -m tokensquash turns claim private-turns\certification\certification.json --claim-only --fail-on-unsupported
+python -m tokensquash turns claim private-turns\certification\certification.json --limits-only
 ```
 
 Certification writes:

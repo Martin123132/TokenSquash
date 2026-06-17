@@ -86,10 +86,16 @@ python -m tokensquash turns evaluate private-turns\real.redacted-turns.jsonl --c
 python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification
 python -m tokensquash turns release-check private-turns\real.redacted-turns.jsonl --budget examples\quality-budget.json --history private-turns\certification --out-dir private-turns\release-check
 python -m tokensquash turns claim private-turns\certification\certification.json --corpus-label "redacted local turn corpus"
+python -m tokensquash turns claim private-turns\certification\certification.json --claim-only --fail-on-unsupported
+python -m tokensquash turns claim private-turns\certification\certification.json --limits-only
 ```
 
 For public examples, use public or redacted corpora. Keep raw prompts, replies,
 aliases, local model output, and customer material in ignored private storage.
+
+Use `--claim-only` when you need a copyable paragraph, `--limits-only` during
+release review, and `--fail-on-unsupported` when CI should fail unless the claim
+is supported by passed deterministic evidence.
 
 ## Sidecar Claims
 
@@ -108,6 +114,7 @@ Generate cautious wording from saved sidecar evidence with:
 
 ```powershell
 python -m tokensquash turns claim private-turns\sidecar-certification\certification.json --corpus-label "redacted local sidecar run"
+python -m tokensquash turns claim private-turns\sidecar-certification\certification.json --limits-only
 ```
 
 Use [sidecar-meaning-rubric.md](sidecar-meaning-rubric.md) to classify pass,
