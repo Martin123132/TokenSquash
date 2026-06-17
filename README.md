@@ -120,7 +120,7 @@ Start here:
 - [Evidence packs](docs/evidence-packs.md): readiness, certification, quality
   budgets, release checks, and verification reports.
 - [Claims policy](docs/claims-policy.md): what TokenSquash can say publicly and
-  which evidence each claim needs.
+  which evidence each claim needs, including `turns claim` output.
 - [Release candidate workflow](docs/release-candidate.md): build and verify
   wheel/source-distribution evidence before publishing.
 - [Release checklist](docs/release-checklist.md): manual release runbook.

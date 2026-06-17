@@ -93,6 +93,7 @@ from .turns import (
     benchmark_turns,
     build_turn_certification_history,
     build_turn_scorecard_history,
+    build_turn_claim,
     capture_turn_record,
     certify_turn_corpus,
     compare_turn_certifications,
@@ -107,6 +108,7 @@ from .turns import (
     format_turn_certification_compare_markdown,
     format_turn_certification_history_markdown,
     format_turn_certification_markdown,
+    format_turn_claim_markdown,
     format_turn_diagnose_markdown,
     format_turn_report_markdown,
     format_turn_report_compare_markdown,
@@ -873,6 +875,15 @@ def main(argv: list[str] | None = None) -> int:
     turns_suggestions.add_argument("--min-saved-tokens", type=int, default=1, help="Minimum estimated token saving to include.")
     turns_suggestions.add_argument("--out", type=Path, help="Write suggestions output to this file.")
     turns_suggestions.add_argument("--json", action="store_true", help="Print suggestions JSON.")
+
+    turns_claim = turns_sub.add_parser("claim", help="Generate a public-safe claim block from saved evidence JSON.")
+    turns_claim.add_argument("evidence", type=Path, help="Evidence JSON file or directory containing certification/report evidence.")
+    turns_claim.add_argument("--corpus-label", help="Public-safe corpus label to use in the generated claim.")
+    turns_claim.add_argument("--evidence-label", help="Public-safe evidence label or URL to use in the generated claim.")
+    turns_claim.add_argument("--command", dest="claim_command", help="Command that generated the evidence, for audit context.")
+    turns_claim.add_argument("--version", help="TokenSquash version or release tag to cite.")
+    turns_claim.add_argument("--out", type=Path, help="Write claim output to this file.")
+    turns_claim.add_argument("--json", action="store_true", help="Print claim JSON.")
 
     turns_import = turns_sub.add_parser("import", help="Import a JSON/JSONL turn corpus into private raw/redacted storage.")
     turns_import.add_argument("corpus", type=Path)
@@ -1840,6 +1851,24 @@ def main(argv: list[str] | None = None) -> int:
                     args.out.write_text(output, encoding="utf-8")
                 print(output, end="")
                 return 0
+            if args.turns_command == "claim":
+                report = build_turn_claim(
+                    args.evidence,
+                    corpus_label=args.corpus_label,
+                    evidence_label=args.evidence_label,
+                    command=args.claim_command,
+                    version=args.version,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_claim_markdown(report)
+                )
+                if args.out:
+                    args.out.parent.mkdir(parents=True, exist_ok=True)
+                    args.out.write_text(output, encoding="utf-8")
+                print(output, end="")
+                return 0 if report["status"] in {"pass", "watch"} else 1
             if args.turns_command == "import":
                 report = import_turn_corpus(
                     args.corpus,

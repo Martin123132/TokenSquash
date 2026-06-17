@@ -85,6 +85,7 @@ such as:
 python -m tokensquash turns evaluate private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\eval-real
 python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification
 python -m tokensquash turns release-check private-turns\real.redacted-turns.jsonl --budget examples\quality-budget.json --history private-turns\certification --out-dir private-turns\release-check
+python -m tokensquash turns claim private-turns\certification\certification.json --corpus-label "redacted local turn corpus"
 ```
 
 For public examples, use public or redacted corpora. Keep raw prompts, replies,
@@ -102,6 +103,12 @@ A sidecar claim needs more than token savings. It should cite:
 - `sidecar review` findings
 - `sidecar gate` thresholds and status
 - `sidecar certify` evidence for durable claims
+
+Generate cautious wording from saved sidecar evidence with:
+
+```powershell
+python -m tokensquash turns claim private-turns\sidecar-certification\certification.json --corpus-label "redacted local sidecar run"
+```
 
 Use [sidecar-meaning-rubric.md](sidecar-meaning-rubric.md) to classify pass,
 watch, and fail rows. If decoded meaning has not been reviewed, call the result

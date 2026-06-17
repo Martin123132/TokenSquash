@@ -59,6 +59,7 @@ from tokensquash.turns import (
     benchmark_turn_alias_impact,
     benchmark_turns,
     build_turn_certification_history,
+    build_turn_claim,
     build_turn_scorecard_history,
     capture_turn_record,
     certify_turn_corpus,
@@ -506,6 +507,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns scorecard-pack", commands)
         self.assertIn("turns release-check", commands)
         self.assertIn("turns verify-release", commands)
+        self.assertIn("turns claim", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.baselines.verify.v1", schemas)
@@ -531,6 +533,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.turns.scorecard.history.v1", schemas)
         self.assertIn("tokensquash.turns.release_check.v1", schemas)
         self.assertIn("tokensquash.turns.release_verify.v1", schemas)
+        self.assertIn("tokensquash.turns.claim.v1", schemas)
         self.assertIn("tokensquash.sidecar.certify.v1", schemas)
         self.assertTrue(
             any("turns verify-release" in command and "--require-release-pass" in command for command in readiness_commands)
@@ -547,6 +550,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("turns scorecard-pack" in command for command in readiness_commands))
         self.assertTrue(any("turns compare-scorecards" in command for command in readiness_commands))
         self.assertTrue(any("turns scorecard-history" in command for command in readiness_commands))
+        self.assertTrue(any("turns claim" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
         self.assertIn("LICENSE", governance_paths)
         self.assertIn("COMMERCIAL-LICENSE.md", governance_paths)
@@ -3300,6 +3304,154 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("## Top Win", output)
             self.assertIn("## Top Raw Wire Loss", output)
             self.assertTrue((eval_dir / "evaluation.json").exists())
+
+    def test_turns_claim_from_certification_is_supported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "turns.jsonl"
+            out_dir = Path(tmp) / "certification"
+            corpus.write_text(
+                '{"id":"t1","prompt":"fix login in src/auth.py and run tests","reply":"Done. I fixed src/auth.py and ran python -m pytest tests/test_auth.py -q."}\n'
+                '{"id":"t2","prompt":"fix checkout in src/checkout.py and run tests","reply":"Done. I fixed src/checkout.py and ran python -m pytest tests/test_checkout.py -q."}\n',
+                encoding="utf-8",
+            )
+            certification = certify_turn_corpus(corpus, counter="chars", min_saved_pct=0.0)
+            write_turn_certification_outputs(out_dir, certification)
+
+            claim = build_turn_claim(
+                out_dir,
+                corpus_label="redacted local test corpus",
+                evidence_label="local certification pack",
+                command="python -m tokensquash turns certify turns.jsonl --counter chars",
+                version="v9.9.9",
+            )
+
+            self.assertEqual(claim["schema_version"], "tokensquash.turns.claim.v1")
+            self.assertEqual(claim["status"], "pass")
+            self.assertEqual(claim["classification"], "supported")
+            self.assertEqual(claim["evidence"]["input_type"], "certification")
+            self.assertEqual(claim["evidence"]["command"], "python -m tokensquash turns certify turns.jsonl --counter chars")
+            self.assertEqual(claim["metrics"]["counter"], "chars")
+            self.assertEqual(claim["metrics"]["gate_status"], "pass")
+            self.assertEqual(claim["metrics"]["privacy_finding_count"], 0)
+            self.assertIn("TokenSquash v9.9.9 saved", claim["claim"]["text"])
+
+    def test_turns_claim_blocks_privacy_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.json"
+            report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "warn",
+                        "path": "private-turns/real.redacted-turns.jsonl",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 12,
+                            "original_tokens": 100,
+                            "squashed_tokens": 90,
+                            "saved_tokens": 10,
+                            "saved_pct": 10.0,
+                            "privacy_finding_count": 1,
+                            "pass_through_rows": 0,
+                            "raw_wire_loss_turns": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            claim = build_turn_claim(report, corpus_label="redacted local turn corpus")
+
+            self.assertEqual(claim["status"], "fail")
+            self.assertEqual(claim["classification"], "blocked")
+            self.assertEqual(claim["metrics"]["privacy_finding_count"], 1)
+            self.assertTrue(any("Privacy findings are present" in item for item in claim["claim"]["limitations"]))
+
+    def test_turns_claim_sidecar_evidence_is_experimental(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = Path(tmp) / "review.json"
+            review.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.sidecar.review.v1",
+                        "status": "pass",
+                        "source": "private-turns/sidecar-eval/evaluation.json",
+                        "counter": "chars",
+                        "summary": {
+                            "row_count": 3,
+                            "ok_count": 3,
+                            "review_count": 0,
+                            "high_risk_count": 0,
+                            "medium_risk_count": 0,
+                            "saved_tokens": 6,
+                            "saved_pct": 2.5,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            claim = build_turn_claim(review, corpus_label="redacted sidecar test run")
+
+            self.assertEqual(claim["status"], "watch")
+            self.assertEqual(claim["classification"], "experimental")
+            self.assertEqual(claim["scope"], "experimental_sidecar")
+            self.assertIn("Experimental TokenSquash sidecar evidence", claim["claim"]["text"])
+            self.assertTrue(any("Sidecar output is experimental" in item for item in claim["claim"]["limitations"]))
+
+    def test_turns_claim_cli_json_keeps_top_level_command_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.json"
+            out = Path(tmp) / "claim.md"
+            report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "examples/sample-turns.jsonl",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 10,
+                            "original_tokens": 100,
+                            "squashed_tokens": 95,
+                            "saved_tokens": 5,
+                            "saved_pct": 5.0,
+                            "privacy_finding_count": 0,
+                            "pass_through_rows": 1,
+                            "raw_wire_loss_turns": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "claim",
+                        str(report),
+                        "--corpus-label",
+                        "public sample corpus",
+                        "--command",
+                        "python -m tokensquash turns report examples/sample-turns.jsonl --counter chars",
+                        "--out",
+                        str(out),
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.claim.v1")
+            self.assertEqual(payload["status"], "watch")
+            self.assertEqual(
+                payload["evidence"]["command"],
+                "python -m tokensquash turns report examples/sample-turns.jsonl --counter chars",
+            )
+            self.assertTrue(out.exists())
+            self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["schema_version"], "tokensquash.turns.claim.v1")
 
     def test_turns_report_cli_markdown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -399,6 +399,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "tokensquash.turns.scorecard.pack.v1",
         "tokensquash.turns.scorecard.compare.v1",
         "tokensquash.turns.scorecard.history.v1",
+        "tokensquash.turns.claim.v1",
         "tokensquash.sidecar.certify.v1",
     }
     required_commands = {
@@ -421,6 +422,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "turns scorecard-history",
         "turns release-check",
         "turns verify-release",
+        "turns claim",
         "sidecar certify",
     }
     missing_schemas = sorted(required_schemas - schemas)
@@ -573,6 +575,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Sidecar Evidence",
             "Token savings alone are not success",
             "claims policy",
+            "turns claim",
         ],
         "docs/claims-policy.md": [
             "Claims Policy",
@@ -581,6 +584,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Evidence Requirements",
             "Sidecar Claims",
             "Commercial Claims",
+            "turns claim",
             "Token savings alone are not success",
             "deterministic `ts1` and `tr1` codecs remain the source of truth",
             PUBLIC_LICENSE_NAME,

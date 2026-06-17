@@ -38,6 +38,7 @@ Strict doctor checks:
 
 ```powershell
 python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --counter tiktoken:cl100k_base --out-dir private-turns\certification --json
+python -m tokensquash turns claim private-turns\certification\certification.json --corpus-label "redacted local turn corpus"
 ```
 
 Certification writes:
@@ -105,3 +106,6 @@ python -m tokensquash sidecar certify private-turns\sidecar-eval\evaluation.json
 Sidecar evidence must be judged with warning counts, missing fields, decoded
 meaning, gate results, and the [sidecar meaning rubric](sidecar-meaning-rubric.md).
 Token savings alone are not success.
+
+`turns claim` can read saved sidecar evidence too, but it labels the result as
+experimental rather than a deterministic codec claim.

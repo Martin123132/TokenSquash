@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -15,6 +16,7 @@ from .mining import mine_reply_patterns
 PROMPT_KEYS = ("prompt", "input", "request", "user", "human", "text")
 REPLY_KEYS = ("reply", "response", "assistant", "output", "answer")
 REPLY_FIELD_KEYS = ("status", "summary", "files", "verification", "commands", "risks", "next_steps", "warnings")
+TURN_CLAIM_SCHEMA_VERSION = "tokensquash.turns.claim.v1"
 
 _SPACE_RE = re.compile(r"\s+")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
@@ -1796,6 +1798,92 @@ def suggest_turn_improvements(
     )
 
 
+def build_turn_claim(
+    evidence_path: Path | str,
+    *,
+    corpus_label: str | None = None,
+    evidence_label: str | None = None,
+    command: str | None = None,
+    version: str | None = None,
+) -> dict[str, Any]:
+    """Build a public-safe claim block from saved turn or sidecar evidence."""
+
+    source = _resolve_claim_evidence_path(Path(evidence_path))
+    payload = _load_json_object(source)
+    schema = str(payload.get("schema_version", ""))
+    if schema.startswith("tokensquash.sidecar."):
+        normalized = _normalize_sidecar_claim_source(payload, source)
+        scope = "experimental_sidecar"
+    else:
+        normalized = _normalize_turn_claim_source(payload, source)
+        scope = "deterministic_turns"
+
+    product_version = version or _claim_package_version(Path.cwd())
+    if product_version and not str(product_version).startswith("v"):
+        product_version_text = f"v{product_version}"
+    else:
+        product_version_text = str(product_version or "unknown")
+    corpus = corpus_label or normalized["corpus"] or "the measured corpus"
+    evidence = evidence_label or str(source)
+    limitations = _claim_limitations(normalized, scope=scope)
+    status, classification = _claim_status(normalized, scope=scope)
+    claim_text = _claim_text(
+        normalized,
+        corpus=corpus,
+        evidence=evidence,
+        product_version=product_version_text,
+        scope=scope,
+    )
+    short_claim = _short_claim(
+        normalized,
+        corpus=corpus,
+        product_version=product_version_text,
+        scope=scope,
+    )
+
+    return {
+        "schema_version": TURN_CLAIM_SCHEMA_VERSION,
+        "status": status,
+        "classification": classification,
+        "scope": scope,
+        "evidence": {
+            "path": str(source),
+            "label": evidence,
+            "schema_version": schema,
+            "input_type": normalized["input_type"],
+            "source_status": normalized["source_status"],
+            "command": command,
+        },
+        "metrics": {
+            "corpus": corpus,
+            "source_corpus": normalized["corpus"],
+            "counter": normalized["counter"],
+            "version": product_version_text,
+            "turn_count": normalized["turn_count"],
+            "original_tokens": normalized["original_tokens"],
+            "compact_tokens": normalized["compact_tokens"],
+            "saved_tokens": normalized["saved_tokens"],
+            "saved_pct": normalized["saved_pct"],
+            "pass_through_rows": normalized["pass_through_rows"],
+            "raw_wire_loss_turns": normalized["raw_wire_loss_turns"],
+            "warning_count": normalized["warning_count"],
+            "privacy_finding_count": normalized["privacy_finding_count"],
+            "failed_check_count": normalized["failed_check_count"],
+            "gate_status": normalized["gate_status"],
+            "review_status": normalized["review_status"],
+            "review_count": normalized["review_count"],
+            "high_risk_count": normalized["high_risk_count"],
+            "medium_risk_count": normalized["medium_risk_count"],
+            "loss_items": normalized["loss_items"],
+        },
+        "claim": {
+            "short": short_claim,
+            "text": claim_text,
+            "limitations": limitations,
+        },
+    }
+
+
 def _suggest_turn_improvements_from_report(
     source_report: dict[str, Any],
     *,
@@ -2295,6 +2383,50 @@ def format_turn_report_markdown(report: dict[str, Any]) -> str:
     _append_capture_preview(lines, "Top Raw Wire Loss", report.get("top_raw_wire_losses", []))
     _append_report_candidates(lines, "Top Repeated Path Candidates", report.get("top_path_candidates", []))
     _append_report_candidates(lines, "Top Repeated Field Candidates", report.get("top_field_candidates", []), include_field=True)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_turn_claim_markdown(report: dict[str, Any]) -> str:
+    metrics = report.get("metrics", {})
+    evidence = report.get("evidence", {})
+    claim = report.get("claim", {})
+    lines = [
+        "# TokenSquash Claim",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Classification: `{report.get('classification')}`",
+        f"- Scope: `{report.get('scope')}`",
+        f"- Evidence: `{evidence.get('label')}`",
+        f"- Evidence schema: `{evidence.get('schema_version')}`",
+        f"- Input type: `{evidence.get('input_type')}`",
+        f"- Source status: `{evidence.get('source_status')}`",
+        f"- Corpus: `{metrics.get('corpus')}`",
+        f"- Counter: `{metrics.get('counter')}`",
+        f"- Version: `{metrics.get('version')}`",
+        f"- Turns/items: `{metrics.get('turn_count', 0)}`",
+        f"- Original tokens: `{metrics.get('original_tokens', 0)}`",
+        f"- Compact tokens: `{metrics.get('compact_tokens', 0)}`",
+        f"- Saved tokens: `{metrics.get('saved_tokens', 0)}`",
+        f"- Saved percent: `{metrics.get('saved_pct', 0.0)}%`",
+        f"- Pass-through rows: `{metrics.get('pass_through_rows', 0)}`",
+        f"- Raw wire loss turns: `{metrics.get('raw_wire_loss_turns', 0)}`",
+        f"- Warnings: `{metrics.get('warning_count', 0)}`",
+        f"- Privacy findings: `{metrics.get('privacy_finding_count', 0)}`",
+        f"- Failed checks: `{metrics.get('failed_check_count', 0)}`",
+        f"- Gate status: `{metrics.get('gate_status') or 'n/a'}`",
+        f"- Review status: `{metrics.get('review_status') or 'n/a'}`",
+    ]
+    command = evidence.get("command")
+    if command:
+        lines.append(f"- Command: `{_markdown_cell(str(command))}`")
+    lines.extend(["", "## Claim", "", str(claim.get("text", "")).strip(), ""])
+    limitations = claim.get("limitations") or []
+    lines.extend(["## Known Limits", ""])
+    if not limitations:
+        lines.append("No known limits were reported by the claim generator.")
+    else:
+        for item in limitations:
+            lines.append(f"- {item}")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -4148,6 +4280,271 @@ def _nullable_int_delta(target: Any, base: Any) -> int | None:
     if target is None or base is None:
         return None
     return _int_value(target) - _int_value(base)
+
+
+def _resolve_claim_evidence_path(path: Path) -> Path:
+    if path.is_dir():
+        for name in (
+            "certification.json",
+            "scorecard.json",
+            "report.json",
+            "gate.json",
+            "review.json",
+            "evaluation.json",
+            "release-check.json",
+        ):
+            candidate = path / name
+            if candidate.exists():
+                return candidate
+        raise FileNotFoundError(f"no supported claim evidence JSON found in directory: {path}")
+    return path
+
+
+def _normalize_turn_claim_source(payload: dict[str, Any], source: Path) -> dict[str, Any]:
+    schema = str(payload.get("schema_version", ""))
+    supported = {
+        "tokensquash.turns.report.v1": "report",
+        "tokensquash.turns.scorecard.v1": "scorecard",
+        "tokensquash.turns.scorecard.pack.v1": "scorecard_pack",
+        "tokensquash.turns.gate.v1": "gate",
+        "tokensquash.turns.certify.v1": "certification",
+        "tokensquash.turns.release_check.v1": "release_check",
+        "tokensquash.turns.evaluate.v1": "evaluation",
+    }
+    input_type = supported.get(schema)
+    if input_type is None:
+        raise ValueError(f"unsupported claim evidence schema: {schema or 'missing'}")
+
+    artifacts = payload.get("artifacts") or {}
+    nested_report = artifacts.get("report") or payload.get("turn_report") or {}
+    nested_gate = artifacts.get("gate") or payload.get("gate") or {}
+    summaries = [
+        payload.get("summary") or {},
+        nested_gate.get("summary") or {},
+        nested_report.get("summary") or {},
+        (payload.get("bench") or {}).get("summary") or {},
+        ((payload.get("measure") or {}).get("benchmark") or {}).get("summary") or {},
+    ]
+    corpus = payload.get("path") or payload.get("source") or nested_report.get("path")
+    counter = payload.get("counter") or nested_report.get("counter")
+    gate_status = nested_gate.get("status") or (payload.get("status") if input_type == "gate" else None)
+    return {
+        "input_type": input_type,
+        "source_status": str(payload.get("status", "unknown")),
+        "corpus": str(corpus) if corpus is not None else None,
+        "counter": str(counter) if counter is not None else None,
+        "turn_count": _first_int(summaries, "turn_count", "item_count"),
+        "original_tokens": _first_int(summaries, "original_tokens"),
+        "compact_tokens": _first_int(summaries, "squashed_tokens", "semantic_tokens", "wire_tokens"),
+        "saved_tokens": _first_int(summaries, "saved_tokens"),
+        "saved_pct": _first_float(summaries, "saved_pct"),
+        "pass_through_rows": _first_int(summaries, "pass_through_rows", "passthroughs"),
+        "raw_wire_loss_turns": _first_int(summaries, "raw_wire_loss_turns"),
+        "warning_count": _first_int(summaries, "warning_count"),
+        "privacy_finding_count": _first_int(summaries, "privacy_finding_count"),
+        "failed_check_count": _first_int(summaries, "failed_check_count", "failure_count"),
+        "gate_status": str(gate_status) if gate_status else None,
+        "review_status": None,
+        "review_count": 0,
+        "high_risk_count": 0,
+        "medium_risk_count": 0,
+        "loss_items": 0,
+        "evidence_path": str(source),
+    }
+
+
+def _normalize_sidecar_claim_source(payload: dict[str, Any], source: Path) -> dict[str, Any]:
+    schema = str(payload.get("schema_version", ""))
+    supported = {
+        "tokensquash.sidecar.evaluate.v1": "sidecar_evaluation",
+        "tokensquash.sidecar.review.v1": "sidecar_review",
+        "tokensquash.sidecar.gate.v1": "sidecar_gate",
+        "tokensquash.sidecar.certify.v1": "sidecar_certification",
+        "tokensquash.sidecar.experiment.v1": "sidecar_experiment",
+        "tokensquash.sidecar.sweep.v1": "sidecar_sweep",
+    }
+    input_type = supported.get(schema)
+    if input_type is None:
+        raise ValueError(f"unsupported sidecar claim evidence schema: {schema or 'missing'}")
+
+    artifacts = payload.get("artifacts") or {}
+    nested_review = artifacts.get("review") or payload.get("review") or {}
+    nested_gate = artifacts.get("gate") or payload.get("gate") or {}
+    summaries = [
+        payload.get("summary") or {},
+        nested_gate.get("summary") or {},
+        nested_review.get("summary") or {},
+        (payload.get("evaluation") or {}).get("summary") or {},
+    ]
+    corpus = payload.get("source") or payload.get("path") or (payload.get("evaluation") or {}).get("source")
+    counter = payload.get("counter") or (payload.get("evaluation") or {}).get("counter")
+    gate_status = nested_gate.get("status") or (payload.get("status") if input_type == "sidecar_gate" else None)
+    review_status = nested_review.get("status") or (payload.get("status") if input_type == "sidecar_review" else None)
+    return {
+        "input_type": input_type,
+        "source_status": str(payload.get("status", "unknown")),
+        "corpus": str(corpus) if corpus is not None else None,
+        "counter": str(counter) if counter is not None else None,
+        "turn_count": _first_int(summaries, "item_count", "row_count", "turn_count"),
+        "original_tokens": _first_int(summaries, "original_tokens"),
+        "compact_tokens": _first_int(summaries, "semantic_tokens"),
+        "saved_tokens": _first_int(summaries, "saved_tokens"),
+        "saved_pct": _first_float(summaries, "saved_pct"),
+        "pass_through_rows": 0,
+        "raw_wire_loss_turns": 0,
+        "warning_count": _first_int(summaries, "warning_count"),
+        "privacy_finding_count": 0,
+        "failed_check_count": _first_int(summaries, "failed_check_count", "failure_count"),
+        "gate_status": str(gate_status) if gate_status else None,
+        "review_status": str(review_status) if review_status else None,
+        "review_count": _first_int(summaries, "review_count"),
+        "high_risk_count": _first_int(summaries, "high_risk_count"),
+        "medium_risk_count": _first_int(summaries, "medium_risk_count"),
+        "loss_items": _first_int(summaries, "loss_items", "loss_count"),
+        "evidence_path": str(source),
+    }
+
+
+def _claim_status(normalized: dict[str, Any], *, scope: str) -> tuple[str, str]:
+    failed = (
+        normalized["source_status"] == "fail"
+        or normalized["gate_status"] == "fail"
+        or _int_value(normalized["failed_check_count"]) > 0
+        or _int_value(normalized["privacy_finding_count"]) > 0
+        or _int_value(normalized["high_risk_count"]) > 0
+        or _int_value(normalized["loss_items"]) > 0
+    )
+    if failed:
+        return "fail", "blocked"
+    if scope == "experimental_sidecar":
+        return "watch", "experimental"
+    if normalized["input_type"] in {"certification", "gate", "release_check"} and normalized["gate_status"] == "pass":
+        return "pass", "supported"
+    return "watch", "caution"
+
+
+def _claim_text(
+    normalized: dict[str, Any],
+    *,
+    corpus: str,
+    evidence: str,
+    product_version: str,
+    scope: str,
+) -> str:
+    counter = normalized["counter"] or "unknown"
+    turn_count = _int_value(normalized["turn_count"])
+    saved_tokens = _int_value(normalized["saved_tokens"])
+    saved_pct = _float_value(normalized["saved_pct"])
+    original_tokens = _int_value(normalized["original_tokens"])
+    compact_tokens = _int_value(normalized["compact_tokens"])
+    token_span = (
+        f" from {original_tokens} original tokens to {compact_tokens} compact tokens"
+        if original_tokens and compact_tokens
+        else ""
+    )
+    if scope == "experimental_sidecar":
+        review = normalized["review_status"] or "not provided"
+        gate = normalized["gate_status"] or "not provided"
+        return (
+            f"Experimental TokenSquash sidecar evidence for {corpus} reported {saved_tokens} saved tokens "
+            f"({saved_pct}%){token_span} with the `{counter}` counter across {turn_count} item(s). "
+            f"Review status: `{review}`. Gate status: `{gate}`. This is not a deterministic codec claim; "
+            f"meaning preservation depends on sidecar review evidence. Evidence: {evidence}."
+        )
+    gate = normalized["gate_status"] or "not provided"
+    return (
+        f"On {corpus}, TokenSquash {product_version} saved {saved_tokens} tokens ({saved_pct}%){token_span} "
+        f"with the `{counter}` counter across {turn_count} turn(s). Gate status: `{gate}`; "
+        f"privacy findings: {_int_value(normalized['privacy_finding_count'])}; "
+        f"pass-through rows: {_int_value(normalized['pass_through_rows'])}; "
+        f"raw wire loss turns: {_int_value(normalized['raw_wire_loss_turns'])}. Evidence: {evidence}."
+    )
+
+
+def _short_claim(normalized: dict[str, Any], *, corpus: str, product_version: str, scope: str) -> str:
+    saved_tokens = _int_value(normalized["saved_tokens"])
+    saved_pct = _float_value(normalized["saved_pct"])
+    counter = normalized["counter"] or "unknown"
+    if scope == "experimental_sidecar":
+        return f"Experimental sidecar: {corpus} saved {saved_tokens} tokens ({saved_pct}%) with `{counter}`."
+    return f"TokenSquash {product_version}: {corpus} saved {saved_tokens} tokens ({saved_pct}%) with `{counter}`."
+
+
+def _claim_limitations(normalized: dict[str, Any], *, scope: str) -> list[str]:
+    limits: list[str] = []
+    turn_count = _int_value(normalized["turn_count"])
+    if turn_count and turn_count < 10:
+        limits.append("Small corpus: treat this as smoke evidence until at least 10 real turns are captured.")
+    if not normalized["counter"]:
+        limits.append("Counter was not present in the evidence; do not compare this claim across tokenizers.")
+    if not normalized["gate_status"]:
+        limits.append("No gate status was present; treat this as measurement evidence, not a passed certification.")
+    if _int_value(normalized["privacy_finding_count"]):
+        limits.append("Privacy findings are present; do not publish raw or insufficiently redacted source data.")
+    if _int_value(normalized["warning_count"]):
+        limits.append(f"{_int_value(normalized['warning_count'])} warning(s) were present in the source evidence.")
+    if _int_value(normalized["pass_through_rows"]):
+        limits.append(
+            f"{_int_value(normalized['pass_through_rows'])} row(s) used adaptive pass-through because compact output was not shorter."
+        )
+    if _int_value(normalized["raw_wire_loss_turns"]):
+        limits.append(f"{_int_value(normalized['raw_wire_loss_turns'])} raw-wire-loss turn(s) were present.")
+    if _int_value(normalized["failed_check_count"]):
+        limits.append(f"{_int_value(normalized['failed_check_count'])} failed check(s) block a supported claim.")
+    if scope == "experimental_sidecar":
+        limits.append("Sidecar output is experimental semantic JSON, not the deterministic `ts1` or `tr1` codec.")
+        if not normalized["review_status"]:
+            limits.append("No sidecar review status was present; inspect decoded meaning before making meaning claims.")
+        if _int_value(normalized["review_count"]):
+            limits.append(f"{_int_value(normalized['review_count'])} sidecar row(s) still need human review.")
+        if _int_value(normalized["high_risk_count"]) or _int_value(normalized["medium_risk_count"]):
+            limits.append(
+                "Sidecar risk findings are present; do not claim meaning preservation without resolving them."
+            )
+    return limits
+
+
+def _first_int(summaries: Iterable[dict[str, Any]], *keys: str) -> int:
+    for summary in summaries:
+        for key in keys:
+            value = summary.get(key)
+            if value is not None:
+                return _int_value(value)
+    return 0
+
+
+def _first_float(summaries: Iterable[dict[str, Any]], *keys: str) -> float:
+    for summary in summaries:
+        for key in keys:
+            value = summary.get(key)
+            if value is not None:
+                return _float_value(value)
+    return 0.0
+
+
+def _claim_package_version(cwd: Path) -> str:
+    pyproject = _find_upwards(cwd, "pyproject.toml")
+    if pyproject is not None:
+        match = re.search(
+            r"^version\s*=\s*\"([^\"]+)\"",
+            pyproject.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        if match:
+            return match.group(1)
+    try:
+        return metadata.version("tokensquash")
+    except metadata.PackageNotFoundError:
+        return "0.0.0"
+
+
+def _find_upwards(start: Path, filename: str) -> Path | None:
+    current = start.resolve()
+    for candidate in [current, *current.parents]:
+        path = candidate / filename
+        if path.exists():
+            return path
+    return None
 
 
 def _load_json_object(path: Path | str) -> dict[str, Any]:
