@@ -78,6 +78,7 @@ from tokensquash.turns import (
     split_turn_corpus,
     validate_turn_corpus,
     write_turn_certification_outputs,
+    write_turn_claim_pack,
     write_turn_scorecard_pack,
 )
 from tokensquash.workspace import initialize_workspace
@@ -508,6 +509,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns release-check", commands)
         self.assertIn("turns verify-release", commands)
         self.assertIn("turns claim", commands)
+        self.assertIn("turns claim-pack", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
         self.assertIn("tokensquash.baselines.verify.v1", schemas)
@@ -551,6 +553,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("turns compare-scorecards" in command for command in readiness_commands))
         self.assertTrue(any("turns scorecard-history" in command for command in readiness_commands))
         self.assertTrue(any("turns claim" in command for command in readiness_commands))
+        self.assertTrue(any("turns claim-pack" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
         self.assertIn("LICENSE", governance_paths)
         self.assertIn("COMMERCIAL-LICENSE.md", governance_paths)
@@ -3543,6 +3546,97 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("adaptive pass-through", output)
             self.assertNotIn("# TokenSquash Claim", output)
 
+    def test_turns_claim_pack_cli_writes_all_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gate = Path(tmp) / "gate.json"
+            out_dir = Path(tmp) / "claim-pack"
+            gate.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.gate.v1",
+                        "status": "pass",
+                        "source": "report.json",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 12,
+                            "original_tokens": 100,
+                            "squashed_tokens": 92,
+                            "saved_tokens": 8,
+                            "saved_pct": 8.0,
+                            "privacy_finding_count": 0,
+                            "pass_through_rows": 0,
+                            "raw_wire_loss_turns": 0,
+                            "failed_check_count": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "claim-pack",
+                        str(gate),
+                        "--out-dir",
+                        str(out_dir),
+                        "--corpus-label",
+                        "public sample corpus",
+                        "--fail-on-unsupported",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.claim.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["classification"], "supported")
+            self.assertEqual(payload["outputs"]["output_dir"], str(out_dir))
+            for filename in ("claim.json", "claim.md", "claim.txt", "limits.md"):
+                self.assertTrue((out_dir / filename).exists(), filename)
+            self.assertEqual(
+                json.loads((out_dir / "claim.json").read_text(encoding="utf-8"))["schema_version"],
+                "tokensquash.turns.claim.v1",
+            )
+            self.assertIn("On public sample corpus, TokenSquash", (out_dir / "claim.txt").read_text(encoding="utf-8"))
+            self.assertIn("Gate status", (out_dir / "claim.md").read_text(encoding="utf-8"))
+
+    def test_turns_claim_pack_helper_writes_all_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "report.json"
+            out_dir = Path(tmp) / "claim-pack"
+            report.write_text(
+                json.dumps(
+                    {
+                        "schema_version": "tokensquash.turns.report.v1",
+                        "status": "pass",
+                        "path": "examples/sample-turns.jsonl",
+                        "counter": "chars",
+                        "summary": {
+                            "turn_count": 10,
+                            "original_tokens": 100,
+                            "squashed_tokens": 95,
+                            "saved_tokens": 5,
+                            "saved_pct": 5.0,
+                            "privacy_finding_count": 0,
+                            "pass_through_rows": 1,
+                            "raw_wire_loss_turns": 0,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            payload = write_turn_claim_pack(report, out_dir, corpus_label="public sample corpus")
+
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.claim.v1")
+            self.assertEqual(payload["outputs"]["claim"], str(out_dir / "claim.json"))
+            for filename in ("claim.json", "claim.md", "claim.txt", "limits.md"):
+                self.assertTrue((out_dir / filename).exists(), filename)
+
     def test_turns_report_cli_markdown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
@@ -4500,13 +4594,23 @@ class TokenSquashCodecTests(unittest.TestCase):
                 "gate.md",
                 "suggestions.json",
                 "suggestions.md",
+                "claim.json",
+                "claim.md",
+                "claim.txt",
+                "limits.md",
                 "evaluation/evaluation.json",
                 "evaluation/measure.json",
                 "evaluation/diagnose.json",
             ):
                 self.assertTrue((out_dir / filename).exists(), filename)
             self.assertEqual(json.loads((out_dir / "gate.json").read_text(encoding="utf-8"))["status"], "pass")
+            claim = json.loads((out_dir / "claim.json").read_text(encoding="utf-8"))
+            self.assertEqual(claim["schema_version"], "tokensquash.turns.claim.v1")
+            self.assertEqual(claim["classification"], "supported")
+            self.assertIn("TokenSquash", (out_dir / "claim.txt").read_text(encoding="utf-8"))
+            self.assertTrue((out_dir / "limits.md").read_text(encoding="utf-8").strip())
             self.assertIn("certification", payload["outputs"])
+            self.assertIn("claim", payload["outputs"])
 
     def test_turns_compare_certifications_reports_improvement(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

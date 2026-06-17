@@ -72,6 +72,7 @@ COMMAND_GROUPS = {
         "turns verify-release",
         "turns suggestions",
         "turns claim",
+        "turns claim-pack",
     ],
     "sidecar_experimental": [
         "sidecar translate",
@@ -182,6 +183,7 @@ READINESS_COMMANDS = [
     "python -m tokensquash turns release-check examples\\sample-turns.jsonl --counter chars --budget examples\\quality-budget.json --history private-turns\\certification --out-dir private-turns\\release-check",
     "python -m tokensquash turns verify-release private-turns\\release-check --require-release-pass",
     "python -m tokensquash turns claim private-turns\\certification\\certification.json",
+    "python -m tokensquash turns claim-pack private-turns\\certification --out-dir private-turns\\claim-pack",
 ]
 
 PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)

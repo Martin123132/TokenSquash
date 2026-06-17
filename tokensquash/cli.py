@@ -108,7 +108,9 @@ from .turns import (
     format_turn_certification_compare_markdown,
     format_turn_certification_history_markdown,
     format_turn_certification_markdown,
+    format_turn_claim_limits_markdown,
     format_turn_claim_markdown,
+    format_turn_claim_text,
     format_turn_diagnose_markdown,
     format_turn_report_markdown,
     format_turn_report_compare_markdown,
@@ -138,6 +140,7 @@ from .turns import (
     turn_stats,
     validate_turn_corpus,
     write_turn_certification_outputs,
+    write_turn_claim_pack,
     write_turn_scorecard_pack,
 )
 from .workspace import format_workspace_init_markdown, initialize_workspace
@@ -892,6 +895,20 @@ def main(argv: list[str] | None = None) -> int:
     turns_claim_output.add_argument("--json", action="store_true", help="Print claim JSON.")
     turns_claim_output.add_argument("--claim-only", action="store_true", help="Print only the copyable claim paragraph.")
     turns_claim_output.add_argument("--limits-only", action="store_true", help="Print only known limits for review.")
+
+    turns_claim_pack = turns_sub.add_parser("claim-pack", help="Write claim JSON, markdown, text, and limits artifacts.")
+    turns_claim_pack.add_argument("evidence", type=Path, help="Evidence JSON file or directory containing certification/report evidence.")
+    turns_claim_pack.add_argument("--out-dir", type=Path, default=Path("private-turns/claim-pack"))
+    turns_claim_pack.add_argument("--corpus-label", help="Public-safe corpus label to use in the generated claim.")
+    turns_claim_pack.add_argument("--evidence-label", help="Public-safe evidence label or URL to use in the generated claim.")
+    turns_claim_pack.add_argument("--command", dest="claim_command", help="Command that generated the evidence, for audit context.")
+    turns_claim_pack.add_argument("--version", help="TokenSquash version or release tag to cite.")
+    turns_claim_pack.add_argument(
+        "--fail-on-unsupported",
+        action="store_true",
+        help="Exit non-zero unless the generated claim is supported by passed deterministic evidence.",
+    )
+    turns_claim_pack.add_argument("--json", action="store_true", help="Print claim JSON.")
 
     turns_import = turns_sub.add_parser("import", help="Import a JSON/JSONL turn corpus into private raw/redacted storage.")
     turns_import.add_argument("corpus", type=Path)
@@ -1880,6 +1897,24 @@ def main(argv: list[str] | None = None) -> int:
                 if args.fail_on_unsupported:
                     return 0 if report["status"] == "pass" and report["classification"] == "supported" else 1
                 return 0 if report["status"] in {"pass", "watch"} else 1
+            if args.turns_command == "claim-pack":
+                report = write_turn_claim_pack(
+                    args.evidence,
+                    out_dir=args.out_dir,
+                    corpus_label=args.corpus_label,
+                    evidence_label=args.evidence_label,
+                    command=args.claim_command,
+                    version=args.version,
+                )
+                output = (
+                    json.dumps(report, indent=2) + "\n"
+                    if args.json
+                    else format_turn_claim_markdown(report)
+                )
+                print(output, end="")
+                if args.fail_on_unsupported:
+                    return 0 if report["status"] == "pass" and report["classification"] == "supported" else 1
+                return 0 if report["status"] in {"pass", "watch"} else 1
             if args.turns_command == "import":
                 report = import_turn_corpus(
                     args.corpus,
@@ -2159,14 +2194,10 @@ def _format_turn_claim_cli_output(
 ) -> str:
     if json_output:
         return json.dumps(report, indent=2) + "\n"
-    claim = report.get("claim") or {}
     if claim_only:
-        return str(claim.get("text", "")).strip() + "\n"
+        return format_turn_claim_text(report)
     if limits_only:
-        limitations = claim.get("limitations") or []
-        if not limitations:
-            return "No known limits were reported by the claim generator.\n"
-        return "\n".join(f"- {item}" for item in limitations) + "\n"
+        return format_turn_claim_limits_markdown(report)
     return format_turn_claim_markdown(report)
 
 

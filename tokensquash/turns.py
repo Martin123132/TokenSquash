@@ -1884,6 +1884,27 @@ def build_turn_claim(
     }
 
 
+def write_turn_claim_pack(
+    evidence_path: Path | str,
+    out_dir: Path | str,
+    *,
+    corpus_label: str | None = None,
+    evidence_label: str | None = None,
+    command: str | None = None,
+    version: str | None = None,
+) -> dict[str, Any]:
+    """Write all public-safe claim views for saved evidence."""
+
+    claim = build_turn_claim(
+        evidence_path,
+        corpus_label=corpus_label,
+        evidence_label=evidence_label,
+        command=command,
+        version=version,
+    )
+    return write_turn_claim_outputs(out_dir, claim)
+
+
 def _suggest_turn_improvements_from_report(
     source_report: dict[str, Any],
     *,
@@ -2428,6 +2449,17 @@ def format_turn_claim_markdown(report: dict[str, Any]) -> str:
         for item in limitations:
             lines.append(f"- {item}")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def format_turn_claim_text(report: dict[str, Any]) -> str:
+    return str((report.get("claim") or {}).get("text", "")).strip() + "\n"
+
+
+def format_turn_claim_limits_markdown(report: dict[str, Any]) -> str:
+    limitations = (report.get("claim") or {}).get("limitations") or []
+    if not limitations:
+        return "No known limits were reported by the claim generator.\n"
+    return "\n".join(f"- {item}" for item in limitations) + "\n"
 
 
 def format_turn_scorecard_markdown(report: dict[str, Any]) -> str:
@@ -4673,6 +4705,30 @@ def _side_summary(side: dict[str, Any]) -> str:
     return f"{side.get('mode')} raw {side.get('wire_saved_tokens')} saved {side.get('saved_tokens')}"
 
 
+def write_turn_claim_outputs(target: Path | str, report: dict[str, Any]) -> dict[str, Any]:
+    target_path = Path(target)
+    target_path.mkdir(parents=True, exist_ok=True)
+    claim_path = target_path / "claim.json"
+    markdown_path = target_path / "claim.md"
+    text_path = target_path / "claim.txt"
+    limits_path = target_path / "limits.md"
+    report.setdefault("outputs", {})
+    report["outputs"].update(
+        {
+            "output_dir": str(target_path),
+            "claim": str(claim_path),
+            "markdown": str(markdown_path),
+            "text": str(text_path),
+            "limits": str(limits_path),
+        }
+    )
+    markdown_path.write_text(format_turn_claim_markdown(report), encoding="utf-8")
+    text_path.write_text(format_turn_claim_text(report), encoding="utf-8")
+    limits_path.write_text(format_turn_claim_limits_markdown(report), encoding="utf-8")
+    _write_json_report(claim_path, report)
+    return report
+
+
 def write_turn_certification_outputs(target: Path | str, report: dict[str, Any]) -> None:
     target_path = Path(target)
     target_path.mkdir(parents=True, exist_ok=True)
@@ -4691,6 +4747,10 @@ def write_turn_certification_outputs(target: Path | str, report: dict[str, Any])
     suggestions_markdown_path = target_path / "suggestions.md"
     certification_path = target_path / "certification.json"
     certification_markdown_path = target_path / "certification.md"
+    claim_path = target_path / "claim.json"
+    claim_markdown_path = target_path / "claim.md"
+    claim_text_path = target_path / "claim.txt"
+    claim_limits_path = target_path / "limits.md"
 
     if evaluation:
         _write_turn_evaluation_outputs(evaluation_dir, evaluation)
@@ -4717,6 +4777,10 @@ def write_turn_certification_outputs(target: Path | str, report: dict[str, Any])
             "gate_markdown": str(gate_markdown_path),
             "suggestions": str(suggestions_path),
             "suggestions_markdown": str(suggestions_markdown_path),
+            "claim": str(claim_path),
+            "claim_markdown": str(claim_markdown_path),
+            "claim_text": str(claim_text_path),
+            "claim_limits": str(claim_limits_path),
         }
     )
 
@@ -4728,6 +4792,8 @@ def write_turn_certification_outputs(target: Path | str, report: dict[str, Any])
     _write_json_report(suggestions_path, suggestions)
     certification_markdown_path.write_text(format_turn_certification_markdown(report), encoding="utf-8")
     _write_json_report(certification_path, report)
+    claim = build_turn_claim(certification_path, evidence_label=str(certification_path))
+    write_turn_claim_outputs(target_path, claim)
 
 
 def _write_turn_evaluation_outputs(target: Path, report: dict[str, Any]) -> None:

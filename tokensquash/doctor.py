@@ -32,6 +32,10 @@ STRICT_CERTIFICATION_FILES = (
     "gate.md",
     "suggestions.json",
     "suggestions.md",
+    "claim.json",
+    "claim.md",
+    "claim.txt",
+    "limits.md",
     "evaluation/evaluation.json",
     "evaluation/measure.json",
     "evaluation/diagnose.json",
@@ -423,6 +427,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         "turns release-check",
         "turns verify-release",
         "turns claim",
+        "turns claim-pack",
         "sidecar certify",
     }
     missing_schemas = sorted(required_schemas - schemas)
@@ -576,6 +581,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Token savings alone are not success",
             "claims policy",
             "turns claim",
+            "turns claim-pack",
         ],
         "docs/claims-policy.md": [
             "Claims Policy",
@@ -585,6 +591,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Sidecar Claims",
             "Commercial Claims",
             "turns claim",
+            "turns claim-pack",
             "Token savings alone are not success",
             "deterministic `ts1` and `tr1` codecs remain the source of truth",
             PUBLIC_LICENSE_NAME,

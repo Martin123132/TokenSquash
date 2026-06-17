@@ -88,14 +88,16 @@ python -m tokensquash turns release-check private-turns\real.redacted-turns.json
 python -m tokensquash turns claim private-turns\certification\certification.json --corpus-label "redacted local turn corpus"
 python -m tokensquash turns claim private-turns\certification\certification.json --claim-only --fail-on-unsupported
 python -m tokensquash turns claim private-turns\certification\certification.json --limits-only
+python -m tokensquash turns claim-pack private-turns\certification --out-dir private-turns\claim-pack --fail-on-unsupported
 ```
 
 For public examples, use public or redacted corpora. Keep raw prompts, replies,
 aliases, local model output, and customer material in ignored private storage.
 
 Use `--claim-only` when you need a copyable paragraph, `--limits-only` during
-release review, and `--fail-on-unsupported` when CI should fail unless the claim
-is supported by passed deterministic evidence.
+release review, `--fail-on-unsupported` when CI should fail unless the claim is
+supported by passed deterministic evidence, and `turns claim-pack` when a review
+needs `claim.json`, `claim.md`, `claim.txt`, and `limits.md` together.
 
 ## Sidecar Claims
 
@@ -115,6 +117,7 @@ Generate cautious wording from saved sidecar evidence with:
 ```powershell
 python -m tokensquash turns claim private-turns\sidecar-certification\certification.json --corpus-label "redacted local sidecar run"
 python -m tokensquash turns claim private-turns\sidecar-certification\certification.json --limits-only
+python -m tokensquash turns claim-pack private-turns\sidecar-certification --out-dir private-turns\sidecar-claim-pack
 ```
 
 Use [sidecar-meaning-rubric.md](sidecar-meaning-rubric.md) to classify pass,

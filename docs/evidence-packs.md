@@ -41,6 +41,7 @@ python -m tokensquash turns certify private-turns\real.redacted-turns.jsonl --co
 python -m tokensquash turns claim private-turns\certification\certification.json --corpus-label "redacted local turn corpus"
 python -m tokensquash turns claim private-turns\certification\certification.json --claim-only --fail-on-unsupported
 python -m tokensquash turns claim private-turns\certification\certification.json --limits-only
+python -m tokensquash turns claim-pack private-turns\certification --out-dir private-turns\claim-pack --fail-on-unsupported
 ```
 
 Certification writes:
@@ -50,6 +51,10 @@ Certification writes:
 - `report.json`
 - `gate.json`
 - `suggestions.json`
+- `claim.json`
+- `claim.md`
+- `claim.txt`
+- `limits.md`
 - nested deterministic evaluation artifacts
 
 ## Quality Budgets
