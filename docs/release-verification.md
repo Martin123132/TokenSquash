@@ -8,12 +8,15 @@ Future releases should stage their public assets from a verified
 release-candidate pack before upload:
 
 ```powershell
-$tag = "v0.2.0"
+$tag = "vX.Y.Z"
 python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md
 ```
 
 Review `private-turns\release-assets\release-assets.json` and the generated
-section below before re-running the same command with `--upload`.
+section below before re-running the same command with `--upload`. Use the
+intended next release tag; do not overwrite the tracked hash section for an
+already-published tag unless you are correcting that exact release evidence
+before upload.
 
 <!-- tokensquash-release-assets:start -->
 ## v0.2.0 Assets

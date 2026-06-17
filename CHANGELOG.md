@@ -9,7 +9,18 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- `turns claim-pack` now writes public-safe claim review bundles with
+  `claim.json`, `claim.md`, `claim.txt`, and `limits.md`.
+- `turns certify` now writes claim artifacts beside the certification pack so
+  release reviewers can inspect the supported public wording without running a
+  separate command.
+
+### Changed
+
+- Product manifest, strict doctor, readiness commands, claims docs, and
+  evidence-pack docs now include the claim-pack workflow.
 
 ## [0.2.0] - 2026-06-17
 

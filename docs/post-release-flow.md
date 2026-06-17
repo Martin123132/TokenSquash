@@ -9,11 +9,13 @@ page aligned.
 Check the tag and CI run:
 
 ```powershell
-gh release view v0.1.0 --repo Martin123132/TokenSquash --json tagName,isDraft,isPrerelease,publishedAt,assets,url
-gh run view 27437873313 --repo Martin123132/TokenSquash --json status,conclusion,jobs
+$tag = "vX.Y.Z"
+$run = "1234567890"
+gh release view $tag --repo Martin123132/TokenSquash --json tagName,isDraft,isPrerelease,publishedAt,assets,url
+gh run view $run --repo Martin123132/TokenSquash --json status,conclusion,jobs
 ```
 
-For a new release, use the actual tag and run id. The release should have:
+Use the actual published tag and run id. The release should have:
 
 - a non-draft GitHub Release
 - successful `unittest (3.10)`, `unittest (3.13)`, and `exact-tokenizer` jobs
@@ -29,7 +31,7 @@ For a new release, use the actual tag and run id. The release should have:
 Stage public assets from the verified local release-candidate pack:
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --ci-run 27437873313 --json
+python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --ci-run $run --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
 ```
 
@@ -44,7 +46,7 @@ Only upload after reviewing the staged report and generated verification
 section:
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.1.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --ci-run 27437873313 --upload
+python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --ci-run $run --upload
 ```
 
 ## 3. Update Release Notes
@@ -60,9 +62,8 @@ draft. Record:
 - release attestation evidence hash
 - link to `docs/release-verification.md`
 
-For `v0.1.0`, the tracked notes are
-`docs/release-notes-v0.1.0.md`. Future releases can use the same shape with a
-new file or a versioned section.
+For a new release, keep the tracked notes in a matching versioned file such as
+`docs/release-notes-vX.Y.Z.md`.
 
 ## 4. Update Changelog
 
@@ -81,12 +82,16 @@ instead of implying codec behavior changed.
 Download the release assets into ignored storage and compare hashes:
 
 ```powershell
-gh release download v0.1.0 --repo Martin123132/TokenSquash --dir private-turns\download-v0.1.0
-Get-FileHash private-turns\download-v0.1.0\tokensquash-0.1.0-py3-none-any.whl -Algorithm SHA256
-Get-FileHash private-turns\download-v0.1.0\tokensquash-0.1.0.tar.gz -Algorithm SHA256
-Get-FileHash private-turns\download-v0.1.0\release-attestation.json -Algorithm SHA256
-Get-FileHash private-turns\download-v0.1.0\artifact-manifest.json -Algorithm SHA256
-Get-FileHash private-turns\download-v0.1.0\verify-release-candidate.json -Algorithm SHA256
+$tag = "vX.Y.Z"
+$version = "X.Y.Z"
+gh release download $tag --repo Martin123132/TokenSquash --dir private-turns\download-$tag
+Get-FileHash private-turns\download-$tag\tokensquash-$version-py3-none-any.whl -Algorithm SHA256
+Get-FileHash private-turns\download-$tag\tokensquash-$version.tar.gz -Algorithm SHA256
+Get-FileHash private-turns\download-$tag\release-attestation.json -Algorithm SHA256
+Get-FileHash private-turns\download-$tag\artifact-manifest.json -Algorithm SHA256
+Get-FileHash private-turns\download-$tag\scorecard-pack.json -Algorithm SHA256
+Get-FileHash private-turns\download-$tag\scorecard.json -Algorithm SHA256
+Get-FileHash private-turns\download-$tag\verify-release-candidate.json -Algorithm SHA256
 ```
 
 Each hash should match `docs/release-verification.md`.
@@ -96,7 +101,8 @@ Each hash should match `docs/release-verification.md`.
 Once the tracked release notes are final, update the GitHub Release body:
 
 ```powershell
-gh release edit v0.1.0 --repo Martin123132/TokenSquash --notes-file docs\release-notes-v0.1.0.md
+$tag = "vX.Y.Z"
+gh release edit $tag --repo Martin123132/TokenSquash --notes-file docs\release-notes-vX.Y.Z.md
 ```
 
 Use the release page for concise public context and the tracked docs for the

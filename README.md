@@ -47,6 +47,10 @@ For local health and governance checks:
 python -m tokensquash doctor --strict
 ```
 
+A typical public demo result should report `pass`, `5` sample turns, no privacy
+findings, and a measured saved percent. The exact number depends on the counter;
+with the `chars` counter the current packaged sample reports `20.6091%` saved.
+
 ## Small Example
 
 Encode a normal coding-agent request:
@@ -110,7 +114,7 @@ The detailed evidence bar is in the [claims policy](docs/claims-policy.md).
 
 ## Main Workflows
 
-Start here:
+Most readers only need these:
 
 - [Quickstart](docs/quickstart.md): first commands and expected outputs.
 - [Real turn workflow](docs/real-turn-workflow.md): capture, redact, report,
@@ -124,16 +128,14 @@ Start here:
   `turns claim-pack` output.
 - [Release candidate workflow](docs/release-candidate.md): build and verify
   wheel/source-distribution evidence before publishing.
+
+Deeper docs:
+
 - [Release checklist](docs/release-checklist.md): manual release runbook.
 - [Release verification](docs/release-verification.md): inspect published
   assets, hashes, attestations, and packaged license evidence.
-- [v0.2.0 release notes](docs/release-notes-v0.2.0.md): scorecard evidence,
-  release assets, CI evidence, and known limits.
-- [v0.1.1 release notes](docs/release-notes-v0.1.1.md): public-polish patch
-  scope and release evidence contract.
 - [Post-release flow](docs/post-release-flow.md): keep release notes,
   changelog, GitHub Release text, and verification hashes aligned.
-- [Changelog](CHANGELOG.md): user-facing change history.
 - [Sidecar Ollama workflow](docs/sidecar-ollama.md): experimental local-AI
   semantic translation.
 - [Sidecar meaning rubric](docs/sidecar-meaning-rubric.md): pass/watch/fail
@@ -141,6 +143,14 @@ Start here:
 - [Commercial license guide](docs/commercial-license.md): plain-language
   commercial-use boundaries and contact path.
 - [Roadmap](ROADMAP.md): public product direction and evidence bar.
+- [Changelog](CHANGELOG.md): user-facing change history.
+
+Release notes and planning records:
+
+- [v0.2.0 release notes](docs/release-notes-v0.2.0.md): scorecard evidence,
+  release assets, CI evidence, and known limits.
+- [v0.1.1 release notes](docs/release-notes-v0.1.1.md): public-polish patch
+  scope and release evidence contract.
 - [v0.1.1 plan](docs/v0.1.1-plan.md): next patch-release scope.
 - [v0.2.0 plan](docs/v0.2.0-plan.md): real-corpus scorecard and evidence
   milestones.

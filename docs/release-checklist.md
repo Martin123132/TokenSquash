@@ -7,9 +7,13 @@ candidate. It assumes the release is being prepared from `main`.
 
 - Read `CHANGELOG.md` and move any completed items from `Unreleased` into the
   target version section.
-- Review `docs/release-notes-v0.2.0.md` and confirm the release evidence
-  contract matches the final release process.
+- Review the target release notes and confirm the release evidence contract
+  matches the final release process.
+- Use `docs/release-notes-v0.2.0.md` as the latest completed release-notes
+  example when preparing the next versioned notes file.
 - Confirm `pyproject.toml` contains the intended package version.
+- Confirm the intended GitHub tag has not already been published. Do not reuse
+  a published tag when staging new release assets from current `main`.
 - Confirm the README still describes the current command surface accurately.
 - Confirm the project-owner-approved `LICENSE` and `COMMERCIAL-LICENSE.md`
   files match the intended non-commercial and commercial-use terms before any
@@ -36,6 +40,7 @@ The `release-info` command must report:
 Use this command block for a clean local release-prep pass:
 
 ```powershell
+$tag = "vX.Y.Z"
 python -m pip install -e ".[tokenizer]"
 python -m unittest discover -s tests
 python -m tokensquash doctor --strict --strict-out-dir private-turns\doctor-release
@@ -45,7 +50,7 @@ python -m tokensquash verify-readiness private-turns\readiness-release --require
 python -m tokensquash release-info --require-clean --json
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.2.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
 ```
 
@@ -64,9 +69,10 @@ All commands above must pass before building release-candidate evidence.
 ## 4. Build Release-Candidate Evidence
 
 ```powershell
+$tag = "vX.Y.Z"
 python -m tokensquash release-candidate --require-clean --out-dir private-turns\release-candidate --json
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.2.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
 ```
 
@@ -131,8 +137,8 @@ Only tag or publish after local and GitHub release evidence both pass.
 Suggested local tag command:
 
 ```powershell
-& 'D:\Apps\Git\cmd\git.exe' tag -a v0.2.0 -m "TokenSquash v0.2.0"
-& 'D:\Apps\Git\cmd\git.exe' push origin v0.2.0
+& 'D:\Apps\Git\cmd\git.exe' tag -a $tag -m "TokenSquash $tag"
+& 'D:\Apps\Git\cmd\git.exe' push origin $tag
 ```
 
 Do not publish to PyPI until a dedicated publishing workflow, credentials, and
@@ -150,7 +156,7 @@ post-release update and verification sequence.
   `release-attestation.json`, `artifact-manifest.json`, `scorecard-pack.json`,
   `scorecard.json`, and `verify-release-candidate.json`.
 - Prefer `python -m tokensquash release-assets private-turns\release-candidate
-  --tag <tag> --update-verification-doc docs\release-verification.md --upload`
+  --tag $tag --update-verification-doc docs\release-verification.md --upload`
   for the upload after reviewing the staged `release-assets.json` report and
   generated verification doc section.
 - Update `docs/release-verification.md` with the final published asset hashes.

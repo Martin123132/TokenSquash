@@ -51,9 +51,14 @@ that status while verifying that the evidence files are present and hashed.
 ## Stage Public Release Assets
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.2.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
+$tag = "vX.Y.Z"
+python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --out private-turns\release-assets\release-assets.verify.json --json
 ```
+
+Use the intended next release tag. Do not use a tag that has already been
+published unless you are deliberately regenerating evidence for that exact
+release before upload.
 
 Review:
 
@@ -77,7 +82,7 @@ The staged public assets should include:
 Only upload after local and GitHub evidence both pass:
 
 ```powershell
-python -m tokensquash release-assets private-turns\release-candidate --tag v0.2.0 --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --upload
+python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --upload
 ```
 
 `--upload` runs the generated `gh release upload` command. Keep it explicit and
