@@ -492,6 +492,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "docs/quickstart.md",
             "docs/real-turn-workflow.md",
             "docs/evidence-packs.md",
+            "docs/claims-policy.md",
             "docs/release-candidate.md",
             "docs/release-checklist.md",
             "docs/release-notes-v0.1.0.md",
@@ -571,6 +572,19 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Release Candidate Evidence",
             "Sidecar Evidence",
             "Token savings alone are not success",
+            "claims policy",
+        ],
+        "docs/claims-policy.md": [
+            "Claims Policy",
+            "Supported Claims",
+            "Unsupported Claims",
+            "Evidence Requirements",
+            "Sidecar Claims",
+            "Commercial Claims",
+            "Token savings alone are not success",
+            "deterministic `ts1` and `tr1` codecs remain the source of truth",
+            PUBLIC_LICENSE_NAME,
+            LICENSOR,
         ],
         "docs/release-candidate.md": [
             "Release Candidate Workflow",
@@ -677,6 +691,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "sidecar review",
             "Token savings alone are not success",
             "deterministic `ts1` and `tr1` codecs remain the source of truth",
+            "claims policy",
         ],
         "docs/commercial-license.md": [
             "Commercial License Guide",
@@ -685,6 +700,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Glyn Evans",
             "glyn@twohandsnetwork.co.uk",
             "No commercial license is granted",
+            "claims policy",
         ],
         "docs/v0.1.1-plan.md": [
             "TokenSquash v0.1.1 Plan",

@@ -106,6 +106,8 @@ Raw corpora, real prompts, replies, local model output, private aliases, and
 release evidence stay in ignored local storage such as `private-turns/`,
 `private-prompts/`, and `private-aliases/`.
 
+The detailed evidence bar is in the [claims policy](docs/claims-policy.md).
+
 ## Main Workflows
 
 Start here:
@@ -117,6 +119,8 @@ Start here:
   local measurement pass.
 - [Evidence packs](docs/evidence-packs.md): readiness, certification, quality
   budgets, release checks, and verification reports.
+- [Claims policy](docs/claims-policy.md): what TokenSquash can say publicly and
+  which evidence each claim needs.
 - [Release candidate workflow](docs/release-candidate.md): build and verify
   wheel/source-distribution evidence before publishing.
 - [Release checklist](docs/release-checklist.md): manual release runbook.

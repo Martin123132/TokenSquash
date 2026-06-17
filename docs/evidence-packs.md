@@ -4,6 +4,9 @@ TokenSquash evidence packs make results repeatable. They are local folders or
 JSON reports that preserve inputs, thresholds, summaries, warnings, gates, and
 verification status.
 
+Use the [claims policy](claims-policy.md) before quoting savings publicly. The
+claim should name the evidence pack, counter, corpus, limits, and warnings.
+
 ## Product Readiness
 
 ```powershell

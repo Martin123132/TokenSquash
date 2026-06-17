@@ -42,6 +42,10 @@ Before an organization spends heavily on repeated agent traffic, it can measure
 which workflow language can be compacted, which rows should pass through, which
 meaning risks appear, and which claims are supported by evidence.
 
+Any public or commercial evaluation claim should follow the
+[claims policy](claims-policy.md): name the corpus, counter, evidence pack,
+warnings, and limits.
+
 ## Request Details
 
 Commercial license requests should include:

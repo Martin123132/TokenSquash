@@ -91,4 +91,5 @@ and failure counts support the result.
 Public notes should describe sidecar results as experimental unless the saved
 evaluation, review, gate, and certification evidence all support the claim. Do
 not claim production-scale savings from synthetic data or from a corpus whose
-decoded meaning has not been reviewed.
+decoded meaning has not been reviewed. Use the [claims policy](claims-policy.md)
+for the required evidence before making public sidecar claims.

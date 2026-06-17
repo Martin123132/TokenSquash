@@ -557,6 +557,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("docs/quickstart.md", governance_paths)
         self.assertIn("docs/real-turn-workflow.md", governance_paths)
         self.assertIn("docs/evidence-packs.md", governance_paths)
+        self.assertIn("docs/claims-policy.md", governance_paths)
         self.assertIn("docs/release-candidate.md", governance_paths)
         self.assertIn("docs/release-checklist.md", governance_paths)
         self.assertIn("docs/release-notes-v0.1.0.md", governance_paths)

@@ -197,6 +197,7 @@ GOVERNANCE_DOCUMENTS = [
     {"path": "docs/quickstart.md", "purpose": "First commands, demo output shape, and health-check workflow."},
     {"path": "docs/real-turn-workflow.md", "purpose": "Private turn capture, redaction, reporting, gating, and certification workflow."},
     {"path": "docs/evidence-packs.md", "purpose": "Readiness, certification, quality-budget, release, and sidecar evidence packs."},
+    {"path": "docs/claims-policy.md", "purpose": "Public claims boundary and required evidence for savings, sidecar, release, and commercial claims."},
     {"path": "docs/release-candidate.md", "purpose": "Release-candidate build, verification, asset staging, and upload workflow."},
     {"path": "docs/release-checklist.md", "purpose": "Manual release runbook and evidence checklist."},
     {"path": "docs/release-notes-v0.1.0.md", "purpose": "Published v0.1.0 scope, evidence, and release notes."},

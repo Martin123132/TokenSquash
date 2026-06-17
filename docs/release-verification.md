@@ -62,11 +62,22 @@ Release evidence:
 
 ```powershell
 gh release download v0.2.0 --repo Martin123132/TokenSquash --dir private-turns\download-v0.2.0
-python -m tokensquash release-assets verify private-turns\release-assets\release-assets.json --asset-dir private-turns\download-v0.2.0 --json
+python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --asset-dir private-turns\download-v0.2.0 --json
 ```
 
 `private-turns/` is ignored local storage, so downloaded release evidence should
 not be committed back to the repository.
+
+Final public check on 2026-06-17:
+
+- downloaded the published `v0.2.0` GitHub Release assets into
+  `private-turns\download-v0.2.0-public`
+- ran `python -m tokensquash verify-release-assets private-turns\release-assets-v0.2.0-upload\release-assets.json --asset-dir private-turns\download-v0.2.0-public --json`
+- result: `pass`, with 7 assets verified, 0 failed checks, and 0 warnings
+- installed the downloaded wheel in
+  `private-turns\verify-v0.2.0-public-venv`
+- ran `python -m tokensquash about --json` and
+  `python -m tokensquash demo --counter chars --json` from that installed wheel
 
 ## Check Hashes
 
