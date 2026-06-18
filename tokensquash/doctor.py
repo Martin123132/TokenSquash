@@ -658,7 +658,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
         ],
         "docs/release-notes-v0.2.1.md": [
             "TokenSquash v0.2.1 Release Notes",
-            "Status: release candidate prepared",
+            "Status: released",
             "claim-pack workflow",
             "turns claim-pack",
             "turns certify",

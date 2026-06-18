@@ -179,12 +179,11 @@ Release notes and planning records:
 The first source-available release is published as
 [TokenSquash v0.1.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.0).
 The latest release is
+[TokenSquash v0.2.1](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.1).
+The previous release is
 [TokenSquash v0.2.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.0).
-The previous public-polish release is
+The earlier public-polish release is
 [TokenSquash v0.1.1](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.1).
-The current source tree is preparing
-[TokenSquash v0.2.1](docs/release-notes-v0.2.1.md), but it is not published
-until the release tag, assets, and verification doc are finalized.
 
 Releases include a wheel, source distribution, artifact manifest,
 release attestation, and release-candidate verifier output. The tracked

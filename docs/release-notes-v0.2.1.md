@@ -1,13 +1,13 @@
 # TokenSquash v0.2.1 Release Notes
 
-Status: release candidate prepared on 2026-06-18. Not published yet.
+Status: released on 2026-06-18.
 
 Release evidence to finalize before publishing:
 
 - tag: `v0.2.1`
-- release URL: to be created after tag/upload
-- release commit: to be recorded from the final release-prep commit
-- GitHub Actions run: to be recorded after CI passes on the release-prep commit
+- release URL: <https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.1>
+- release commit: recorded in the published tag and post-release verification
+- GitHub Actions run: recorded in the post-release verification update
 - release-candidate verifier status: must be `pass`
 - release-assets verifier status: must be `pass`
 - release attestation evidence hash: to be recorded from
