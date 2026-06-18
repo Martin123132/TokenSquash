@@ -9,6 +9,10 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.2.1] - 2026-06-18
+
 ### Added
 
 - `turns claim-pack` now writes public-safe claim review bundles with

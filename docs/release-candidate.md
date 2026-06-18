@@ -104,5 +104,6 @@ After pushing a release-prep commit, confirm the `tests` workflow passes:
 - [release-checklist.md](release-checklist.md)
 - [release-verification.md](release-verification.md)
 - [post-release-flow.md](post-release-flow.md)
+- [release-notes-v0.2.1.md](release-notes-v0.2.1.md)
 - [release-notes-v0.2.0.md](release-notes-v0.2.0.md)
 - [release-notes-v0.1.1.md](release-notes-v0.1.1.md)
