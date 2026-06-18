@@ -217,6 +217,10 @@ GOVERNANCE_DOCUMENTS = [
     {"path": "docs/commercial-license.md", "purpose": "Plain-language commercial-use boundary and license request guide."},
     {"path": "docs/v0.1.1-plan.md", "purpose": "Next patch-release scope, acceptance checklist, and out-of-scope guardrails."},
     {"path": "docs/v0.2.0-plan.md", "purpose": "Real-corpus scorecard, sidecar meaning, milestone, and release-tag comparison plan."},
+    {
+        "path": "docs/v0.3.0-plan.md",
+        "purpose": "Larger real-corpus trend evidence, sidecar review, claim guardrails, and public release verification plan.",
+    },
     {"path": ".github/PULL_REQUEST_TEMPLATE.md", "purpose": "Pull-request verification and privacy checklist."},
     {"path": ".github/ISSUE_TEMPLATE/config.yml", "purpose": "Issue-template routing and private contact links."},
     {"path": ".github/ISSUE_TEMPLATE/bug_report.yml", "purpose": "Public-safe bug report form."},

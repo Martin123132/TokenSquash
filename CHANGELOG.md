@@ -9,7 +9,11 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- `docs/v0.3.0-plan.md` now defines the next development track for larger
+  real-corpus trend evidence, sidecar meaning review, claim guardrails, and
+  public release verification.
 
 ## [0.2.1] - 2026-06-18
 

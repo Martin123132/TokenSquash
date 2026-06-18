@@ -156,6 +156,8 @@ Release notes and planning records:
 - [v0.1.1 plan](docs/v0.1.1-plan.md): next patch-release scope.
 - [v0.2.0 plan](docs/v0.2.0-plan.md): real-corpus scorecard and evidence
   milestones.
+- [v0.3.0 plan](docs/v0.3.0-plan.md): larger real-corpus trend evidence,
+  sidecar meaning review, claim guardrails, and public release verification.
 
 ## Current Scope
 

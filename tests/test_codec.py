@@ -580,6 +580,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("docs/commercial-license.md", governance_paths)
         self.assertIn("docs/v0.1.1-plan.md", governance_paths)
         self.assertIn("docs/v0.2.0-plan.md", governance_paths)
+        self.assertIn("docs/v0.3.0-plan.md", governance_paths)
         self.assertIn(".github/PULL_REQUEST_TEMPLATE.md", governance_paths)
         self.assertIn(".github/ISSUE_TEMPLATE/config.yml", governance_paths)
         self.assertIn(".github/ISSUE_TEMPLATE/bug_report.yml", governance_paths)
