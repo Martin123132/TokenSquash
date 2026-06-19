@@ -29,6 +29,9 @@ prompt/reply files under `private-turns/`.
 
 ## I Have One Real Prompt And Reply
 
+First replace `private-turns\prompt.example.txt` and
+`private-turns\reply.example.txt` with one real prompt/reply pair.
+
 ```powershell
 python -m tokensquash turns first-run --prompt-file private-turns\prompt.example.txt --reply-file private-turns\reply.example.txt
 ```

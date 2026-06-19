@@ -11,6 +11,7 @@ from .aliases import AliasTable, learn_reply_aliases, write_alias_table
 from .corpus import redact_text, scan_privacy
 from .metrics import benchmark_prompts, benchmark_replies, count_tokens
 from .mining import mine_reply_patterns
+from .workspace import STARTER_PROMPT_TEXT, STARTER_REPLY_TEXT
 
 
 PROMPT_KEYS = ("prompt", "input", "request", "user", "human", "text")
@@ -311,6 +312,7 @@ def first_run_turn_workflow(
     """Capture one real turn and write a beginner-friendly evidence bundle."""
 
     started = time.time()
+    _validate_first_run_inputs(prompt, reply)
     target_dir = Path(out_dir)
     evaluation_dir = target_dir / "evaluation"
     capture = capture_turn_record(
@@ -4789,6 +4791,15 @@ def _first_run_status(capture: dict[str, Any], scorecard: dict[str, Any]) -> str
     if scorecard_status in {"pass", "watch", "warn", "empty"}:
         return str(scorecard_status)
     return "fail"
+
+
+def _validate_first_run_inputs(prompt: str, reply: str) -> None:
+    starter_prompt = _clean_text(STARTER_PROMPT_TEXT)
+    starter_reply = _clean_text(STARTER_REPLY_TEXT)
+    if _clean_text(prompt) == starter_prompt or _clean_text(reply) == starter_reply:
+        raise ValueError(
+            "starter prompt/reply files still contain placeholder text; replace both files with a real prompt and reply"
+        )
 
 
 def _first_run_next_commands(redacted_output_path: Path | str, *, out_dir: Path | str) -> dict[str, str]:

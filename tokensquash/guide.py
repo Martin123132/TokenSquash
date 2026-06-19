@@ -21,11 +21,15 @@ _GUIDE_PATHS: list[dict[str, Any]] = [
         "id": "first-turn",
         "title": "Capture your first real prompt/reply turn",
         "best_for": "One pasted prompt and one pasted assistant reply kept in ignored local storage.",
-        "first_command": (
-            "python -m tokensquash turns first-run "
-            "--prompt-file private-turns/prompt.example.txt --reply-file private-turns/reply.example.txt"
-        ),
+        "first_command": "python -m tokensquash init",
+        "notes": [
+            "Replace private-turns/prompt.example.txt and private-turns/reply.example.txt with one real turn before capture.",
+        ],
         "next_commands": [
+            (
+                "python -m tokensquash turns first-run "
+                "--prompt-file private-turns/prompt.example.txt --reply-file private-turns/reply.example.txt"
+            ),
             "python -m tokensquash turns scorecard private-turns/real.redacted-turns.jsonl",
             "python -m tokensquash turns certify private-turns/real.redacted-turns.jsonl",
         ],
@@ -116,8 +120,13 @@ def format_command_guide_markdown(report: dict[str, Any]) -> str:
             lines.extend(["", "Next commands:"])
             for command in next_commands:
                 lines.append(f"- `{command}`")
+        notes = item.get("notes") or []
+        if notes:
+            lines.extend(["", "Notes:"])
+            for note in notes:
+                lines.append(f"- {note}")
         if item.get("docs"):
-            lines.append(f"- Docs: `{item.get('docs')}`")
+            lines.extend(["", "Docs:", f"- `{item.get('docs')}`"])
         lines.append("")
 
     docs = report.get("docs") or {}

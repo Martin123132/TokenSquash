@@ -61,12 +61,16 @@ files under `private-turns/` for the first real turn workflow.
 
 ## Capture A First Real Turn
 
+Replace the contents of `private-turns\prompt.example.txt` and
+`private-turns\reply.example.txt` with one real prompt/reply pair first.
+
 ```powershell
 python -m tokensquash turns first-run --prompt-file private-turns\prompt.example.txt --reply-file private-turns\reply.example.txt
 ```
 
 `turns first-run` captures the raw turn locally, regenerates the redacted
-corpus, evaluates it, writes a scorecard, and prints next commands.
+corpus, evaluates it, writes a scorecard, and prints next commands. It refuses
+the unchanged starter placeholder text.
 
 ## Encode And Decode A Prompt
 

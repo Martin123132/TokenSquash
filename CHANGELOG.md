@@ -16,6 +16,8 @@ is produced locally and in GitHub Actions.
   public release verification.
 - `guide`, `turns first-run`, `docs/command-map.md`, and starter private
   templates from `init` make the first-use path easier to follow.
+- `turns first-run` now refuses unchanged starter placeholder text and the
+  first-use docs make the edit-before-capture step explicit.
 
 ## [0.2.1] - 2026-06-18
 

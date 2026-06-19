@@ -29,6 +29,11 @@ reply files under `private-turns/`.
 
 ## First Real Turn
 
+Replace the starter files with one real prompt/reply pair:
+
+- `private-turns\prompt.example.txt`
+- `private-turns\reply.example.txt`
+
 ```powershell
 python -m tokensquash turns first-run --prompt-file private-turns\prompt.example.txt --reply-file private-turns\reply.example.txt
 ```

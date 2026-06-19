@@ -6,6 +6,8 @@ from typing import Any
 
 WORKSPACE_INIT_SCHEMA_VERSION = "tokensquash.workspace.init.v1"
 PRIVATE_DIRECTORIES = ("private-turns", "private-prompts", "private-aliases")
+STARTER_PROMPT_TEXT = "Paste one human prompt here before running turns first-run.\n"
+STARTER_REPLY_TEXT = "Paste the matching assistant reply here before running turns first-run.\n"
 WORKSPACE_TEMPLATES = {
     "private-turns/README.md": """# Private TokenSquash Turns
 
@@ -19,8 +21,8 @@ First real turn:
 python -m tokensquash turns first-run --prompt-file private-turns\\prompt.example.txt --reply-file private-turns\\reply.example.txt
 ```
 """,
-    "private-turns/prompt.example.txt": "Paste one human prompt here before running turns first-run.\n",
-    "private-turns/reply.example.txt": "Paste the matching assistant reply here before running turns first-run.\n",
+    "private-turns/prompt.example.txt": STARTER_PROMPT_TEXT,
+    "private-turns/reply.example.txt": STARTER_REPLY_TEXT,
 }
 GITIGNORE_PATTERNS = (
     "prompts/",

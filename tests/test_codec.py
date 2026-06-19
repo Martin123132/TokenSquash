@@ -83,7 +83,7 @@ from tokensquash.turns import (
     write_turn_claim_pack,
     write_turn_scorecard_pack,
 )
-from tokensquash.workspace import initialize_workspace
+from tokensquash.workspace import STARTER_PROMPT_TEXT, STARTER_REPLY_TEXT, initialize_workspace
 
 
 class TokenSquashCodecTests(unittest.TestCase):
@@ -484,7 +484,9 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["schema_version"], "tokensquash.guide.v1")
         self.assertEqual(report["status"], "pass")
         self.assertEqual(report["paths"][0]["id"], "first-turn")
-        self.assertIn("turns first-run", report["paths"][0]["first_command"])
+        self.assertEqual(report["paths"][0]["first_command"], "python -m tokensquash init")
+        self.assertTrue(any("turns first-run" in item for item in report["paths"][0]["next_commands"]))
+        self.assertTrue(any("placeholder" in item or "Replace" in item for item in report["paths"][0]["notes"]))
 
         stdout = StringIO()
         with redirect_stdout(stdout):
@@ -493,6 +495,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         output = stdout.getvalue()
         self.assertEqual(code, 0)
         self.assertIn("# TokenSquash Guide", output)
+        self.assertIn("python -m tokensquash init", output)
         self.assertIn("turns first-run", output)
 
         json_stdout = StringIO()
@@ -3374,6 +3377,26 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "first-run.md").exists())
             self.assertIn("turns certify", report["commands"]["certify"])
             self.assertIn(str(out_dir.parent / "certification"), report["commands"]["certify"])
+
+    def test_first_run_turn_workflow_rejects_unedited_starter_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            out_dir = Path(tmp) / "private-turns" / "first-run"
+
+            with self.assertRaisesRegex(ValueError, "placeholder text"):
+                first_run_turn_workflow(
+                    prompt=STARTER_PROMPT_TEXT,
+                    reply=STARTER_REPLY_TEXT,
+                    raw_output_path=raw,
+                    redacted_output_path=redacted,
+                    out_dir=out_dir,
+                    counter="chars",
+                )
+
+            self.assertFalse(raw.exists())
+            self.assertFalse(redacted.exists())
+            self.assertFalse(out_dir.exists())
 
     def test_turns_first_run_cli_accepts_prompt_and_reply_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

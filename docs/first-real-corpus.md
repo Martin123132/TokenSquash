@@ -24,7 +24,8 @@ Start by preparing the ignored local folders:
 python -m tokensquash init
 ```
 
-For the first prompt/reply pair, use the starter files from `init`:
+For the first prompt/reply pair, replace the starter files from `init` with
+one real prompt/reply pair, then run:
 
 ```powershell
 python -m tokensquash turns first-run --prompt-file private-turns\prompt.example.txt --reply-file private-turns\reply.example.txt
