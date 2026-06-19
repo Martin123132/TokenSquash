@@ -117,6 +117,7 @@ The detailed evidence bar is in the [claims policy](docs/claims-policy.md).
 Most readers only need these:
 
 - [Quickstart](docs/quickstart.md): first commands and expected outputs.
+- [Command map](docs/command-map.md): choose the right command for the job.
 - [Real turn workflow](docs/real-turn-workflow.md): capture, redact, report,
   gate, certify, and compare private prompt/reply turns.
 - [First real corpus guide](docs/first-real-corpus.md): a focused 10-turn

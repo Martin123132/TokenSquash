@@ -25,6 +25,7 @@ from .corpus import (
 )
 from .demo import DEFAULT_DEMO_CORPUS, format_demo_markdown, run_demo, write_demo_outputs
 from .doctor import format_doctor_markdown, run_doctor
+from .guide import build_command_guide, format_command_guide_markdown
 from .metrics import (
     benchmark_replies,
     benchmark_prompts,
@@ -101,6 +102,7 @@ from .turns import (
     compare_turn_scorecards,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
+    first_run_turn_workflow,
     format_turn_alias_impact_markdown,
     format_turn_add_markdown,
     format_turn_benchmark_markdown,
@@ -112,6 +114,7 @@ from .turns import (
     format_turn_claim_markdown,
     format_turn_claim_text,
     format_turn_diagnose_markdown,
+    format_turn_first_run_markdown,
     format_turn_report_markdown,
     format_turn_report_compare_markdown,
     format_turn_gate_markdown,
@@ -201,9 +204,19 @@ def main(argv: list[str] | None = None) -> int:
     init.add_argument("--root", type=Path, default=Path("."), help="Workspace root to initialize.")
     init.add_argument("--dry-run", action="store_true", help="Show planned setup without writing files.")
     init.add_argument("--no-dirs", action="store_true", help="Do not create private workspace directories.")
+    init.add_argument("--no-templates", action="store_true", help="Do not create starter private prompt/reply templates.")
     init.add_argument("--no-gitignore", action="store_true", help="Do not create or update .gitignore.")
     init.add_argument("--out", type=Path, help="Write init report output to this file.")
     init.add_argument("--json", action="store_true", help="Print init JSON.")
+
+    guide = sub.add_parser("guide", help="Show beginner-friendly TokenSquash command paths.")
+    guide.add_argument(
+        "--path",
+        choices=("all", "demo", "first-turn", "corpus", "sidecar", "release"),
+        default="all",
+        help="Show all paths or one focused path.",
+    )
+    guide.add_argument("--json", action="store_true", help="Print guide JSON.")
 
     about = sub.add_parser("about", help="Show the TokenSquash product manifest.")
     about.add_argument("--out", type=Path, help="Write product manifest output to this file.")
@@ -670,6 +683,35 @@ def main(argv: list[str] | None = None) -> int:
     turns_capture.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
     turns_capture.add_argument("--json", action="store_true")
 
+    turns_first_run = turns_sub.add_parser(
+        "first-run",
+        help="Capture one real turn and write a beginner-friendly evidence bundle.",
+    )
+    turns_first_run.add_argument("--raw-out", type=Path, default=Path("private-turns/real.jsonl"))
+    turns_first_run.add_argument("--redacted-out", type=Path, default=Path("private-turns/real.redacted-turns.jsonl"))
+    turns_first_run.add_argument("--out-dir", type=Path, default=Path("private-turns/first-run"))
+    turns_first_run.add_argument("--id", dest="item_id", help="Optional stable turn id.")
+    turns_first_run.add_argument("--prompt", help="Human prompt text.")
+    turns_first_run.add_argument("--prompt-file", type=Path, help="File containing human prompt text.")
+    turns_first_run.add_argument("--reply", help="Assistant reply text.")
+    turns_first_run.add_argument("--reply-file", type=Path, help="File containing assistant reply text.")
+    turns_first_run.add_argument(
+        "--stdin",
+        action="store_true",
+        help="Read prompt and reply from stdin, separated by a line containing ---reply---.",
+    )
+    turns_first_run.add_argument("--status", choices=("done", "partial", "blocked", "failed"), help="Optional reply status.")
+    turns_first_run.add_argument("--summary", help="Optional reply summary.")
+    turns_first_run.add_argument("--changed-file", dest="files", action="append", default=[], help="Changed or relevant file.")
+    turns_first_run.add_argument("--verify", dest="verification", action="append", default=[], help="Verification result.")
+    turns_first_run.add_argument("--command", dest="commands", action="append", default=[], help="Command that was run.")
+    turns_first_run.add_argument("--risk", dest="risks", action="append", default=[], help="Risk or caveat.")
+    turns_first_run.add_argument("--next", dest="next_steps", action="append", default=[], help="Suggested next step.")
+    turns_first_run.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
+    turns_first_run.add_argument("--target", type=float, default=0.0, help="Target savings percentage.")
+    turns_first_run.add_argument("--limit", type=int, default=5, help="Rows or candidates to keep in the scorecard.")
+    turns_first_run.add_argument("--json", action="store_true")
+
     turns_report = turns_sub.add_parser("report", help="Generate a compact turn-corpus feedback report.")
     turns_report.add_argument("corpus", nargs="?", type=Path, default=Path("private-turns/real.redacted-turns.jsonl"))
     turns_report.add_argument("--counter", default="heuristic", help="heuristic, chars, char4, or tiktoken:<encoding>.")
@@ -1130,6 +1172,7 @@ def main(argv: list[str] | None = None) -> int:
             report = initialize_workspace(
                 args.root,
                 create_dirs=not args.no_dirs,
+                create_templates=not args.no_templates,
                 update_gitignore=not args.no_gitignore,
                 dry_run=args.dry_run,
             )
@@ -1139,6 +1182,12 @@ def main(argv: list[str] | None = None) -> int:
                 args.out.write_text(output, encoding="utf-8")
             print(output, end="")
             return 0 if report["status"] != "fail" else 1
+
+        if args.command == "guide":
+            report = build_command_guide(path=args.path)
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_command_guide_markdown(report)
+            print(output, end="")
+            return 0
 
         if args.command == "demo":
             report = run_demo(
@@ -1632,6 +1681,35 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     print(format_turn_capture_markdown(report), end="")
                 return 0 if report["status"] in {"written", "pass", "warn", "miss", "empty"} else 1
+            if args.turns_command == "first-run":
+                if args.stdin:
+                    prompt_text, reply_text = _read_capture_stdin(args)
+                else:
+                    prompt_text = args.prompt if args.prompt is not None else _read_required_text(args.prompt_file, "prompt")
+                    reply_text = args.reply if args.reply is not None else _read_required_text(args.reply_file, "reply")
+                report = first_run_turn_workflow(
+                    prompt=prompt_text,
+                    reply=reply_text,
+                    raw_output_path=args.raw_out,
+                    redacted_output_path=args.redacted_out,
+                    out_dir=args.out_dir,
+                    item_id=args.item_id,
+                    status=args.status,
+                    summary=args.summary,
+                    files=args.files,
+                    verification=args.verification,
+                    commands=args.commands,
+                    risks=args.risks,
+                    next_steps=args.next_steps,
+                    counter=args.counter,
+                    target_savings_pct=args.target,
+                    limit=args.limit,
+                )
+                if args.json:
+                    print(json.dumps(report, indent=2))
+                else:
+                    print(format_turn_first_run_markdown(report), end="")
+                return 0 if report["status"] in {"pass", "watch", "warn", "empty"} else 1
             if args.turns_command == "report":
                 report = report_turn_corpus(
                     args.corpus,

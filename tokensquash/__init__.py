@@ -8,6 +8,7 @@ from .codec import Intent, decode_intent, encode_intent, parse_wire
 from .corpus import corpus_stats, load_prompt_records, redact_corpus, validate_corpus
 from .demo import run_demo
 from .doctor import run_doctor
+from .guide import build_command_guide
 from .metrics import benchmark_prompts, benchmark_replies, compare_benchmarks, count_tokens, load_reply_records
 from .mining import mine_reply_patterns
 from .reply import AgentReply, decode_reply, encode_reply, parse_reply_wire
@@ -30,6 +31,7 @@ from .turns import (
     diagnose_turn_corpus,
     compare_turn_certifications,
     evaluate_turn_corpus,
+    first_run_turn_workflow,
     import_turn_corpus,
     learn_turn_aliases,
     load_turn_records,
@@ -55,6 +57,7 @@ __all__ = [
     "benchmark_replies",
     "benchmark_turns",
     "build_product_manifest",
+    "build_command_guide",
     "build_release_info",
     "build_turn_certification_history",
     "capture_turn_record",
@@ -68,6 +71,7 @@ __all__ = [
     "encode_intent",
     "encode_reply",
     "evaluate_turn_corpus",
+    "first_run_turn_workflow",
     "import_turn_corpus",
     "initialize_workspace",
     "initialize_quality_budget",

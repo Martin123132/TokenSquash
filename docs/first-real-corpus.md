@@ -24,6 +24,15 @@ Start by preparing the ignored local folders:
 python -m tokensquash init
 ```
 
+For the first prompt/reply pair, use the starter files from `init`:
+
+```powershell
+python -m tokensquash turns first-run --prompt-file private-turns\prompt.example.txt --reply-file private-turns\reply.example.txt
+```
+
+This writes the raw turn, regenerated redacted corpus, evaluation pack, and
+scorecard bundle in one command.
+
 Capture one turn at a time. Use inline text for short examples:
 
 ```powershell

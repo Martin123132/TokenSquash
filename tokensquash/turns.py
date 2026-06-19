@@ -289,6 +289,112 @@ def capture_turn_record(
     }
 
 
+def first_run_turn_workflow(
+    *,
+    prompt: str,
+    reply: str,
+    raw_output_path: Path | str = Path("private-turns/real.jsonl"),
+    redacted_output_path: Path | str = Path("private-turns/real.redacted-turns.jsonl"),
+    out_dir: Path | str = Path("private-turns/first-run"),
+    item_id: str | None = None,
+    status: str | None = None,
+    summary: str | None = None,
+    files: Iterable[str] = (),
+    verification: Iterable[str] = (),
+    commands: Iterable[str] = (),
+    risks: Iterable[str] = (),
+    next_steps: Iterable[str] = (),
+    counter: str = "heuristic",
+    target_savings_pct: float = 0.0,
+    limit: int = 5,
+) -> dict[str, Any]:
+    """Capture one real turn and write a beginner-friendly evidence bundle."""
+
+    started = time.time()
+    target_dir = Path(out_dir)
+    evaluation_dir = target_dir / "evaluation"
+    capture = capture_turn_record(
+        prompt=prompt,
+        reply=reply,
+        raw_output_path=raw_output_path,
+        redacted_output_path=redacted_output_path,
+        item_id=item_id,
+        status=status,
+        summary=summary,
+        files=files,
+        verification=verification,
+        commands=commands,
+        risks=risks,
+        next_steps=next_steps,
+        evaluate=True,
+        evaluation_output_dir=evaluation_dir,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+    )
+    scorecard = score_turn_corpus(
+        redacted_output_path,
+        counter=counter,
+        target_savings_pct=target_savings_pct,
+        limit=limit,
+    )
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    scorecard_json = target_dir / "scorecard.json"
+    scorecard_markdown = target_dir / "scorecard.md"
+    first_run_json = target_dir / "first-run.json"
+    first_run_markdown = target_dir / "first-run.md"
+    scorecard_json.write_text(json.dumps(scorecard, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    scorecard_markdown.write_text(format_turn_scorecard_markdown(scorecard), encoding="utf-8")
+
+    capture_summary = capture.get("summary", {})
+    scorecard_summary = scorecard.get("summary", {})
+    report = {
+        "schema_version": "tokensquash.turns.first_run.v1",
+        "status": _first_run_status(capture, scorecard),
+        "raw_output": str(Path(raw_output_path)),
+        "redacted_output": str(Path(redacted_output_path)),
+        "out_dir": str(target_dir),
+        "counter": counter,
+        "target_savings_pct": target_savings_pct,
+        "id": capture.get("id"),
+        "summary": {
+            "turn_count": scorecard_summary.get("turn_count", capture_summary.get("turn_count", 0)),
+            "redaction_count": capture_summary.get("redaction_count", 0),
+            "saved_pct": scorecard_summary.get("saved_pct", 0.0),
+            "prompt_saved_pct": scorecard_summary.get("prompt_saved_pct", 0.0),
+            "reply_saved_pct": scorecard_summary.get("reply_saved_pct", 0.0),
+            "privacy_finding_count": scorecard_summary.get("privacy_finding_count", 0),
+            "milestone": scorecard_summary.get("milestone"),
+            "next_milestone_turns": scorecard_summary.get("next_milestone_turns"),
+            "recommendation": scorecard_summary.get("recommendation"),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "outputs": {
+            "output_dir": str(target_dir),
+            "first_run_json": str(first_run_json),
+            "first_run_markdown": str(first_run_markdown),
+            "evaluation_dir": str(evaluation_dir),
+            "scorecard_json": str(scorecard_json),
+            "scorecard_markdown": str(scorecard_markdown),
+        },
+        "commands": _first_run_next_commands(redacted_output_path, out_dir=target_dir),
+        "capture": {
+            "schema_version": capture.get("schema_version"),
+            "status": capture.get("status"),
+            "summary": capture_summary,
+        },
+        "scorecard": {
+            "schema_version": scorecard.get("schema_version"),
+            "status": scorecard.get("status"),
+            "summary": scorecard_summary,
+            "recommendations": scorecard.get("recommendations", []),
+        },
+    }
+    first_run_markdown.write_text(format_turn_first_run_markdown(report), encoding="utf-8")
+    first_run_json.write_text(json.dumps(report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    return report
+
+
 def import_turn_corpus(
     input_path: Path | str,
     *,
@@ -2365,6 +2471,47 @@ def format_turn_capture_markdown(report: dict[str, Any]) -> str:
         lines.append("")
         _append_capture_preview(lines, "Top Win", (evaluation.get("diagnose") or {}).get("largest_wins", []))
         _append_capture_preview(lines, "Top Raw Wire Loss", (evaluation.get("diagnose") or {}).get("largest_losses", []))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def format_turn_first_run_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    outputs = report.get("outputs") or {}
+    commands = report.get("commands") or {}
+    scorecard = report.get("scorecard") or {}
+    lines = [
+        "# TokenSquash First Run",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- ID: `{report.get('id')}`",
+        f"- Turns: `{summary.get('turn_count', 0)}`",
+        f"- Raw output: `{report.get('raw_output')}`",
+        f"- Redacted output: `{report.get('redacted_output')}`",
+        f"- Redactions: `{summary.get('redaction_count', 0)}`",
+        f"- Saved percent: `{summary.get('saved_pct', 0.0)}%`",
+        f"- Prompt saved percent: `{summary.get('prompt_saved_pct', 0.0)}%`",
+        f"- Reply saved percent: `{summary.get('reply_saved_pct', 0.0)}%`",
+        f"- Privacy findings: `{summary.get('privacy_finding_count', 0)}`",
+        f"- Milestone: `{summary.get('milestone')}`",
+        f"- Next milestone turns: `{summary.get('next_milestone_turns')}`",
+        f"- Recommendation: `{summary.get('recommendation')}`",
+    ]
+
+    recommendations = scorecard.get("recommendations") or []
+    if recommendations:
+        lines.extend(["", "## What This Means", ""])
+        for item in recommendations[:5]:
+            lines.append(f"- `{item.get('code')}`: {item.get('message')}")
+
+    if commands:
+        lines.extend(["", "## Next Commands", ""])
+        for label, command in commands.items():
+            lines.append(f"- `{label}`: `{command}`")
+
+    if outputs:
+        lines.extend(["", "## Outputs", ""])
+        for label, path in sorted(outputs.items()):
+            lines.append(f"- `{label}`: `{path}`")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -4632,6 +4779,38 @@ def _append_capture_preview(lines: list[str], title: str, rows: list[dict[str, A
     if tags:
         lines.append(f"- Tags: `{', '.join(tags[:5])}`")
     lines.append("")
+
+
+def _first_run_status(capture: dict[str, Any], scorecard: dict[str, Any]) -> str:
+    capture_status = capture.get("status")
+    scorecard_status = scorecard.get("status")
+    if capture_status not in {"written", "pass", "warn", "miss", "empty"}:
+        return "fail"
+    if scorecard_status in {"pass", "watch", "warn", "empty"}:
+        return str(scorecard_status)
+    return "fail"
+
+
+def _first_run_next_commands(redacted_output_path: Path | str, *, out_dir: Path | str) -> dict[str, str]:
+    corpus = _quote_cli_arg(str(Path(redacted_output_path)))
+    private_dir = Path(out_dir).parent
+    certification_dir = _quote_cli_arg(str(private_dir / "certification"))
+    claim_pack_dir = _quote_cli_arg(str(private_dir / "claim-pack"))
+    return {
+        "capture_next": (
+            "python -m tokensquash turns first-run "
+            "--prompt-file private-turns/prompt.example.txt --reply-file private-turns/reply.example.txt"
+        ),
+        "scorecard": f"python -m tokensquash turns scorecard {corpus}",
+        "certify": f"python -m tokensquash turns certify {corpus} --out-dir {certification_dir}",
+        "claim_pack": f"python -m tokensquash turns claim-pack {certification_dir} --out-dir {claim_pack_dir}",
+    }
+
+
+def _quote_cli_arg(value: str) -> str:
+    if any(char.isspace() for char in value):
+        return '"' + value.replace('"', '\\"') + '"'
+    return value
 
 
 def _append_report_candidates(

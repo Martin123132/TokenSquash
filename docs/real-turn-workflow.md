@@ -24,9 +24,20 @@ commercially sensitive repository details.
 python -m tokensquash init
 ```
 
-This prepares local private folders and `.gitignore` rules.
+This prepares local private folders, `.gitignore` rules, and starter prompt /
+reply files under `private-turns/`.
 
-## Capture One Turn
+## First Real Turn
+
+```powershell
+python -m tokensquash turns first-run --prompt-file private-turns\prompt.example.txt --reply-file private-turns\reply.example.txt
+```
+
+`turns first-run` is the easiest path for the first real prompt/reply pair. It
+captures the raw turn locally, regenerates the redacted corpus, evaluates it,
+writes a scorecard, and prints the next commands.
+
+## Capture One Turn Manually
 
 ```powershell
 python -m tokensquash turns capture --prompt "fix the login bug, keep the diff small, run tests" --reply "Done. I fixed the login bug in src/auth.py and verified it with python -m unittest discover -s tests. Risks: none." --changed-file src/auth.py --verify "unit tests pass" --command "python -m unittest discover -s tests" --risk none --evaluate --counter tiktoken:cl100k_base

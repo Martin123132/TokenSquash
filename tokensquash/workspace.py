@@ -6,6 +6,22 @@ from typing import Any
 
 WORKSPACE_INIT_SCHEMA_VERSION = "tokensquash.workspace.init.v1"
 PRIVATE_DIRECTORIES = ("private-turns", "private-prompts", "private-aliases")
+WORKSPACE_TEMPLATES = {
+    "private-turns/README.md": """# Private TokenSquash Turns
+
+This folder is ignored by Git. Keep raw prompts, replies, local model output,
+aliases, and generated evidence here unless you have deliberately redacted and
+reviewed something for public release.
+
+First real turn:
+
+```powershell
+python -m tokensquash turns first-run --prompt-file private-turns\\prompt.example.txt --reply-file private-turns\\reply.example.txt
+```
+""",
+    "private-turns/prompt.example.txt": "Paste one human prompt here before running turns first-run.\n",
+    "private-turns/reply.example.txt": "Paste the matching assistant reply here before running turns first-run.\n",
+}
 GITIGNORE_PATTERNS = (
     "prompts/",
     "private-prompts/",
@@ -22,6 +38,7 @@ def initialize_workspace(
     root: Path | str = ".",
     *,
     create_dirs: bool = True,
+    create_templates: bool = True,
     update_gitignore: bool = True,
     dry_run: bool = False,
 ) -> dict[str, Any]:
@@ -29,11 +46,16 @@ def initialize_workspace(
 
     target = Path(root)
     directory_reports = _initialize_directories(target, dry_run=dry_run) if create_dirs else []
+    template_reports = (
+        _initialize_templates(target, dry_run=dry_run)
+        if create_dirs and create_templates
+        else []
+    )
     gitignore_report = _initialize_gitignore(target, dry_run=dry_run) if update_gitignore else None
-    conflict_count = sum(1 for item in directory_reports if item.get("action") == "conflict")
+    conflict_count = sum(1 for item in [*directory_reports, *template_reports] if item.get("action") == "conflict")
     if gitignore_report and gitignore_report.get("action") == "conflict":
         conflict_count += 1
-    changed = any(item.get("action") == "created" for item in directory_reports)
+    changed = any(item.get("action") == "created" for item in [*directory_reports, *template_reports])
     if gitignore_report and gitignore_report.get("action") in {"created", "updated"}:
         changed = True
     status = "fail" if conflict_count else "dry-run" if dry_run else "changed" if changed else "ready"
@@ -45,11 +67,14 @@ def initialize_workspace(
         "summary": {
             "directory_count": len(directory_reports),
             "created_directory_count": sum(1 for item in directory_reports if item.get("action") == "created"),
+            "template_count": len(template_reports),
+            "created_template_count": sum(1 for item in template_reports if item.get("action") == "created"),
             "conflict_count": conflict_count,
             "gitignore_updated": bool(gitignore_report and gitignore_report.get("action") in {"created", "updated"}),
             "added_gitignore_pattern_count": len((gitignore_report or {}).get("added_patterns", [])),
         },
         "directories": directory_reports,
+        "templates": template_reports,
         "gitignore": gitignore_report,
     }
 
@@ -65,6 +90,8 @@ def format_workspace_init_markdown(report: dict[str, Any]) -> str:
         f"- Dry run: `{report.get('dry_run')}`",
         f"- Directories: `{summary.get('directory_count', 0)}`",
         f"- Created directories: `{summary.get('created_directory_count', 0)}`",
+        f"- Templates: `{summary.get('template_count', 0)}`",
+        f"- Created templates: `{summary.get('created_template_count', 0)}`",
         f"- Conflicts: `{summary.get('conflict_count', 0)}`",
         f"- Gitignore updated: `{summary.get('gitignore_updated')}`",
         f"- Added gitignore patterns: `{summary.get('added_gitignore_pattern_count', 0)}`",
@@ -72,6 +99,10 @@ def format_workspace_init_markdown(report: dict[str, Any]) -> str:
     if report.get("directories"):
         lines.extend(["", "## Directories", "", "| Path | Action |", "|---|---|"])
         for item in report.get("directories", []):
+            lines.append(f"| `{_markdown_cell(str(item.get('path', '')))}` | `{item.get('action')}` |")
+    if report.get("templates"):
+        lines.extend(["", "## Templates", "", "| Path | Action |", "|---|---|"])
+        for item in report.get("templates", []):
             lines.append(f"| `{_markdown_cell(str(item.get('path', '')))}` | `{item.get('action')}` |")
     if gitignore:
         lines.extend(
@@ -109,6 +140,33 @@ def _initialize_directories(root: Path, *, dry_run: bool) -> list[dict[str, Any]
                 "existed": existed,
                 "conflict": conflict,
                 "action": "would_create" if dry_run and not existed else action,
+            }
+        )
+    return reports
+
+
+def _initialize_templates(root: Path, *, dry_run: bool) -> list[dict[str, Any]]:
+    reports = []
+    for relative, text in WORKSPACE_TEMPLATES.items():
+        path = root / relative
+        parent_conflict = path.parent.exists() and not path.parent.is_dir()
+        existed = path.exists()
+        conflict = existed and path.is_dir()
+        action = "exists" if existed else "created"
+        if parent_conflict:
+            action = "blocked"
+        elif conflict:
+            action = "conflict"
+        elif not existed and not dry_run:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        reports.append(
+            {
+                "path": str(path),
+                "name": relative,
+                "existed": existed,
+                "conflict": conflict,
+                "action": "would_create" if dry_run and not existed and not parent_conflict else action,
             }
         )
     return reports

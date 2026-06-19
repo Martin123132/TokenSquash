@@ -22,6 +22,7 @@ from tokensquash.codec import decode_intent, encode_intent, parse_wire
 from tokensquash.corpus import corpus_stats, redact_corpus, validate_corpus
 from tokensquash.demo import DEFAULT_DEMO_CORPUS, run_demo
 from tokensquash.doctor import run_doctor
+from tokensquash.guide import build_command_guide
 from tokensquash.metrics import (
     benchmark_prompts,
     benchmark_replies,
@@ -67,6 +68,7 @@ from tokensquash.turns import (
     compare_turn_scorecards,
     diagnose_turn_corpus,
     evaluate_turn_corpus,
+    first_run_turn_workflow,
     gate_turn_report,
     import_turn_corpus,
     learn_turn_aliases,
@@ -476,6 +478,32 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((out_dir / "turn-evaluation" / "evaluation.json").exists())
             self.assertIn("TokenSquash Demo", (out_dir / "demo.md").read_text(encoding="utf-8"))
 
+    def test_guide_cli_json_and_markdown(self) -> None:
+        report = build_command_guide(path="first-turn")
+
+        self.assertEqual(report["schema_version"], "tokensquash.guide.v1")
+        self.assertEqual(report["status"], "pass")
+        self.assertEqual(report["paths"][0]["id"], "first-turn")
+        self.assertIn("turns first-run", report["paths"][0]["first_command"])
+
+        stdout = StringIO()
+        with redirect_stdout(stdout):
+            code = cli_main(["guide", "--path", "first-turn"])
+
+        output = stdout.getvalue()
+        self.assertEqual(code, 0)
+        self.assertIn("# TokenSquash Guide", output)
+        self.assertIn("turns first-run", output)
+
+        json_stdout = StringIO()
+        with redirect_stdout(json_stdout):
+            code = cli_main(["guide", "--json"])
+
+        payload = json.loads(json_stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["schema_version"], "tokensquash.guide.v1")
+        self.assertGreaterEqual(payload["summary"]["path_count"], 4)
+
     def test_product_manifest_lists_contract_surface(self) -> None:
         report = build_product_manifest()
 
@@ -488,6 +516,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         readiness_commands = report["readiness"]["commands"]
         governance_paths = {item["path"] for item in report["governance"]["documents"]}
         self.assertIn("about", commands)
+        self.assertIn("guide", commands)
         self.assertIn("budget init", commands)
         self.assertIn("budget validate", commands)
         self.assertIn("init", commands)
@@ -510,8 +539,10 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("turns verify-release", commands)
         self.assertIn("turns claim", commands)
         self.assertIn("turns claim-pack", commands)
+        self.assertIn("turns first-run", commands)
         self.assertIn("sidecar certify", commands)
         self.assertIn("tokensquash.product.manifest.v1", schemas)
+        self.assertIn("tokensquash.guide.v1", schemas)
         self.assertIn("tokensquash.baselines.verify.v1", schemas)
         self.assertIn("tokensquash.readiness.v1", schemas)
         self.assertIn("tokensquash.readiness.verify.v1", schemas)
@@ -526,6 +557,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
         self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
         self.assertIn("tokensquash.workspace.init.v1", schemas)
+        self.assertIn("tokensquash.turns.first_run.v1", schemas)
         self.assertIn("tokensquash.turns.certify.compare.v1", schemas)
         self.assertIn("tokensquash.turns.certify.history.v1", schemas)
         self.assertIn("tokensquash.turns.certify.v1", schemas)
@@ -563,6 +595,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("CONTRIBUTING.md", governance_paths)
         self.assertIn("SECURITY.md", governance_paths)
         self.assertIn("docs/quickstart.md", governance_paths)
+        self.assertIn("docs/command-map.md", governance_paths)
         self.assertIn("docs/real-turn-workflow.md", governance_paths)
         self.assertIn("docs/evidence-packs.md", governance_paths)
         self.assertIn("docs/claims-policy.md", governance_paths)
@@ -650,6 +683,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertFalse((root / "private-turns").exists())
             self.assertFalse((root / ".gitignore").exists())
             self.assertEqual(report["summary"]["directory_count"], 3)
+            self.assertEqual(report["summary"]["template_count"], 3)
 
     def test_workspace_init_creates_private_storage_and_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -663,9 +697,14 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertTrue((root / "private-turns").is_dir())
             self.assertTrue((root / "private-prompts").is_dir())
             self.assertTrue((root / "private-aliases").is_dir())
+            self.assertTrue((root / "private-turns" / "README.md").exists())
+            self.assertTrue((root / "private-turns" / "prompt.example.txt").exists())
+            self.assertTrue((root / "private-turns" / "reply.example.txt").exists())
+            self.assertIn("turns first-run", (root / "private-turns" / "README.md").read_text(encoding="utf-8"))
             ignore_text = (root / ".gitignore").read_text(encoding="utf-8")
             self.assertIn("private-turns/", ignore_text.splitlines())
             self.assertEqual(second["summary"]["added_gitignore_pattern_count"], 0)
+            self.assertEqual(second["summary"]["created_template_count"], 0)
 
     def test_workspace_init_reports_conflicting_private_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3310,6 +3349,70 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertIn("## Top Win", output)
             self.assertIn("## Top Raw Wire Loss", output)
             self.assertTrue((eval_dir / "evaluation.json").exists())
+
+    def test_first_run_turn_workflow_writes_scorecard_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            out_dir = Path(tmp) / "private-turns" / "first-run"
+
+            report = first_run_turn_workflow(
+                prompt="review packages/mobile/src/screens/login.tsx and summarize files",
+                reply="Done. I reviewed the login screen and noted no risks.",
+                raw_output_path=raw,
+                redacted_output_path=redacted,
+                out_dir=out_dir,
+                counter="chars",
+            )
+
+            self.assertEqual(report["schema_version"], "tokensquash.turns.first_run.v1")
+            self.assertIn(report["status"], {"pass", "watch", "warn"})
+            self.assertTrue(raw.exists())
+            self.assertTrue(redacted.exists())
+            self.assertTrue((out_dir / "evaluation" / "evaluation.json").exists())
+            self.assertTrue((out_dir / "scorecard.json").exists())
+            self.assertTrue((out_dir / "first-run.md").exists())
+            self.assertIn("turns certify", report["commands"]["certify"])
+            self.assertIn(str(out_dir.parent / "certification"), report["commands"]["certify"])
+
+    def test_turns_first_run_cli_accepts_prompt_and_reply_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            prompt_file = Path(tmp) / "prompt.txt"
+            reply_file = Path(tmp) / "reply.txt"
+            raw = Path(tmp) / "private-turns" / "real.jsonl"
+            redacted = Path(tmp) / "private-turns" / "real.redacted-turns.jsonl"
+            out_dir = Path(tmp) / "private-turns" / "first-run"
+            prompt_file.write_text("review packages/mobile/src/screens/login.tsx and summarize files", encoding="utf-8")
+            reply_file.write_text("Done. I reviewed the login screen and noted no risks.", encoding="utf-8")
+            stdout = StringIO()
+
+            with redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "turns",
+                        "first-run",
+                        "--prompt-file",
+                        str(prompt_file),
+                        "--reply-file",
+                        str(reply_file),
+                        "--raw-out",
+                        str(raw),
+                        "--redacted-out",
+                        str(redacted),
+                        "--out-dir",
+                        str(out_dir),
+                        "--counter",
+                        "chars",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.turns.first_run.v1")
+            self.assertTrue((out_dir / "first-run.json").exists())
+            self.assertTrue((out_dir / "scorecard.md").exists())
+            self.assertIn("scorecard", payload["commands"])
 
     def test_turns_claim_from_certification_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

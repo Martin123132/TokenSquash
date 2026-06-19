@@ -40,6 +40,34 @@ python -m tokensquash turns scorecard-pack examples\sample-turns.jsonl --counter
 
 `private-turns/` is ignored local storage and should not be committed.
 
+## Ask For The Right Path
+
+```powershell
+python -m tokensquash guide
+python -m tokensquash guide --path first-turn
+```
+
+The guide maps common jobs to the next command: public demo, first real turn,
+corpus evidence, sidecar experiments, or release verification.
+
+## Prepare Private Storage
+
+```powershell
+python -m tokensquash init
+```
+
+This creates ignored private folders, updates `.gitignore`, and writes starter
+files under `private-turns/` for the first real turn workflow.
+
+## Capture A First Real Turn
+
+```powershell
+python -m tokensquash turns first-run --prompt-file private-turns\prompt.example.txt --reply-file private-turns\reply.example.txt
+```
+
+`turns first-run` captures the raw turn locally, regenerates the redacted
+corpus, evaluates it, writes a scorecard, and prints next commands.
+
 ## Encode And Decode A Prompt
 
 ```powershell
