@@ -39,7 +39,8 @@ The candidate gate verifies:
 - package metadata
 - installed wheel smoke test
 - packaged public demo data
-- `LICENSE` and `COMMERCIAL-LICENSE.md` in the wheel and source distribution
+- `LICENSE`, `NOTICE.md`, and `COMMERCIAL-LICENSE.md` in the wheel and source
+  distribution
 - artifact-manifest integrity
 - release attestation status
 

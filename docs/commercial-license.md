@@ -1,7 +1,8 @@
 # Commercial License Guide
 
 This guide summarizes the public commercial-use boundary. The legal terms live
-in [../LICENSE](../LICENSE) and [../COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md).
+in [../LICENSE](../LICENSE), [../NOTICE.md](../NOTICE.md), and
+[../COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md).
 
 ## Public License
 
@@ -60,6 +61,7 @@ Contact:
 
 - organisation: TWO HANDS NETWORK LTD
 - contact name: Glyn Evans
+- contact role: COO
 - email: glyn@twohandsnetwork.co.uk
 
 Do not put confidential commercial details, private corpora, credentials, or

@@ -14,6 +14,7 @@ from .about import (
     GOVERNANCE_DOCUMENTS,
     LICENSOR,
     MANIFEST_SCHEMA_VERSION,
+    NOTICE_PATH,
     PUBLIC_LICENSE_NAME,
     PUBLIC_LICENSE_PATH,
     build_product_manifest,
@@ -444,6 +445,7 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
         and governance_document_count >= len(GOVERNANCE_DOCUMENTS)
         and (not source_checkout or not missing_governance_docs)
         and (not source_checkout or bool(license_info.get("present")))
+        and (not source_checkout or bool(license_info.get("notice_present")))
         and (not source_checkout or bool(license_info.get("commercial_license_present")))
         and not missing_schemas
         and not missing_commands
@@ -470,6 +472,8 @@ def _check_product_manifest(cwd: Path) -> dict[str, Any]:
                 "name": license_info.get("name"),
                 "path": license_info.get("path"),
                 "present": license_info.get("present"),
+                "notice_path": license_info.get("notice_path"),
+                "notice_present": license_info.get("notice_present"),
                 "commercial_license_path": license_info.get("commercial_license_path"),
                 "commercial_license_present": license_info.get("commercial_license_present"),
                 "licensor": license_info.get("licensor"),
@@ -521,6 +525,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "docs/v0.3.0-plan.md",
             ".github/ISSUE_TEMPLATE",
             PUBLIC_LICENSE_PATH,
+            NOTICE_PATH,
             COMMERCIAL_LICENSE_PATH,
             PUBLIC_LICENSE_NAME,
         ],
@@ -550,6 +555,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "private-turns/",
             "docs/release-checklist.md",
             PUBLIC_LICENSE_PATH,
+            NOTICE_PATH,
             COMMERCIAL_LICENSE_PATH,
             PUBLIC_LICENSE_NAME,
             LICENSOR,
@@ -619,6 +625,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "turns claim-pack",
             "Token savings alone are not success",
             "deterministic `ts1` and `tr1` codecs remain the source of truth",
+            NOTICE_PATH,
             PUBLIC_LICENSE_NAME,
             LICENSOR,
         ],
@@ -631,6 +638,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "release-candidate-evidence",
             "release-notes-v0.2.1.md",
             "release-notes-v0.2.0.md",
+            NOTICE_PATH,
         ],
         "docs/release-checklist.md": [
             "release-candidate-evidence",
@@ -701,6 +709,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "verify-release-candidate.json",
             "369cba782695c943d5a3cd24263b0466b909d172",
             "LICENSE",
+            NOTICE_PATH,
             COMMERCIAL_LICENSE_PATH,
         ],
         "docs/post-release-flow.md": [
@@ -745,9 +754,11 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
         ],
         "docs/commercial-license.md": [
             "Commercial License Guide",
+            NOTICE_PATH,
             PUBLIC_LICENSE_NAME,
             LICENSOR,
             "Glyn Evans",
+            "COO",
             "glyn@twohandsnetwork.co.uk",
             "No commercial license is granted",
             "claims policy",
@@ -814,11 +825,13 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "docs/release-notes-v0.1.1.md",
             "issue templates",
             PUBLIC_LICENSE_PATH,
+            NOTICE_PATH,
             "no raw private prompts",
         ],
         ".github/ISSUE_TEMPLATE/config.yml": [
             "blank_issues_enabled: false",
             "Commercial licensing email",
+            "COO Glyn Evans",
             "glyn@twohandsnetwork.co.uk",
             "Private vulnerability reporting",
         ],
@@ -838,6 +851,8 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
             "Commercial licensing enquiry",
             PUBLIC_LICENSE_NAME,
             LICENSOR,
+            NOTICE_PATH,
+            "COO Glyn Evans",
             "glyn@twohandsnetwork.co.uk",
             "no commercial license is granted",
         ],
@@ -850,13 +865,24 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
         PUBLIC_LICENSE_PATH: [
             "Required Notice: Copyright (c) 2026 TWO HANDS NETWORK LTD.",
             "TokenSquash is source-available",
+            "COO Glyn Evans",
             PUBLIC_LICENSE_NAME,
             "https://polyformproject.org/licenses/noncommercial/1.0.0",
+        ],
+        NOTICE_PATH: [
+            "TokenSquash Notice",
+            "source-available software, not open-source software",
+            "Required Notice: Copyright (c) 2026 TWO HANDS NETWORK LTD.",
+            PUBLIC_LICENSE_NAME,
+            "Commercial use requires a separate written license",
+            "COO Glyn Evans",
+            "glyn@twohandsnetwork.co.uk",
         ],
         COMMERCIAL_LICENSE_PATH: [
             "TokenSquash is available for personal and non-commercial use",
             LICENSOR,
             "Glyn Evans",
+            "COO",
             "glyn@twohandsnetwork.co.uk",
             "commercial AI",
             "No commercial license is granted",
@@ -877,6 +903,7 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
                 missing_references.append({"path": relative, "text": needle})
 
     license_path = cwd / PUBLIC_LICENSE_PATH
+    notice_path = cwd / NOTICE_PATH
     commercial_license_path = cwd / COMMERCIAL_LICENSE_PATH
     passed = not missing and not empty and not missing_references
     return _doctor_check(
@@ -897,6 +924,8 @@ def _check_governance_documents(cwd: Path) -> dict[str, Any]:
                 "name": PUBLIC_LICENSE_NAME,
                 "path": str(license_path),
                 "present": license_path.exists(),
+                "notice_path": str(notice_path),
+                "notice_present": notice_path.exists(),
                 "commercial_license_path": str(commercial_license_path),
                 "commercial_license_present": commercial_license_path.exists(),
                 "licensor": LICENSOR,

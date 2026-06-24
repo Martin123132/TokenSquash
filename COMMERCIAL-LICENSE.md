@@ -21,3 +21,17 @@ Commercial license requests should include:
 - any requested changes to attribution, warranty, support, or redistribution terms.
 
 No commercial license is granted unless agreed in writing by TWO HANDS NETWORK LTD.
+
+## Contact
+
+For commercial evaluation, technical review, licensing, collaboration,
+investment, acquisition, or media enquiries, contact TWO HANDS NETWORK LTD
+through the COO using the approved business channel.
+
+- organisation: TWO HANDS NETWORK LTD
+- contact name: Glyn Evans
+- contact role: COO
+- email: glyn@twohandsnetwork.co.uk
+
+Sensitive third-party material will only be shared through an agreed review
+process.

@@ -31,7 +31,7 @@ RELEASE_CANDIDATE_ATTESTATION_SCHEMA_VERSION = "tokensquash.release_candidate.at
 RELEASE_CANDIDATE_VERIFY_SCHEMA_VERSION = "tokensquash.release_candidate.verify.v1"
 DEFAULT_RELEASE_CANDIDATE_OUT_DIR = Path("private-turns/release-candidate")
 PACKAGED_DEMO_DATA_PATH = "tokensquash/data/sample-turns.jsonl"
-REQUIRED_PACKAGE_LICENSE_FILES = ("LICENSE", "COMMERCIAL-LICENSE.md")
+REQUIRED_PACKAGE_LICENSE_FILES = ("LICENSE", "COMMERCIAL-LICENSE.md", "NOTICE.md")
 ARTIFACT_MANIFEST_FILENAMES = {
     "artifact-manifest.json",
     "artifact-manifest.md",

@@ -48,7 +48,7 @@
 {"id":"m048","text":"Run compileall over the package and tests, then summarize whether anything failed."}
 {"id":"m049","text":"Where should RepoMori integrate with TokenSquash? Give me a small architecture proposal, no code."}
 {"id":"m050","text":"Make the README first paragraph clearer for someone who has never heard of token compression."}
-{"id":"m051","text":"Add a license placeholder or explain that licensing is undecided. Do not invent legal text."}
+{"id":"m051","text":"Update the license docs to point to COMMERCIAL-LICENSE.md and the COO contact. Do not invent legal text."}
 {"id":"m052","text":"Review pyproject.toml metadata and add missing project urls if appropriate."}
 {"id":"m053","text":"The exact tokenizer benchmark is slower in CI. Cache pip if easy, but keep the workflow simple."}
 {"id":"m054","text":"Add tests for JSONL rows using 'prompt' instead of 'text' and for bad rows missing both keys."}

@@ -18,8 +18,9 @@ PROJECT_DESCRIPTION = (
 PUBLIC_LICENSE_NAME = "PolyForm Noncommercial License 1.0.0"
 PUBLIC_LICENSE_PATH = "LICENSE"
 COMMERCIAL_LICENSE_PATH = "COMMERCIAL-LICENSE.md"
+NOTICE_PATH = "NOTICE.md"
 LICENSOR = "TWO HANDS NETWORK LTD"
-COMMERCIAL_CONTACT = "Glyn Evans <glyn@twohandsnetwork.co.uk>"
+COMMERCIAL_CONTACT = "COO Glyn Evans <glyn@twohandsnetwork.co.uk>"
 
 COMMAND_GROUPS = {
     "core": [
@@ -195,6 +196,7 @@ PRIVATE_STORAGE_PATTERNS = list(GITIGNORE_PATTERNS)
 GOVERNANCE_DOCUMENTS = [
     {"path": "README.md", "purpose": "Project overview, examples, readiness commands, and contributor links."},
     {"path": PUBLIC_LICENSE_PATH, "purpose": "Public source-available non-commercial license terms and required notices."},
+    {"path": NOTICE_PATH, "purpose": "Plain-language source-available and commercial-use boundary notice."},
     {
         "path": COMMERCIAL_LICENSE_PATH,
         "purpose": "Commercial-use examples, request details, licensor, and approved contact channel.",
@@ -301,6 +303,8 @@ def build_product_manifest(*, cwd: Path | str | None = None) -> dict[str, Any]:
                 "name": PUBLIC_LICENSE_NAME,
                 "path": PUBLIC_LICENSE_PATH,
                 "present": (root / PUBLIC_LICENSE_PATH).exists(),
+                "notice_path": NOTICE_PATH,
+                "notice_present": (root / NOTICE_PATH).exists(),
                 "commercial_license_path": COMMERCIAL_LICENSE_PATH,
                 "commercial_license_present": (root / COMMERCIAL_LICENSE_PATH).exists(),
                 "licensor": LICENSOR,
@@ -369,6 +373,7 @@ def format_product_manifest_markdown(report: dict[str, Any]) -> str:
             "- "
             f"`{license_info.get('path')}`: present `{license_info.get('present')}`, "
             f"license `{license_info.get('name')}`, "
+            f"notice `{license_info.get('notice_path')}` present `{license_info.get('notice_present')}`, "
             f"commercial terms `{license_info.get('commercial_license_path')}` present "
             f"`{license_info.get('commercial_license_present')}`, "
             f"required before external release `{license_info.get('required_before_external_release')}`"

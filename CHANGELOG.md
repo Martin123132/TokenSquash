@@ -18,6 +18,11 @@ is produced locally and in GitHub Actions.
   templates from `init` make the first-use path easier to follow.
 - `turns first-run` now refuses unchanged starter placeholder text and the
   first-use docs make the edit-before-capture step explicit.
+- Public license wording now includes a README at-a-glance table and consistent
+  TWO HANDS NETWORK LTD / COO commercial licensing contact details.
+- `NOTICE.md` now participates in product manifest, strict doctor, package
+  license-file checks, and release verification docs alongside `LICENSE` and
+  `COMMERCIAL-LICENSE.md`.
 
 ## [0.2.1] - 2026-06-18
 

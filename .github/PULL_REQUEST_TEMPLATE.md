@@ -15,7 +15,7 @@
 - [ ] `CHANGELOG.md` updated for user-facing changes
 - [ ] `docs/release-checklist.md` updated when release evidence changed
 - [ ] `docs/release-notes-v0.1.0.md` and `docs/release-notes-v0.1.1.md` updated when release scope or release evidence changed
-- [ ] `LICENSE` and `COMMERCIAL-LICENSE.md` reviewed when licensing or distribution terms changed
+- [ ] `LICENSE`, `NOTICE.md`, and `COMMERCIAL-LICENSE.md` reviewed when licensing or distribution terms changed
 - [ ] issue templates reviewed when reporting, licensing, privacy, or security process changed
 - [ ] release-candidate gate run when packaging, baselines, or release evidence changed
 

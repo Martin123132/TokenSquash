@@ -7,9 +7,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        TokenSquash is available for personal and non-commercial use under the PolyForm Noncommercial License 1.0.0.
+        TokenSquash is available for personal and non-commercial use under the PolyForm Noncommercial License 1.0.0. See NOTICE.md for the source-available and commercial-use boundary summary.
 
-        Commercial use requires a separate written license from TWO HANDS NETWORK LTD. Do not include confidential plans, proprietary code, customer names, private prompts, private corpora, secrets, or commercially sensitive material in a public issue. For private commercial discussion, contact Glyn Evans at glyn@twohandsnetwork.co.uk.
+        Commercial use requires a separate written license from TWO HANDS NETWORK LTD. Do not include confidential plans, proprietary code, customer names, private prompts, private corpora, secrets, or commercially sensitive material in a public issue. For private commercial discussion, contact TWO HANDS NETWORK LTD through COO Glyn Evans at glyn@twohandsnetwork.co.uk.
   - type: input
     id: organisation
     attributes:

@@ -7,13 +7,13 @@
   "target_savings_pct": 0.5,
   "summary": {
     "prompt_count": 72,
-    "original_tokens": 1702,
-    "wire_tokens": 1399,
-    "squashed_tokens": 1392,
-    "wire_saved_tokens": 303,
-    "wire_saved_pct": 17.8026,
-    "saved_tokens": 310,
-    "saved_pct": 18.2139,
+    "original_tokens": 1705,
+    "wire_tokens": 1401,
+    "squashed_tokens": 1394,
+    "wire_saved_tokens": 304,
+    "wire_saved_pct": 17.8299,
+    "saved_tokens": 311,
+    "saved_pct": 18.2405,
     "wire_wins": 69,
     "wire_losses": 1,
     "wire_ties": 2,
@@ -21,7 +21,7 @@
     "losses": 0,
     "ties": 3,
     "passthroughs": 3,
-    "elapsed_seconds": 0.0325
+    "elapsed_seconds": 0.0964
   },
   "rows": [
     {
@@ -776,18 +776,18 @@
     },
     {
       "index": 51,
-      "original": "Add a license placeholder or explain that licensing is undecided. Do not invent legal text.",
-      "wire": "ts1 a \"license placeholder or that licensing undecided Do not invent legal text\"",
-      "payload": "ts1 a \"license placeholder or that licensing undecided Do not invent legal text\"",
+      "original": "Update the license docs to point to COMMERCIAL-LICENSE.md and the COO contact. Do not invent legal text.",
+      "wire": "ts1 d \"license docs point COO contact Do not invent legal text\" p=COMMERCIAL-LICENSE.md",
+      "payload": "ts1 d \"license docs point COO contact Do not invent legal text\" p=COMMERCIAL-LICENSE.md",
       "mode": "compact",
-      "op": "add",
-      "original_tokens": 23,
-      "wire_tokens": 20,
-      "squashed_tokens": 20,
-      "wire_saved_tokens": 3,
-      "wire_saved_pct": 13.0435,
-      "saved_tokens": 3,
-      "saved_pct": 13.0435
+      "op": "docs",
+      "original_tokens": 26,
+      "wire_tokens": 22,
+      "squashed_tokens": 22,
+      "wire_saved_tokens": 4,
+      "wire_saved_pct": 15.3846,
+      "saved_tokens": 4,
+      "saved_pct": 15.3846
     },
     {
       "index": 52,

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Martin Ollett" }]
 license = "PolyForm-Noncommercial-1.0.0"
-license-files = ["LICENSE", "COMMERCIAL-LICENSE.md"]
+license-files = ["LICENSE", "COMMERCIAL-LICENSE.md", "NOTICE.md"]
 
 [project.scripts]
 tokensquash = "tokensquash.cli:main"

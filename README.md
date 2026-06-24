@@ -13,6 +13,16 @@ The point is not to claim magic compression. The point is to make prompt/reply
 compression testable, auditable, and honest. If a compact form costs more than
 the original, the benchmark should say so plainly.
 
+## License At A Glance
+
+| Use | Public terms |
+|---|---|
+| Personal, hobby, research, testing, and other non-commercial use | Allowed under the PolyForm Noncommercial License 1.0.0 |
+| Paid products, hosted services, managed services, enterprise products, commercial AI systems, or commercial AI training/evaluation pipelines | Requires a separate written commercial license from TWO HANDS NETWORK LTD |
+
+Commercial licensing enquiries should go through TWO HANDS NETWORK LTD, COO
+Glyn Evans, at glyn@twohandsnetwork.co.uk.
+
 ## What It Is
 
 | TokenSquash is | TokenSquash is not |
@@ -174,8 +184,8 @@ Release notes and planning records:
 - product manifest, strict doctor, readiness, release-info, release-candidate,
   release-assets, release-asset verification, scorecard release evidence,
   artifact manifests, and release attestations
-- PolyForm Noncommercial License 1.0.0 public terms plus commercial licensing
-  contact for TWO HANDS NETWORK LTD
+- PolyForm Noncommercial License 1.0.0 public terms, required notice, and
+  commercial licensing contact through TWO HANDS NETWORK LTD's COO
 
 ## Release Status
 
@@ -210,9 +220,9 @@ TokenSquash in a paid product, hosted service, managed service, enterprise
 product, commercial developer tool, commercial AI system, commercial AI
 coding/agent product, or commercial AI training/evaluation pipeline.
 
-See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) and
-[docs/commercial-license.md](docs/commercial-license.md). Commercial enquiries
-should go through TWO HANDS NETWORK LTD, contact name Glyn Evans, at
+See [NOTICE.md](NOTICE.md), [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md),
+and [docs/commercial-license.md](docs/commercial-license.md). Commercial
+enquiries should go through TWO HANDS NETWORK LTD, COO Glyn Evans, at
 glyn@twohandsnetwork.co.uk.
 
 ## Contributing And Security

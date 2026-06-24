@@ -15,9 +15,9 @@ candidate. It assumes the release is being prepared from `main`.
 - Confirm the intended GitHub tag has not already been published. Do not reuse
   a published tag when staging new release assets from current `main`.
 - Confirm the README still describes the current command surface accurately.
-- Confirm the project-owner-approved `LICENSE` and `COMMERCIAL-LICENSE.md`
-  files match the intended non-commercial and commercial-use terms before any
-  external release or package publication.
+- Confirm the project-owner-approved `LICENSE`, `NOTICE.md`, and
+  `COMMERCIAL-LICENSE.md` files match the intended non-commercial notice and
+  commercial-use terms before any external release or package publication.
 - Keep the deterministic codec as the source of truth; sidecar model workflows
   must remain explicitly experimental.
 
@@ -95,7 +95,8 @@ Required release-candidate evidence:
 - wheel build is `pass`
 - wheel smoke test is `pass`
 - source distribution build is `pass`
-- wheel and source distribution include `LICENSE` and `COMMERCIAL-LICENSE.md`
+- wheel and source distribution include `LICENSE`, `NOTICE.md`, and
+  `COMMERCIAL-LICENSE.md`
 - artifact-manifest integrity is `pass`
 - release attestation contains wheel, sdist, artifact-manifest, scorecard-pack,
   and scorecard SHA-256 hashes

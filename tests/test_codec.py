@@ -592,6 +592,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("turns claim-pack" in command for command in readiness_commands))
         self.assertTrue(report["data"]["packaged_demo_corpus_exists"])
         self.assertIn("LICENSE", governance_paths)
+        self.assertIn("NOTICE.md", governance_paths)
         self.assertIn("COMMERCIAL-LICENSE.md", governance_paths)
         self.assertIn("CHANGELOG.md", governance_paths)
         self.assertIn("ROADMAP.md", governance_paths)
@@ -626,8 +627,10 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertEqual(report["counts"]["governance_document_count"], len(report["governance"]["documents"]))
         self.assertEqual(report["governance"]["license"]["name"], "PolyForm Noncommercial License 1.0.0")
         self.assertTrue(report["governance"]["license"]["present"])
+        self.assertTrue(report["governance"]["license"]["notice_present"])
         self.assertTrue(report["governance"]["license"]["commercial_license_present"])
         self.assertEqual(report["governance"]["license"]["licensor"], "TWO HANDS NETWORK LTD")
+        self.assertIn("COO Glyn Evans", report["governance"]["license"]["commercial_contact"])
         self.assertIn("glyn@twohandsnetwork.co.uk", report["governance"]["license"]["commercial_contact"])
         self.assertTrue(report["governance"]["license"]["required_before_external_release"])
 
@@ -787,6 +790,10 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(
                 checks["governance_documents"]["data"]["license"]["licensor"],
                 "TWO HANDS NETWORK LTD",
+            )
+            self.assertIn(
+                "COO Glyn Evans",
+                checks["governance_documents"]["data"]["license"]["commercial_contact"],
             )
             self.assertIn(
                 "glyn@twohandsnetwork.co.uk",
@@ -1068,8 +1075,10 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(checks["scorecard_pack_status"]["status"], "pass")
             self.assertEqual(checks["scorecard_status"]["status"], "pass")
             self.assertEqual(checks["wheel"]["data"]["license_files"]["LICENSE"], True)
+            self.assertEqual(checks["wheel"]["data"]["license_files"]["NOTICE.md"], True)
             self.assertEqual(checks["wheel"]["data"]["license_files"]["COMMERCIAL-LICENSE.md"], True)
             self.assertEqual(checks["sdist"]["data"]["license_files"]["LICENSE"], True)
+            self.assertEqual(checks["sdist"]["data"]["license_files"]["NOTICE.md"], True)
             self.assertEqual(checks["sdist"]["data"]["license_files"]["COMMERCIAL-LICENSE.md"], True)
             attestation_path = out_dir / "release-attestation.json"
             self.assertTrue(attestation_path.exists())
@@ -1416,6 +1425,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         with ZipFile(wheel_path, "w") as archive:
             archive.writestr("tokensquash/data/sample-turns.jsonl", "{}\n")
             archive.writestr(f"{dist_info}/licenses/LICENSE", "license\n")
+            archive.writestr(f"{dist_info}/licenses/NOTICE.md", "notice\n")
             archive.writestr(
                 f"{dist_info}/licenses/COMMERCIAL-LICENSE.md",
                 "commercial license\n",
@@ -1435,7 +1445,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             "returncode": 0,
             "wheel": str(wheel_path),
             "packaged_demo_data": True,
-            "license_files": {"LICENSE": True, "COMMERCIAL-LICENSE.md": True},
+            "license_files": {"LICENSE": True, "NOTICE.md": True, "COMMERCIAL-LICENSE.md": True},
         }
 
     def _fake_sdist_build(self, root: Path, output_dir: Path, sdist_dir: Path) -> tuple[str, str, dict[str, object]]:
@@ -1451,7 +1461,7 @@ class TokenSquashCodecTests(unittest.TestCase):
             "returncode": 0,
             "sdist": str(sdist_path),
             "packaged_demo_data": True,
-            "license_files": {"LICENSE": True, "COMMERCIAL-LICENSE.md": True},
+            "license_files": {"LICENSE": True, "NOTICE.md": True, "COMMERCIAL-LICENSE.md": True},
             "sdist_metadata": {
                 "present": True,
                 "metadata_path": f"tokensquash-{version}/PKG-INFO",
@@ -1476,6 +1486,7 @@ class TokenSquashCodecTests(unittest.TestCase):
                 "Requires-Python: >=3.10\n",
             )
             self._tar_write_text(archive, f"{root}/LICENSE", "license\n")
+            self._tar_write_text(archive, f"{root}/NOTICE.md", "notice\n")
             self._tar_write_text(archive, f"{root}/COMMERCIAL-LICENSE.md", "commercial license\n")
             self._tar_write_text(archive, f"{root}/tokensquash/data/sample-turns.jsonl", "{}\n")
 

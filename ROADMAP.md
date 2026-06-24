@@ -31,8 +31,8 @@ These areas are intended to remain compatible across normal patch releases:
 - turn evaluation, certification, release-check, and verification evidence packs
 - product manifest, doctor, readiness, release-candidate, and release-assets
   workflows
-- PolyForm Noncommercial public license plus separate written commercial
-  licensing path
+- PolyForm Noncommercial public license, required notice, and separate written
+  commercial licensing path
 
 ## Experimental Surface
 

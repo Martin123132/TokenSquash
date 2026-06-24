@@ -6,12 +6,12 @@
 - Source: `examples\messy-coding-prompts.jsonl`
 - Target savings: `0.5%`
 - Prompts: `72`
-- Original tokens: `1378`
-- Raw wire tokens: `1318`
-- Squashed tokens: `1272`
-- Raw wire saved: `60 (4.3541%)`
+- Original tokens: `1383`
+- Raw wire tokens: `1323`
+- Squashed tokens: `1277`
+- Raw wire saved: `60 (4.3384%)`
 - Saved tokens: `106`
-- Saved percent: `7.6923%`
+- Saved percent: `7.6645%`
 - Raw wire wins/losses/ties: `43/16/13`
 - Adaptive wins/losses/ties: `43/0/29`
 - Pass-through rows: `29`
@@ -70,7 +70,7 @@
 | 48 | passthrough | 15 | 15 | 15 | 0 (0.0%) |
 | 49 | compact | 21 | 19 | 19 | 2 (9.5238%) |
 | 50 | passthrough | 16 | 16 | 16 | 0 (0.0%) |
-| 51 | compact | 18 | 17 | 17 | 1 (5.5556%) |
+| 51 | compact | 23 | 22 | 22 | 1 (4.3478%) |
 | 52 | passthrough | 14 | 17 | 14 | 0 (0.0%) |
 | 53 | compact | 20 | 17 | 17 | 3 (15.0%) |
 | 54 | compact | 23 | 22 | 22 | 1 (4.3478%) |

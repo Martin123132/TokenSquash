@@ -57,14 +57,15 @@ sharing a release candidate.
 ## License
 
 TokenSquash is source-available for personal and non-commercial use under the
-PolyForm Noncommercial License 1.0.0 in [LICENSE](LICENSE). Commercial use is
-not included in the public license and requires a separate written license from
+PolyForm Noncommercial License 1.0.0 in [LICENSE](LICENSE), with the public
+boundary summarized in [NOTICE.md](NOTICE.md). Commercial use is not included
+in the public license and requires a separate written license from
 TWO HANDS NETWORK LTD.
 
-Read [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) before publishing,
-redistributing, packaging, hosting, embedding, or using TokenSquash in a
-commercial AI system, commercial developer tool, paid product, hosted service,
-managed service, or commercial AI training/evaluation pipeline.
+Read [NOTICE.md](NOTICE.md) and [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)
+before publishing, redistributing, packaging, hosting, embedding, or using
+TokenSquash in a commercial AI system, commercial developer tool, paid product,
+hosted service, managed service, or commercial AI training/evaluation pipeline.
 
 ## Working With Corpora
 

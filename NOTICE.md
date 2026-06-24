@@ -15,6 +15,9 @@ Commercial use requires a separate written license from the licensor. Commercial
 - training, fine-tuning, distilling, evaluating, or improving a commercial AI model or commercial AI system using TokenSquash source code, documentation, tests, data formats, or derived materials;
 - removing or obscuring copyright, license, attribution, or required notices.
 
+Commercial licensing enquiries should go through TWO HANDS NETWORK LTD, COO Glyn Evans, at
+glyn@twohandsnetwork.co.uk.
+
 TokenSquash was created by Martin Ollett and is owned/licensed by TWO HANDS NETWORK LTD.
 
 This notice does not limit rights you may have under fair use, fair dealing, or other applicable law. It is intended to make the licensor's permission boundaries clear before the repository is made public.

@@ -425,7 +425,7 @@ def format_release_verification_section(report: dict[str, Any], *, ci_run: str |
     lines.extend(
         [
             "- packaged license evidence: inspect `verify-release-candidate.json` "
-            "for `LICENSE` and `COMMERCIAL-LICENSE.md` checks on the wheel and source distribution",
+            "for `LICENSE`, `NOTICE.md`, and `COMMERCIAL-LICENSE.md` checks on the wheel and source distribution",
             "- scorecard evidence: inspect `scorecard-pack.json` and `scorecard.json` for public-corpus "
             "codec health, saved percent, and milestone status",
         ]

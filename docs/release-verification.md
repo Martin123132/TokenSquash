@@ -57,7 +57,9 @@ Release evidence:
 - scorecard status: `watch`
 - scorecard turns: `5`
 - GitHub Actions run: `27763458140`
-- packaged license evidence: inspect `verify-release-candidate.json` for `LICENSE` and `COMMERCIAL-LICENSE.md` checks on the wheel and source distribution
+- packaged license evidence: inspect `verify-release-candidate.json` for
+  `LICENSE`, `NOTICE.md`, and `COMMERCIAL-LICENSE.md` checks on the wheel and
+  source distribution
 - scorecard evidence: inspect `scorecard-pack.json` and `scorecard.json` for public-corpus codec health, saved percent, and milestone status
 <!-- tokensquash-release-assets:end -->
 
@@ -109,10 +111,12 @@ Open `verify-release-candidate.json` and confirm:
 - `summary.release_attestation_status` is `pass`
 - `summary.release_info_commit` is
   `369cba782695c943d5a3cd24263b0466b909d172`
-- the `wheel` check has `license_files.LICENSE` and
-  `license_files.COMMERCIAL-LICENSE.md` set to `true`
-- the `sdist` check has `license_files.LICENSE` and
-  `license_files.COMMERCIAL-LICENSE.md` set to `true`
+- the `wheel` check has `license_files.LICENSE`,
+  `license_files.NOTICE.md`, and `license_files.COMMERCIAL-LICENSE.md` set to
+  `true`
+- the `sdist` check has `license_files.LICENSE`,
+  `license_files.NOTICE.md`, and `license_files.COMMERCIAL-LICENSE.md` set to
+  `true`
 
 Open `release-attestation.json` and confirm:
 

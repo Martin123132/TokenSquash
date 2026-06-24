@@ -6,7 +6,8 @@ measured, scoped, reproducible, and honest about failures.
 This policy covers public README text, release notes, benchmark summaries,
 commercial evaluation notes, and sidecar experiment writeups. It is product
 evidence guidance, not a replacement for the license terms in
-[../LICENSE](../LICENSE) or [../COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md).
+[../LICENSE](../LICENSE), [../NOTICE.md](../NOTICE.md), or
+[../COMMERCIAL-LICENSE.md](../COMMERCIAL-LICENSE.md).
 The public license is the PolyForm Noncommercial License 1.0.0.
 
 ## Short Rule
@@ -152,4 +153,5 @@ state who measured the result, what corpus was used, whether AI training or
 product integration is involved, and which evidence pack supports the claim.
 
 No commercial license is granted unless agreed in writing by TWO HANDS NETWORK
-LTD.
+LTD. Commercial licensing enquiries should go through COO Glyn Evans at
+glyn@twohandsnetwork.co.uk.

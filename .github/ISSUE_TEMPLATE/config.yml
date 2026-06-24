@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Commercial licensing email
     url: mailto:glyn@twohandsnetwork.co.uk
-    about: Contact TWO HANDS NETWORK LTD for commercial licensing, collaboration, investment, acquisition, or media enquiries.
+    about: Contact TWO HANDS NETWORK LTD through COO Glyn Evans for commercial licensing, collaboration, investment, acquisition, or media enquiries.
   - name: Private vulnerability reporting
     url: https://github.com/Martin123132/TokenSquash/security/advisories/new
     about: Use this private channel when available. Do not post exploit details or private data in public issues.
