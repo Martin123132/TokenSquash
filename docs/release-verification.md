@@ -19,87 +19,85 @@ already-published tag unless you are correcting that exact release evidence
 before upload.
 
 <!-- tokensquash-release-assets:start -->
-## v0.2.1 Assets
+## v0.2.2 Assets
 
-The `v0.2.1` GitHub Release includes:
+The `v0.2.2` GitHub Release includes:
 
-- `tokensquash-0.2.1-py3-none-any.whl`
-- `tokensquash-0.2.1.tar.gz`
+- `tokensquash-0.2.2-py3-none-any.whl`
+- `tokensquash-0.2.2.tar.gz`
 - `release-attestation.json`
 - `artifact-manifest.json`
 - `scorecard-pack.json`
 - `scorecard.json`
 - `verify-release-candidate.json`
 
-Release URL: [v0.2.1](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.1)
+Release URL: [v0.2.2](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.2)
 
 Expected SHA-256 values from the release asset report:
 
 | Asset | SHA-256 |
 |---|---|
-| `tokensquash-0.2.1-py3-none-any.whl` | `d5c47f6e3db24cc15aeb8fb78598e6182e1afd69c003fd2028a018075f900d2c` |
-| `tokensquash-0.2.1.tar.gz` | `5c534accabe7c91b9d982819eb73af5c2f60b6c3dda61c32c4bb52c8a1c84ad8` |
-| `release-attestation.json` | `97dc4785433e51051279e924ed1c63377eeb73472650929f0db9cc1d66e6ff57` |
-| `artifact-manifest.json` | `bcd064d9c1f5f6731fd677a0e0c56faf974870b471790833de60cdb06e34436c` |
-| `scorecard-pack.json` | `a99281a69f40bab5d376ff51c855af1301d3e98adeeaee96d15defe9c336f489` |
-| `scorecard.json` | `d9e74f5ddc1e2e9b19957afb74a870a77858af9b891152734077828e62f0b6c8` |
-| `verify-release-candidate.json` | `e6c52337d501df08150c3fadfa1cf212b0b2da61fcaeec291f7ff389a63b88a3` |
+| `tokensquash-0.2.2-py3-none-any.whl` | `338899b1f7e24cdd4951963e4af2e91a05b3850befd9880faf9eb18445f517f5` |
+| `tokensquash-0.2.2.tar.gz` | `61913f01e1a3e1e03fe91c2bc8ddce268e16da825e9415cc4ce2f96f8cd921ff` |
+| `release-attestation.json` | `7d3504a00ae3cd6d5c148ff5b443cb64f17044d3ab762eb5daedecb2be835c02` |
+| `artifact-manifest.json` | `6c04cb7fd0cc89e53c4fa35db96be2edcfff926346c9ed66636cc59303e524bc` |
+| `scorecard-pack.json` | `8b13c4ee7f59d79ddc93f75ea844a8978865f9ceda90400d6e7b0bc1b6806369` |
+| `scorecard.json` | `2c5187543e124a6c5ad893d6d38e1bd37bec5266e6d5171cdefcf64fbd76fa3d` |
+| `verify-release-candidate.json` | `38232d336aab897bc589e6bf5f1eeda30f0ce4e3d0af7da084702e640c3a4273` |
 
 Release evidence:
 
-- tag: `v0.2.1`
-- release commit: `369cba782695c943d5a3cd24263b0466b909d172`
+- tag: `v0.2.2`
+- release commit: `68837ba1cfe388635d952ecea5920b51c2d31485`
 - release-candidate verifier status: `pass`
 - release-candidate status: `pass`
 - release attestation status: `pass`
-- release attestation evidence hash: `6a53d41eac832af6a90aa47f70b61458056034edd47721affbf903bd91a7e977`
+- release attestation evidence hash: `bc41dc33527617c71071402e0e5a6f33a2a88b32cc43a427a414c12c6d4fe87d`
 - scorecard pack status: `watch`
 - scorecard status: `watch`
 - scorecard turns: `5`
-- GitHub Actions run: `27763458140`
-- packaged license evidence: inspect `verify-release-candidate.json` for
-  `LICENSE`, `NOTICE.md`, and `COMMERCIAL-LICENSE.md` checks on the wheel and
-  source distribution
+- GitHub Actions run: `28384759819`
+- packaged license evidence: inspect `verify-release-candidate.json` for `LICENSE`, `NOTICE.md`, and `COMMERCIAL-LICENSE.md` checks on the wheel and source distribution
 - scorecard evidence: inspect `scorecard-pack.json` and `scorecard.json` for public-corpus codec health, saved percent, and milestone status
 <!-- tokensquash-release-assets:end -->
 
 ## Download Assets
 
 ```powershell
-gh release download v0.2.1 --repo Martin123132/TokenSquash --dir private-turns\download-v0.2.1
-python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --asset-dir private-turns\download-v0.2.1 --json
+gh release download v0.2.2 --repo Martin123132/TokenSquash --dir private-turns\download-v0.2.2
+python -m tokensquash verify-release-assets private-turns\release-assets-v0.2.2-final\release-assets.json --asset-dir private-turns\download-v0.2.2 --json
 ```
 
 `private-turns/` is ignored local storage, so downloaded release evidence should
 not be committed back to the repository.
 
-Final public check on 2026-06-18:
+Final public check on 2026-06-29:
 
-- downloaded the published `v0.2.1` GitHub Release assets into
-  `private-turns\download-v0.2.1-public`
-- ran `python -m tokensquash verify-release-assets private-turns\release-assets-v0.2.1-upload\release-assets.json --asset-dir private-turns\download-v0.2.1-public --json`
+- downloaded the published `v0.2.2` GitHub Release assets into
+  `private-turns\download-v0.2.2-public`
+- ran `python -m tokensquash verify-release-assets private-turns\release-assets-v0.2.2\release-assets.json --asset-dir private-turns\download-v0.2.2-public --json`
 - result: `pass`, with 7 assets verified, 0 failed checks, and 0 warnings
 - installed the downloaded wheel in
-  `private-turns\verify-v0.2.1-public-venv`
+  `private-turns\verify-v0.2.2-public-venv`
 - ran `python -m tokensquash about --json` and
   `python -m tokensquash demo --counter chars --json` from that installed wheel
 
 ## Check Hashes
 
 ```powershell
-Get-FileHash private-turns\download-v0.2.1\tokensquash-0.2.1-py3-none-any.whl -Algorithm SHA256
-Get-FileHash private-turns\download-v0.2.1\tokensquash-0.2.1.tar.gz -Algorithm SHA256
-Get-FileHash private-turns\download-v0.2.1\release-attestation.json -Algorithm SHA256
-Get-FileHash private-turns\download-v0.2.1\artifact-manifest.json -Algorithm SHA256
-Get-FileHash private-turns\download-v0.2.1\scorecard-pack.json -Algorithm SHA256
-Get-FileHash private-turns\download-v0.2.1\scorecard.json -Algorithm SHA256
-Get-FileHash private-turns\download-v0.2.1\verify-release-candidate.json -Algorithm SHA256
+Get-FileHash private-turns\download-v0.2.2\tokensquash-0.2.2-py3-none-any.whl -Algorithm SHA256
+Get-FileHash private-turns\download-v0.2.2\tokensquash-0.2.2.tar.gz -Algorithm SHA256
+Get-FileHash private-turns\download-v0.2.2\release-attestation.json -Algorithm SHA256
+Get-FileHash private-turns\download-v0.2.2\artifact-manifest.json -Algorithm SHA256
+Get-FileHash private-turns\download-v0.2.2\scorecard-pack.json -Algorithm SHA256
+Get-FileHash private-turns\download-v0.2.2\scorecard.json -Algorithm SHA256
+Get-FileHash private-turns\download-v0.2.2\verify-release-candidate.json -Algorithm SHA256
 ```
 
 Each hash should match the expected value above and the `digest` shown by:
 
 ```powershell
-gh release view v0.2.1 --repo Martin123132/TokenSquash --json assets
+gh release view v0.2.2 --repo Martin123132/TokenSquash --json assets
 ```
 
 ## Inspect Evidence
@@ -110,7 +108,7 @@ Open `verify-release-candidate.json` and confirm:
 - `summary.release_candidate_status` is `pass`
 - `summary.release_attestation_status` is `pass`
 - `summary.release_info_commit` is
-  `369cba782695c943d5a3cd24263b0466b909d172`
+  `68837ba1cfe388635d952ecea5920b51c2d31485`
 - the `wheel` check has `license_files.LICENSE`,
   `license_files.NOTICE.md`, and `license_files.COMMERCIAL-LICENSE.md` set to
   `true`
@@ -140,10 +138,10 @@ Open `scorecard-pack.json` and `scorecard.json` when present and confirm:
 Install the wheel in a temporary environment and run the public demo:
 
 ```powershell
-python -m venv private-turns\verify-v0.2.1-venv
-private-turns\verify-v0.2.1-venv\Scripts\python.exe -m pip install --no-deps private-turns\download-v0.2.1\tokensquash-0.2.1-py3-none-any.whl
-private-turns\verify-v0.2.1-venv\Scripts\python.exe -m tokensquash about --json
-private-turns\verify-v0.2.1-venv\Scripts\python.exe -m tokensquash demo --counter chars --json
+python -m venv private-turns\verify-v0.2.2-venv
+private-turns\verify-v0.2.2-venv\Scripts\python.exe -m pip install --no-deps private-turns\download-v0.2.2\tokensquash-0.2.2-py3-none-any.whl
+private-turns\verify-v0.2.2-venv\Scripts\python.exe -m tokensquash about --json
+private-turns\verify-v0.2.2-venv\Scripts\python.exe -m tokensquash demo --counter chars --json
 ```
 
 The `about` command should report `tokensquash.product.manifest.v1` with

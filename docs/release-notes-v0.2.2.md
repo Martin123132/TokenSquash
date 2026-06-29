@@ -1,9 +1,31 @@
 # TokenSquash v0.2.2 Release Notes
 
-Status: release candidate on 2026-06-29.
+Status: released on 2026-06-29.
 
-Release evidence will be finalized after the public GitHub Release is staged,
-uploaded, downloaded, and verified.
+Release evidence:
+
+- tag: `v0.2.2`
+- release URL: <https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.2>
+- release commit: `68837ba1cfe388635d952ecea5920b51c2d31485`
+- main GitHub Actions run: `28384672347`
+- tag GitHub Actions run: `28384759819`
+- release-candidate verifier status: `pass`
+- release-assets verifier status: `pass`
+- public download verifier status: `pass`
+- release attestation evidence hash:
+  `bc41dc33527617c71071402e0e5a6f33a2a88b32cc43a427a414c12c6d4fe87d`
+
+Published asset hashes:
+
+| Asset | SHA-256 |
+|---|---|
+| `tokensquash-0.2.2-py3-none-any.whl` | `338899b1f7e24cdd4951963e4af2e91a05b3850befd9880faf9eb18445f517f5` |
+| `tokensquash-0.2.2.tar.gz` | `61913f01e1a3e1e03fe91c2bc8ddce268e16da825e9415cc4ce2f96f8cd921ff` |
+| `release-attestation.json` | `7d3504a00ae3cd6d5c148ff5b443cb64f17044d3ab762eb5daedecb2be835c02` |
+| `artifact-manifest.json` | `6c04cb7fd0cc89e53c4fa35db96be2edcfff926346c9ed66636cc59303e524bc` |
+| `scorecard-pack.json` | `8b13c4ee7f59d79ddc93f75ea844a8978865f9ceda90400d6e7b0bc1b6806369` |
+| `scorecard.json` | `2c5187543e124a6c5ad893d6d38e1bd37bec5266e6d5171cdefcf64fbd76fa3d` |
+| `verify-release-candidate.json` | `38232d336aab897bc589e6bf5f1eeda30f0ce4e3d0af7da084702e640c3a4273` |
 
 ## Summary
 
@@ -66,7 +88,7 @@ Before tagging, all of the following must be true:
 
 ## Required Public Assets
 
-The GitHub Release should include:
+The GitHub Release includes:
 
 - `tokensquash-0.2.2-py3-none-any.whl`
 - `tokensquash-0.2.2.tar.gz`
@@ -76,8 +98,23 @@ The GitHub Release should include:
 - `scorecard.json`
 - `verify-release-candidate.json`
 
-`docs/release-verification.md` should be refreshed from the final
+`docs/release-verification.md` was refreshed from the final
 `release-assets.json` report and checked against the uploaded assets.
+
+## Evidence Summary
+
+The final release-evidence chain for v0.2.2 reported:
+
+- release-candidate status: `pass`
+- verify-release-candidate status: `pass`
+- release asset verifier status: `pass`
+- public download verifier status: `pass`
+- staged public assets: `7`
+- release-candidate verifier checks: `39`
+- release asset verifier checks: `14`
+- public sample scorecard status: `watch`
+- public sample turn count: `5`
+- public sample saved percent: `20.6091`
 
 ## Known Limits
 
