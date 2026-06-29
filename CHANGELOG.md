@@ -9,6 +9,10 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.2.2] - 2026-06-29
+
 ### Added
 
 - `docs/v0.3.0-plan.md` now defines the next development track for larger

@@ -158,6 +158,9 @@ Deeper docs:
 
 Release notes and planning records:
 
+- [v0.2.2 release notes](docs/release-notes-v0.2.2.md): first-use polish,
+  licensing contact alignment, `NOTICE.md` package evidence, and public
+  release evidence.
 - [v0.2.1 release notes](docs/release-notes-v0.2.1.md): claim-pack polish,
   release-evidence docs, required assets, and known limits.
 - [v0.2.0 release notes](docs/release-notes-v0.2.0.md): scorecard evidence,
@@ -192,14 +195,17 @@ Release notes and planning records:
 The first source-available release is published as
 [TokenSquash v0.1.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.0).
 The latest release is
-[TokenSquash v0.2.1](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.1).
+[TokenSquash v0.2.2](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.2).
 The previous release is
+[TokenSquash v0.2.1](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.1).
+The earlier scorecard release is
 [TokenSquash v0.2.0](https://github.com/Martin123132/TokenSquash/releases/tag/v0.2.0).
 The earlier public-polish release is
 [TokenSquash v0.1.1](https://github.com/Martin123132/TokenSquash/releases/tag/v0.1.1).
 
 Releases include a wheel, source distribution, artifact manifest,
 release attestation, and release-candidate verifier output. The tracked
+[v0.2.2 release notes](docs/release-notes-v0.2.2.md),
 [v0.2.1 release notes](docs/release-notes-v0.2.1.md),
 [v0.2.0 release notes](docs/release-notes-v0.2.0.md),
 [v0.1.1 release notes](docs/release-notes-v0.1.1.md),

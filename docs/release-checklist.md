@@ -9,7 +9,7 @@ candidate. It assumes the release is being prepared from `main`.
   target version section.
 - Review the target release notes and confirm the release evidence contract
   matches the final release process.
-- Use `docs/release-notes-v0.2.0.md` as the latest completed release-notes
+- Use `docs/release-notes-v0.2.1.md` as the latest completed release-notes
   example when preparing the next versioned notes file.
 - Confirm `pyproject.toml` contains the intended package version.
 - Confirm the intended GitHub tag has not already been published. Do not reuse

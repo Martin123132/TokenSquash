@@ -22,6 +22,11 @@ The release-info report should show:
 - a concrete Git commit
 - the intended package version
 
+For the current patch line, use
+[release-notes-v0.2.2.md](release-notes-v0.2.2.md) as the target release-notes
+file, with [release-notes-v0.2.1.md](release-notes-v0.2.1.md) and
+[release-notes-v0.2.0.md](release-notes-v0.2.0.md) as prior examples.
+
 ## Build The Candidate
 
 ```powershell
@@ -105,6 +110,7 @@ After pushing a release-prep commit, confirm the `tests` workflow passes:
 - [release-checklist.md](release-checklist.md)
 - [release-verification.md](release-verification.md)
 - [post-release-flow.md](post-release-flow.md)
+- [release-notes-v0.2.2.md](release-notes-v0.2.2.md)
 - [release-notes-v0.2.1.md](release-notes-v0.2.1.md)
 - [release-notes-v0.2.0.md](release-notes-v0.2.0.md)
 - [release-notes-v0.1.1.md](release-notes-v0.1.1.md)
