@@ -9,7 +9,11 @@ is produced locally and in GitHub Actions.
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- `verify-github-release` downloads a published GitHub Release, derives or
+  reads expected release-asset evidence, verifies downloaded hashes/schemas,
+  and smoke-tests the published wheel.
 
 ## [0.2.2] - 2026-06-29
 

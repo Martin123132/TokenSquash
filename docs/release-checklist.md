@@ -52,6 +52,7 @@ python -m tokensquash release-candidate --require-clean --out-dir private-turns\
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass --json
 python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
+python -m tokensquash verify-github-release $tag --repo Martin123132/TokenSquash --json
 ```
 
 ## 3. Run Product Gates
@@ -108,6 +109,8 @@ Required release-candidate evidence:
 - `docs/release-verification.md` has been refreshed from the
   `release-assets.json` report and reviewed before upload
 - `verify-release-assets` passes against the staged release assets
+- after publishing, `verify-github-release` passes against the downloaded
+  GitHub Release assets and the downloaded wheel smoke check
 
 ## 5. Verify GitHub Actions
 
@@ -161,5 +164,7 @@ post-release update and verification sequence.
   for the upload after reviewing the staged `release-assets.json` report and
   generated verification doc section.
 - Update `docs/release-verification.md` with the final published asset hashes.
+- Run `python -m tokensquash verify-github-release $tag --repo Martin123132/TokenSquash --json`
+  after upload and record the result in the release notes.
 - Keep private corpora under ignored `private-turns/` storage; do not attach
   raw private turns to public releases.

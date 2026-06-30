@@ -144,7 +144,8 @@ Deeper docs:
 
 - [Release checklist](docs/release-checklist.md): manual release runbook.
 - [Release verification](docs/release-verification.md): inspect published
-  assets, hashes, attestations, and packaged license evidence.
+  assets, hashes, attestations, packaged license evidence, and downloaded-wheel
+  smoke checks.
 - [Post-release flow](docs/post-release-flow.md): keep release notes,
   changelog, GitHub Release text, and verification hashes aligned.
 - [Sidecar Ollama workflow](docs/sidecar-ollama.md): experimental local-AI
@@ -185,8 +186,8 @@ Release notes and planning records:
 - optional exact-tokenizer measurements through `tiktoken`
 - experimental local-AI sidecar translate/decode/roundtrip/evaluate/review/gate
 - product manifest, strict doctor, readiness, release-info, release-candidate,
-  release-assets, release-asset verification, scorecard release evidence,
-  artifact manifests, and release attestations
+  release-assets, release-asset verification, GitHub Release verification,
+  scorecard release evidence, artifact manifests, and release attestations
 - PolyForm Noncommercial License 1.0.0 public terms, required notice, and
   commercial licensing contact through TWO HANDS NETWORK LTD's COO
 
@@ -212,6 +213,12 @@ release attestation, and release-candidate verifier output. The tracked
 [v0.1.0 release notes](docs/release-notes-v0.1.0.md), and
 [release verification guide](docs/release-verification.md) record the release
 commit, CI runs, asset hashes, packaged license evidence, and release evidence.
+
+To repeat the public release check from the tracked hashes:
+
+```powershell
+python -m tokensquash verify-github-release v0.2.2 --repo Martin123132/TokenSquash
+```
 
 PyPI publishing is not configured yet.
 

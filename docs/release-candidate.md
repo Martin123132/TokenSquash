@@ -83,6 +83,13 @@ The staged public assets should include:
 - `scorecard.json`
 - `verify-release-candidate.json`
 
+After the GitHub Release is published, repeat the public download and
+downloaded-wheel smoke check:
+
+```powershell
+python -m tokensquash verify-github-release $tag --repo Martin123132/TokenSquash --json
+```
+
 ## Upload After Review
 
 Only upload after local and GitHub evidence both pass:

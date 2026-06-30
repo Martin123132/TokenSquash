@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -13,7 +15,10 @@ from .candidate import verify_release_candidate_pack
 
 RELEASE_ASSETS_SCHEMA_VERSION = "tokensquash.release_assets.v1"
 RELEASE_ASSETS_VERIFY_SCHEMA_VERSION = "tokensquash.release_assets.verify.v1"
+GITHUB_RELEASE_VERIFY_SCHEMA_VERSION = "tokensquash.github_release.verify.v1"
 DEFAULT_RELEASE_ASSETS_OUT_DIR = Path("private-turns/release-assets")
+DEFAULT_GITHUB_RELEASE_VERIFY_OUT_DIR = Path("private-turns/github-release-verify")
+DEFAULT_RELEASE_VERIFICATION_DOC = Path("docs/release-verification.md")
 RELEASE_VERIFICATION_SECTION_START = "<!-- tokensquash-release-assets:start -->"
 RELEASE_VERIFICATION_SECTION_END = "<!-- tokensquash-release-assets:end -->"
 RELEASE_ASSET_JSON_SCHEMAS = {
@@ -340,6 +345,231 @@ def format_release_assets_verify_markdown(report: dict[str, Any]) -> str:
             f"{check.get('required')} | "
             f"{_markdown_cell(str(check.get('message', '')))} |"
         )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def verify_github_release(
+    tag: str,
+    *,
+    repo: str,
+    report: Path | str | None = None,
+    verification_doc: Path | str | None = DEFAULT_RELEASE_VERIFICATION_DOC,
+    out_dir: Path | str = DEFAULT_GITHUB_RELEASE_VERIFY_OUT_DIR,
+    download_dir: Path | str | None = None,
+    gh_executable: str = "gh",
+    python_executable: str = sys.executable,
+    install_smoke: bool = True,
+    clobber: bool = True,
+    cwd: Path | str | None = None,
+) -> dict[str, Any]:
+    """Download and verify a public GitHub Release from tracked hash evidence."""
+
+    started = time.time()
+    root = Path(cwd) if cwd is not None else Path.cwd()
+    clean_tag = tag.strip()
+    clean_repo = repo.strip()
+    if not clean_tag:
+        raise ValueError("release tag must not be empty")
+    if not clean_repo:
+        raise ValueError("GitHub repo must not be empty")
+
+    output_dir = _resolve_path(root, Path(out_dir))
+    asset_root = _resolve_path(root, Path(download_dir)) if download_dir is not None else output_dir / "download"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    asset_root.mkdir(parents=True, exist_ok=True)
+    expected_report_path = output_dir / "release-assets.json"
+    asset_verify_path = output_dir / "release-assets.verify.json"
+    markdown_path = output_dir / "github-release-verify.md"
+    report_path = output_dir / "github-release-verify.json"
+
+    checks: list[dict[str, Any]] = []
+    commands: dict[str, str] = {}
+    release_payload, release_view_check, release_view_command = _github_release_view(
+        clean_tag,
+        clean_repo,
+        gh_executable=gh_executable,
+        cwd=root,
+    )
+    checks.append(release_view_check)
+    commands["release_view"] = release_view_command
+
+    expected_report, expected_check = _load_expected_release_assets_report(
+        clean_tag,
+        clean_repo,
+        output_dir,
+        asset_root,
+        report=report,
+        verification_doc=verification_doc,
+        release_payload=release_payload,
+        cwd=root,
+    )
+    checks.append(expected_check)
+    if expected_report is not None:
+        expected_report_path.write_text(json.dumps(expected_report, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+
+    if release_payload is not None and expected_report is not None:
+        checks.extend(_github_release_asset_checks(clean_tag, release_payload, expected_report))
+
+    download_command = _github_release_download_command(
+        clean_tag,
+        clean_repo,
+        asset_root,
+        gh_executable=gh_executable,
+        clobber=clobber,
+    )
+    commands["release_download"] = _format_command(download_command)
+    asset_verification: dict[str, Any] | None = None
+    if _has_failed_required(checks):
+        checks.append(
+            _github_release_check(
+                "github_release_download",
+                "skip",
+                required=False,
+                path=asset_root,
+                message="Download skipped because release metadata or expected asset evidence failed.",
+            )
+        )
+    else:
+        download_result = _run_command(download_command, cwd=root)
+        checks.append(_command_result_check("github_release_download", download_result, required=True, path=asset_root))
+        if download_result["returncode"] == 0:
+            asset_verification = verify_release_assets(expected_report_path, asset_dir=asset_root)
+            asset_verify_path.write_text(
+                json.dumps(asset_verification, ensure_ascii=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            checks.append(
+                _github_release_check(
+                    "downloaded_asset_verification",
+                    "pass" if asset_verification.get("status") == "pass" else "fail",
+                    required=True,
+                    path=asset_verify_path,
+                    message=f"Downloaded release asset verifier returned {asset_verification.get('status')}.",
+                    data=asset_verification.get("summary", {}),
+                )
+            )
+
+    wheel_smoke = None
+    if install_smoke:
+        if asset_verification is not None and asset_verification.get("status") == "pass" and expected_report is not None:
+            wheel_smoke = _run_downloaded_wheel_smoke(
+                expected_report,
+                asset_root,
+                output_dir / "wheel-smoke-venv",
+                python_executable=python_executable,
+                cwd=root,
+            )
+            checks.extend(wheel_smoke["checks"])
+            commands.update(wheel_smoke["commands"])
+        else:
+            checks.append(
+                _github_release_check(
+                    "wheel_install_smoke",
+                    "skip",
+                    required=False,
+                    path=asset_root,
+                    message="Wheel smoke skipped because downloaded asset verification did not pass.",
+                )
+            )
+    else:
+        checks.append(
+            _github_release_check(
+                "wheel_install_smoke",
+                "skip",
+                required=False,
+                path=asset_root,
+                message="Wheel smoke skipped by request.",
+            )
+        )
+
+    failed_required = [check for check in checks if check.get("required") and check.get("status") == "fail"]
+    warnings = [check for check in checks if check.get("status") == "warn"]
+    status = "fail" if failed_required else "warn" if warnings else "pass"
+    release_assets = expected_report.get("assets", []) if expected_report else []
+    report_payload = {
+        "schema_version": GITHUB_RELEASE_VERIFY_SCHEMA_VERSION,
+        "status": status,
+        "tag": clean_tag,
+        "repo": clean_repo,
+        "source_report": str(report) if report is not None else None,
+        "verification_doc": str(verification_doc) if verification_doc is not None else None,
+        "out_dir": str(output_dir),
+        "download_dir": str(asset_root),
+        "gh_executable": gh_executable,
+        "python_executable": python_executable,
+        "install_smoke": install_smoke,
+        "clobber": clobber,
+        "release": _github_release_summary(release_payload),
+        "summary": {
+            "check_count": len(checks),
+            "failed_check_count": len(failed_required),
+            "warning_count": len(warnings),
+            "expected_asset_count": len(release_assets) if isinstance(release_assets, list) else 0,
+            "github_asset_count": len((release_payload or {}).get("assets", [])) if release_payload else 0,
+            "asset_verification_status": asset_verification.get("status") if asset_verification else None,
+            "verified_asset_count": (asset_verification.get("summary") or {}).get("verified_asset_count")
+            if asset_verification
+            else 0,
+            "wheel_smoke_status": _wheel_smoke_status(checks),
+            "elapsed_seconds": round(time.time() - started, 4),
+        },
+        "asset_verification": {
+            "schema_version": asset_verification.get("schema_version"),
+            "status": asset_verification.get("status"),
+            "summary": asset_verification.get("summary", {}),
+        }
+        if asset_verification
+        else None,
+        "checks": checks,
+        "commands": commands,
+        "outputs": {
+            "output_dir": str(output_dir),
+            "download_dir": str(asset_root),
+            "expected_release_assets": str(expected_report_path),
+            "asset_verification": str(asset_verify_path) if asset_verification is not None else None,
+            "report": str(report_path),
+            "markdown": str(markdown_path),
+        },
+    }
+    report_path.write_text(json.dumps(report_payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+    markdown_path.write_text(format_github_release_verify_markdown(report_payload), encoding="utf-8")
+    return report_payload
+
+
+def format_github_release_verify_markdown(report: dict[str, Any]) -> str:
+    summary = report.get("summary", {})
+    release = report.get("release") or {}
+    lines = [
+        "# TokenSquash GitHub Release Verify",
+        "",
+        f"- Status: `{report.get('status')}`",
+        f"- Tag: `{report.get('tag')}`",
+        f"- Repo: `{report.get('repo')}`",
+        f"- Release URL: `{release.get('url')}`",
+        f"- Download dir: `{report.get('download_dir')}`",
+        f"- Asset verification: `{summary.get('asset_verification_status')}`",
+        f"- Verified assets: `{summary.get('verified_asset_count')}`",
+        f"- Wheel smoke: `{summary.get('wheel_smoke_status')}`",
+        f"- Checks: `{summary.get('check_count', 0)}`",
+        f"- Failed checks: `{summary.get('failed_check_count', 0)}`",
+        f"- Warnings: `{summary.get('warning_count', 0)}`",
+        "",
+        "## Checks",
+        "",
+        "| Check | Status | Required | Detail |",
+        "|---|---|---:|---|",
+    ]
+    for check in report.get("checks", []):
+        lines.append(
+            "| "
+            f"{_markdown_cell(str(check.get('name', '')))} | "
+            f"`{check.get('status')}` | "
+            f"{check.get('required')} | "
+            f"{_markdown_cell(str(check.get('message', '')))} |"
+        )
+    lines.extend(["", "## Commands", ""])
+    for name, command in sorted((report.get("commands") or {}).items()):
+        lines.append(f"- `{name}`: `{command}`")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -747,6 +977,559 @@ def _run_upload(command: list[str], *, cwd: Path) -> dict[str, Any]:
         "stdout": completed.stdout.strip(),
         "stderr": completed.stderr.strip(),
     }
+
+
+def _github_release_view(
+    tag: str,
+    repo: str,
+    *,
+    gh_executable: str,
+    cwd: Path,
+) -> tuple[dict[str, Any] | None, dict[str, Any], str]:
+    command = [
+        gh_executable,
+        "release",
+        "view",
+        tag,
+        "--repo",
+        repo,
+        "--json",
+        "tagName,isDraft,isPrerelease,publishedAt,url,assets",
+    ]
+    result = _run_command(command, cwd=cwd)
+    if result["returncode"] != 0:
+        return (
+            None,
+            _command_result_check("github_release_view", result, required=True),
+            result["command"],
+        )
+    try:
+        payload = json.loads(result["stdout"])
+    except json.JSONDecodeError as exc:
+        return (
+            None,
+            _github_release_check(
+                "github_release_view",
+                "fail",
+                required=True,
+                message=f"GitHub release view did not return JSON: {exc}",
+                data={"command": result["command"], "stdout": _excerpt(result["stdout"])},
+            ),
+            result["command"],
+        )
+    if not isinstance(payload, dict):
+        return (
+            None,
+            _github_release_check(
+                "github_release_view",
+                "fail",
+                required=True,
+                message="GitHub release view returned a non-object JSON payload.",
+                data={"command": result["command"]},
+            ),
+            result["command"],
+        )
+    status = "pass"
+    message = "GitHub Release metadata was loaded."
+    if payload.get("tagName") != tag:
+        status = "fail"
+        message = f"GitHub Release tag is {payload.get('tagName')!r}, expected {tag!r}."
+    elif payload.get("isDraft"):
+        status = "fail"
+        message = "GitHub Release is still a draft."
+    return (
+        payload,
+        _github_release_check(
+            "github_release_view",
+            status,
+            required=True,
+            message=message,
+            data={
+                "command": result["command"],
+                "tagName": payload.get("tagName"),
+                "isDraft": payload.get("isDraft"),
+                "isPrerelease": payload.get("isPrerelease"),
+                "asset_count": len(payload.get("assets", [])) if isinstance(payload.get("assets"), list) else 0,
+                "url": payload.get("url"),
+            },
+        ),
+        result["command"],
+    )
+
+
+def _github_release_download_command(
+    tag: str,
+    repo: str,
+    download_dir: Path,
+    *,
+    gh_executable: str,
+    clobber: bool,
+) -> list[str]:
+    command = [gh_executable, "release", "download", tag, "--repo", repo, "--dir", str(download_dir)]
+    if clobber:
+        command.append("--clobber")
+    return command
+
+
+def _load_expected_release_assets_report(
+    tag: str,
+    repo: str,
+    output_dir: Path,
+    download_dir: Path,
+    *,
+    report: Path | str | None,
+    verification_doc: Path | str | None,
+    release_payload: dict[str, Any] | None,
+    cwd: Path,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    try:
+        if report is not None:
+            report_path = _resolve_path(cwd, Path(report))
+            payload = _read_release_assets_report(report_path)
+            if payload.get("tag") != tag:
+                raise ValueError(f"release-assets report tag is {payload.get('tag')!r}, expected {tag!r}")
+            return payload, _github_release_check(
+                "expected_release_assets",
+                "pass",
+                required=True,
+                path=report_path,
+                message="Loaded expected release asset report.",
+                data={"asset_count": len(payload.get("assets", [])), "tag": payload.get("tag")},
+            )
+        if verification_doc is None:
+            raise ValueError("--report or --verification-doc is required")
+        doc_path = _resolve_path(cwd, Path(verification_doc))
+        payload = _release_assets_report_from_verification_doc(
+            doc_path,
+            tag,
+            repo,
+            output_dir=output_dir,
+            download_dir=download_dir,
+            release_payload=release_payload,
+        )
+        return payload, _github_release_check(
+            "expected_release_assets",
+            "pass",
+            required=True,
+            path=doc_path,
+            message="Derived expected release asset report from the release verification doc.",
+            data={"asset_count": len(payload.get("assets", [])), "tag": payload.get("tag")},
+        )
+    except Exception as exc:
+        source = Path(report) if report is not None else Path(verification_doc) if verification_doc is not None else output_dir
+        return None, _github_release_check(
+            "expected_release_assets",
+            "fail",
+            required=True,
+            path=source,
+            message=f"Could not load expected release asset evidence: {exc}",
+        )
+
+
+def _read_release_assets_report(path: Path) -> dict[str, Any]:
+    payload = _read_json(path)
+    if payload is None:
+        raise ValueError(f"{path} is not readable release-assets JSON")
+    if payload.get("schema_version") != RELEASE_ASSETS_SCHEMA_VERSION:
+        raise ValueError(f"expected schema {RELEASE_ASSETS_SCHEMA_VERSION}, found {payload.get('schema_version')}")
+    if payload.get("status") != "pass":
+        raise ValueError(f"release-assets status is {payload.get('status')!r}, expected 'pass'")
+    if not isinstance(payload.get("assets"), list) or not payload.get("assets"):
+        raise ValueError("release-assets report does not contain assets")
+    return payload
+
+
+def _release_assets_report_from_verification_doc(
+    path: Path,
+    tag: str,
+    repo: str,
+    *,
+    output_dir: Path,
+    download_dir: Path,
+    release_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8-sig")
+    section = _release_verification_tag_section(text, tag)
+    hash_rows = re.findall(r"\|\s*`([^`]+)`\s*\|\s*`([0-9a-fA-F]{64})`\s*\|", section)
+    if not hash_rows:
+        raise ValueError(f"no SHA-256 asset table found for {tag}")
+    github_assets = {
+        str(asset.get("name")): asset
+        for asset in (release_payload or {}).get("assets", [])
+        if isinstance(asset, dict) and asset.get("name")
+    }
+    assets: list[dict[str, Any]] = []
+    for name, sha256 in hash_rows:
+        github_asset = github_assets.get(name, {})
+        assets.append(
+            {
+                "role": _infer_release_asset_role(name),
+                "name": name,
+                "path": str(download_dir / name),
+                "source": str(github_asset.get("url") or f"https://github.com/{repo}/releases/download/{tag}/{name}"),
+                "bytes": int(github_asset.get("size", 0) or 0),
+                "sha256": sha256.lower(),
+            }
+        )
+    return {
+        "schema_version": RELEASE_ASSETS_SCHEMA_VERSION,
+        "status": "pass",
+        "tag": tag,
+        "repo": repo,
+        "source": str(path),
+        "out_dir": str(output_dir),
+        "require_release_candidate_pass": True,
+        "upload": False,
+        "clobber": False,
+        "gh_executable": "gh",
+        "summary": {
+            "asset_count": len(assets),
+            "verification_status": _release_doc_backtick_value(section, "release-candidate verifier status"),
+            "release_candidate_status": _release_doc_backtick_value(section, "release-candidate status"),
+            "release_info_commit": _release_doc_backtick_value(section, "release commit"),
+            "release_attestation_status": _release_doc_backtick_value(section, "release attestation status"),
+            "scorecard_pack_status": _release_doc_backtick_value(section, "scorecard pack status"),
+            "scorecard_status": _release_doc_backtick_value(section, "scorecard status"),
+            "scorecard_turn_count": _release_doc_backtick_value(section, "scorecard turns"),
+            "uploaded": True,
+            "verification_doc_updated": True,
+        },
+        "assets": assets,
+        "verification": {
+            "schema_version": "tokensquash.release_candidate.verify.v1",
+            "status": _release_doc_backtick_value(section, "release-candidate verifier status"),
+            "summary": {
+                "release_attestation_evidence_hash": _release_doc_backtick_value(
+                    section,
+                    "release attestation evidence hash",
+                )
+            },
+        },
+        "commands": {},
+        "outputs": {
+            "asset_dir": str(download_dir),
+            "report": str(output_dir / "release-assets.json"),
+        },
+        "upload_result": None,
+        "errors": [],
+        "notes": ["Derived from docs/release-verification.md for public GitHub Release verification."],
+    }
+
+
+def _release_verification_tag_section(text: str, tag: str) -> str:
+    heading = re.search(rf"^##\s+{re.escape(tag)}\s+Assets\s*$", text, re.MULTILINE)
+    if not heading:
+        raise ValueError(f"release verification doc does not contain a section for {tag}")
+    next_heading = re.search(r"^##\s+", text[heading.end() :], re.MULTILINE)
+    end = heading.end() + next_heading.start() if next_heading else len(text)
+    return text[heading.start() : end]
+
+
+def _release_doc_backtick_value(section: str, label: str) -> str | None:
+    match = re.search(rf"^-\s+{re.escape(label)}:\s+`([^`]+)`", section, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _infer_release_asset_role(name: str) -> str:
+    if name.endswith(".whl"):
+        return "wheel"
+    if name.endswith(".tar.gz"):
+        return "sdist"
+    mapping = {
+        "release-attestation.json": "release_attestation",
+        "artifact-manifest.json": "artifact_manifest",
+        "scorecard-pack.json": "scorecard_pack",
+        "scorecard.json": "scorecard",
+        "verify-release-candidate.json": "verify_release_candidate",
+    }
+    return mapping.get(name, Path(name).stem.replace("-", "_"))
+
+
+def _github_release_asset_checks(
+    tag: str,
+    release_payload: dict[str, Any],
+    expected_report: dict[str, Any],
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    github_assets = {
+        str(asset.get("name")): asset
+        for asset in release_payload.get("assets", [])
+        if isinstance(asset, dict) and asset.get("name")
+    }
+    expected_assets = [asset for asset in expected_report.get("assets", []) if isinstance(asset, dict)]
+    problems: list[str] = []
+    matched = 0
+    for asset in expected_assets:
+        name = str(asset.get("name") or "")
+        github_asset = github_assets.get(name)
+        if github_asset is None:
+            problems.append(f"missing GitHub asset {name}")
+            continue
+        matched += 1
+        expected_sha = str(asset.get("sha256") or "").lower()
+        github_digest = str(github_asset.get("digest") or "").lower()
+        if github_digest.startswith("sha256:"):
+            github_digest = github_digest[len("sha256:") :]
+        if github_digest and expected_sha and github_digest != expected_sha:
+            problems.append(f"GitHub digest mismatch for {name}")
+        expected_bytes = int(asset.get("bytes", 0) or 0)
+        github_size = int(github_asset.get("size", 0) or 0)
+        if expected_bytes and github_size and expected_bytes != github_size:
+            problems.append(f"GitHub size mismatch for {name}")
+    expected_names = {str(asset.get("name")) for asset in expected_assets if asset.get("name")}
+    extra_names = sorted(set(github_assets) - expected_names)
+    checks.append(
+        _github_release_check(
+            "github_release_assets",
+            "fail" if problems else "pass",
+            required=True,
+            message=(
+                f"GitHub Release {tag} lists the expected public assets."
+                if not problems
+                else "GitHub Release assets are missing or do not match expected evidence."
+            ),
+            data={
+                "expected_asset_count": len(expected_assets),
+                "github_asset_count": len(github_assets),
+                "matched_asset_count": matched,
+                "problems": problems,
+                "extra_assets": extra_names,
+            },
+        )
+    )
+    if extra_names:
+        checks.append(
+            _github_release_check(
+                "github_release_extra_assets",
+                "warn",
+                required=False,
+                message="GitHub Release has assets not listed in the expected release evidence.",
+                data={"extra_assets": extra_names},
+            )
+        )
+    if release_payload.get("isPrerelease"):
+        checks.append(
+            _github_release_check(
+                "github_release_prerelease",
+                "warn",
+                required=False,
+                message="GitHub Release is marked as prerelease.",
+            )
+        )
+    return checks
+
+
+def _run_downloaded_wheel_smoke(
+    expected_report: dict[str, Any],
+    download_dir: Path,
+    venv_dir: Path,
+    *,
+    python_executable: str,
+    cwd: Path,
+) -> dict[str, Any]:
+    wheel_asset = _release_asset_by_role(expected_report, "wheel")
+    if wheel_asset is None:
+        return {
+            "checks": [
+                _github_release_check(
+                    "wheel_install_smoke",
+                    "fail",
+                    required=True,
+                    path=download_dir,
+                    message="No wheel asset is listed in the expected release evidence.",
+                )
+            ],
+            "commands": {},
+        }
+    wheel_path = download_dir / str(wheel_asset.get("name"))
+    venv_python = _venv_python(venv_dir)
+    commands = {
+        "wheel_smoke_venv": _format_command([python_executable, "-m", "venv", str(venv_dir)]),
+        "wheel_smoke_install": _format_command(
+            [str(venv_python), "-m", "pip", "install", "--no-deps", str(wheel_path)]
+        ),
+        "wheel_smoke_about": _format_command([str(venv_python), "-m", "tokensquash", "about", "--json"]),
+        "wheel_smoke_demo": _format_command(
+            [str(venv_python), "-m", "tokensquash", "demo", "--counter", "chars", "--json"]
+        ),
+    }
+    checks: list[dict[str, Any]] = []
+    venv_result = _run_command([python_executable, "-m", "venv", str(venv_dir)], cwd=cwd)
+    checks.append(_command_result_check("wheel_smoke_venv", venv_result, required=True, path=venv_dir))
+    if venv_result["returncode"] != 0:
+        return {"checks": checks, "commands": commands}
+    install_result = _run_command([str(venv_python), "-m", "pip", "install", "--no-deps", str(wheel_path)], cwd=cwd)
+    checks.append(_command_result_check("wheel_smoke_install", install_result, required=True, path=wheel_path))
+    if install_result["returncode"] != 0:
+        return {"checks": checks, "commands": commands}
+    about_result = _run_command([str(venv_python), "-m", "tokensquash", "about", "--json"], cwd=cwd)
+    checks.append(
+        _json_command_result_check(
+            "wheel_smoke_about",
+            about_result,
+            required=True,
+            expected_schema="tokensquash.product.manifest.v1",
+            expected_status="pass",
+        )
+    )
+    demo_result = _run_command(
+        [str(venv_python), "-m", "tokensquash", "demo", "--counter", "chars", "--json"],
+        cwd=cwd,
+    )
+    checks.append(
+        _json_command_result_check(
+            "wheel_smoke_demo",
+            demo_result,
+            required=True,
+            expected_schema="tokensquash.demo.v1",
+            expected_status="pass",
+        )
+    )
+    return {"checks": checks, "commands": commands}
+
+
+def _release_asset_by_role(report: dict[str, Any], role: str) -> dict[str, Any] | None:
+    for asset in report.get("assets", []):
+        if isinstance(asset, dict) and asset.get("role") == role:
+            return asset
+    return None
+
+
+def _venv_python(venv_dir: Path) -> Path:
+    return venv_dir / "Scripts" / "python.exe" if sys.platform == "win32" else venv_dir / "bin" / "python"
+
+
+def _run_command(command: list[str], *, cwd: Path) -> dict[str, Any]:
+    completed = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)
+    return {
+        "command": _format_command(command),
+        "returncode": completed.returncode,
+        "stdout": completed.stdout.strip(),
+        "stderr": completed.stderr.strip(),
+    }
+
+
+def _command_result_check(
+    name: str,
+    result: dict[str, Any],
+    *,
+    required: bool,
+    path: Path | None = None,
+) -> dict[str, Any]:
+    return _github_release_check(
+        name,
+        "pass" if result.get("returncode") == 0 else "fail",
+        required=required,
+        path=path,
+        message=(
+            f"Command completed successfully: {result.get('command')}"
+            if result.get("returncode") == 0
+            else f"Command failed with exit code {result.get('returncode')}: {result.get('command')}"
+        ),
+        data={
+            "returncode": result.get("returncode"),
+            "stdout": _excerpt(str(result.get("stdout", ""))),
+            "stderr": _excerpt(str(result.get("stderr", ""))),
+        },
+    )
+
+
+def _json_command_result_check(
+    name: str,
+    result: dict[str, Any],
+    *,
+    required: bool,
+    expected_schema: str,
+    expected_status: str,
+) -> dict[str, Any]:
+    if result.get("returncode") != 0:
+        return _command_result_check(name, result, required=required)
+    try:
+        payload = json.loads(str(result.get("stdout") or ""))
+    except json.JSONDecodeError as exc:
+        return _github_release_check(
+            name,
+            "fail",
+            required=required,
+            message=f"Command returned non-JSON output: {exc}",
+            data={"command": result.get("command"), "stdout": _excerpt(str(result.get("stdout", "")))},
+        )
+    passed = payload.get("schema_version") == expected_schema and payload.get("status") == expected_status
+    return _github_release_check(
+        name,
+        "pass" if passed else "fail",
+        required=required,
+        message=(
+            f"Command returned {expected_schema} with status {expected_status}."
+            if passed
+            else "Command JSON did not match the expected schema or status."
+        ),
+        data={
+            "command": result.get("command"),
+            "schema_version": payload.get("schema_version"),
+            "status": payload.get("status"),
+        },
+    )
+
+
+def _github_release_check(
+    name: str,
+    status: str,
+    *,
+    required: bool,
+    message: str,
+    path: Path | None = None,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    check = {
+        "name": name,
+        "status": status,
+        "required": required,
+        "message": message,
+        "data": data or {},
+    }
+    if path is not None:
+        check["path"] = str(path)
+    return check
+
+
+def _has_failed_required(checks: list[dict[str, Any]]) -> bool:
+    return any(check.get("required") and check.get("status") == "fail" for check in checks)
+
+
+def _wheel_smoke_status(checks: list[dict[str, Any]]) -> str:
+    smoke = [
+        check
+        for check in checks
+        if str(check.get("name", "")).startswith("wheel_smoke") or check.get("name") == "wheel_install_smoke"
+    ]
+    if not smoke:
+        return "missing"
+    if any(check.get("status") == "fail" for check in smoke):
+        return "fail"
+    if all(check.get("status") == "skip" for check in smoke):
+        return "skip"
+    if any(check.get("status") == "skip" for check in smoke):
+        return "partial"
+    return "pass"
+
+
+def _github_release_summary(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if payload is None:
+        return None
+    return {
+        "tagName": payload.get("tagName"),
+        "isDraft": payload.get("isDraft"),
+        "isPrerelease": payload.get("isPrerelease"),
+        "publishedAt": payload.get("publishedAt"),
+        "url": payload.get("url"),
+        "asset_count": len(payload.get("assets", [])) if isinstance(payload.get("assets"), list) else 0,
+    }
+
+
+def _excerpt(value: str, *, limit: int = 1000) -> str:
+    text = value.strip()
+    return text if len(text) <= limit else text[:limit].rstrip() + "..."
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:

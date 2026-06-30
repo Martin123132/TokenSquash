@@ -61,6 +61,26 @@ Release evidence:
 - scorecard evidence: inspect `scorecard-pack.json` and `scorecard.json` for public-corpus codec health, saved percent, and milestone status
 <!-- tokensquash-release-assets:end -->
 
+## One-Command Public Verification
+
+Use `verify-github-release` to repeat the public download, hash/schema
+verification, and downloaded-wheel smoke check from tracked release evidence:
+
+```powershell
+python -m tokensquash verify-github-release v0.2.2 --repo Martin123132/TokenSquash --json
+```
+
+By default, the command reads this guide for the expected asset hashes, runs
+`gh release view`, downloads the release assets under
+`private-turns\github-release-verify\download`, verifies the downloaded files
+with `verify-release-assets`, then installs the downloaded wheel in a temporary
+venv and runs `about --json` plus `demo --counter chars --json`.
+
+Use `--report private-turns\release-assets\release-assets.json` when you want
+to verify against a saved machine-readable release-assets report instead of the
+tracked Markdown hash table. Use `--skip-install-smoke` only when a reviewer
+needs a hash/schema-only check.
+
 ## Download Assets
 
 ```powershell

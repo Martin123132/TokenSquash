@@ -56,9 +56,13 @@ from .readiness import (
 )
 from .release_info import build_release_info, format_release_info_markdown
 from .release_assets import (
+    DEFAULT_GITHUB_RELEASE_VERIFY_OUT_DIR,
+    DEFAULT_RELEASE_VERIFICATION_DOC,
     format_release_assets_markdown,
     format_release_assets_verify_markdown,
+    format_github_release_verify_markdown,
     prepare_release_assets,
+    verify_github_release,
     verify_release_assets,
 )
 from .sidecar import (
@@ -340,6 +344,45 @@ def main(argv: list[str] | None = None) -> int:
     )
     verify_release_assets_parser.add_argument("--out", type=Path, help="Write verification output to this file.")
     verify_release_assets_parser.add_argument("--json", action="store_true", help="Print release asset verification JSON.")
+
+    verify_github_release_parser = sub.add_parser(
+        "verify-github-release",
+        help="Download and verify a public GitHub Release from tracked hash evidence.",
+    )
+    verify_github_release_parser.add_argument("tag", help="Release tag, for example v0.2.2.")
+    verify_github_release_parser.add_argument("--repo", required=True, help="GitHub repo as owner/name.")
+    verify_github_release_parser.add_argument(
+        "--report",
+        type=Path,
+        help="release-assets.json to use as expected asset evidence.",
+    )
+    verify_github_release_parser.add_argument(
+        "--verification-doc",
+        type=Path,
+        default=DEFAULT_RELEASE_VERIFICATION_DOC,
+        help="Release verification doc to derive expected hashes from when --report is omitted.",
+    )
+    verify_github_release_parser.add_argument("--out-dir", type=Path, default=DEFAULT_GITHUB_RELEASE_VERIFY_OUT_DIR)
+    verify_github_release_parser.add_argument(
+        "--download-dir",
+        type=Path,
+        help="Directory for downloaded assets; defaults to <out-dir>/download.",
+    )
+    verify_github_release_parser.add_argument("--gh", default="gh", help="GitHub CLI executable.")
+    verify_github_release_parser.add_argument("--python", dest="python_executable", default=sys.executable)
+    verify_github_release_parser.add_argument(
+        "--skip-install-smoke",
+        action="store_true",
+        help="Skip temporary venv install and about/demo smoke checks for the downloaded wheel.",
+    )
+    verify_github_release_parser.add_argument(
+        "--clobber",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Pass --clobber to gh release download so repeated verification can overwrite local downloads.",
+    )
+    verify_github_release_parser.add_argument("--out", type=Path, help="Write verification output to this file.")
+    verify_github_release_parser.add_argument("--json", action="store_true", help="Print GitHub release verification JSON.")
 
     budget = sub.add_parser("budget", help="Inspect TokenSquash quality budget files.")
     budget_sub = budget.add_subparsers(dest="budget_command", required=True)
@@ -1312,6 +1355,26 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "verify-release-assets":
             report = verify_release_assets(args.report, asset_dir=args.asset_dir)
             output = json.dumps(report, indent=2) + "\n" if args.json else format_release_assets_verify_markdown(report)
+            if args.out:
+                args.out.parent.mkdir(parents=True, exist_ok=True)
+                args.out.write_text(output, encoding="utf-8")
+            print(output, end="")
+            return 0 if report["status"] == "pass" else 1
+
+        if args.command == "verify-github-release":
+            report = verify_github_release(
+                args.tag,
+                repo=args.repo,
+                report=args.report,
+                verification_doc=args.verification_doc,
+                out_dir=args.out_dir,
+                download_dir=args.download_dir,
+                gh_executable=args.gh,
+                python_executable=args.python_executable,
+                install_smoke=not args.skip_install_smoke,
+                clobber=args.clobber,
+            )
+            output = json.dumps(report, indent=2) + "\n" if args.json else format_github_release_verify_markdown(report)
             if args.out:
                 args.out.parent.mkdir(parents=True, exist_ok=True)
                 args.out.write_text(output, encoding="utf-8")

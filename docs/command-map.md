@@ -74,6 +74,7 @@ python -m tokensquash release-candidate --require-clean
 python -m tokensquash verify-release-candidate private-turns\release-candidate --require-release-candidate-pass
 python -m tokensquash release-assets private-turns\release-candidate --tag vX.Y.Z
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json
+python -m tokensquash verify-github-release vX.Y.Z --repo Martin123132/TokenSquash
 ```
 
 Use the release flow only after local tests, strict doctor, readiness, and

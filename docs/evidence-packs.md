@@ -96,13 +96,16 @@ manifests, and release attestations. See
 $tag = "vX.Y.Z"
 python -m tokensquash release-assets private-turns\release-candidate --tag $tag --out-dir private-turns\release-assets --update-verification-doc docs\release-verification.md --json
 python -m tokensquash verify-release-assets private-turns\release-assets\release-assets.json --json
+python -m tokensquash verify-github-release $tag --repo Martin123132/TokenSquash --json
 ```
 
 Release asset evidence stages public assets, including the release-candidate
 scorecard JSON evidence, writes `release-assets.json` and `release-assets.md`,
 can verify staged or downloaded assets, and can regenerate the hash section in
-`docs\release-verification.md`. Use the intended next tag; upload remains
-explicit through `--upload`.
+`docs\release-verification.md`. GitHub Release verification downloads the
+published assets, verifies them against tracked release evidence, and runs an
+installed-wheel `about`/`demo` smoke check. Use the intended next tag; upload
+remains explicit through `--upload`.
 
 ## Sidecar Evidence
 

@@ -4,6 +4,7 @@ import unittest
 import json
 import os
 import shutil
+import subprocess
 import tarfile
 import tempfile
 from contextlib import redirect_stdout
@@ -41,7 +42,7 @@ from tokensquash.release import (
     verify_turn_release_pack,
 )
 from tokensquash.release_info import build_release_info
-from tokensquash.release_assets import prepare_release_assets, verify_release_assets
+from tokensquash.release_assets import prepare_release_assets, verify_github_release, verify_release_assets
 from tokensquash.readiness import run_product_readiness, verify_product_readiness_pack
 from tokensquash.sidecar import (
     certify_sidecar_report,
@@ -531,6 +532,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("verify-release-candidate", commands)
         self.assertIn("release-assets", commands)
         self.assertIn("verify-release-assets", commands)
+        self.assertIn("verify-github-release", commands)
         self.assertIn("turns compare-certifications", commands)
         self.assertIn("turns compare-scorecards", commands)
         self.assertIn("turns scorecard-history", commands)
@@ -556,6 +558,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertIn("tokensquash.release_candidate.verify.v1", schemas)
         self.assertIn("tokensquash.release_assets.v1", schemas)
         self.assertIn("tokensquash.release_assets.verify.v1", schemas)
+        self.assertIn("tokensquash.github_release.verify.v1", schemas)
         self.assertIn("tokensquash.quality_budget.v1", schemas)
         self.assertIn("tokensquash.quality_budget.init.v1", schemas)
         self.assertIn("tokensquash.quality_budget.validate.v1", schemas)
@@ -582,6 +585,7 @@ class TokenSquashCodecTests(unittest.TestCase):
         self.assertTrue(any("release-assets" in command for command in readiness_commands))
         self.assertTrue(any("release-assets" in command and "v0.2.2" in command for command in readiness_commands))
         self.assertTrue(any("verify-release-assets" in command for command in readiness_commands))
+        self.assertTrue(any("verify-github-release" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash readiness" in command for command in readiness_commands))
         self.assertTrue(any("tokensquash verify-readiness" in command for command in readiness_commands))
         self.assertTrue(any("turns scorecard" in command for command in readiness_commands))
@@ -1417,6 +1421,200 @@ class TokenSquashCodecTests(unittest.TestCase):
             self.assertEqual(verified["schema_version"], "tokensquash.release_assets.verify.v1")
             self.assertEqual(verified["status"], "pass")
             self.assertEqual(verified["summary"]["verified_asset_count"], 7)
+
+    def test_verify_github_release_uses_verification_doc_and_smokes_wheel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            asset_dir = Path(tmp) / "release-assets"
+            verification_doc = Path(tmp) / "release-verification.md"
+            verify_dir = Path(tmp) / "github-release-verify"
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
+            ):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            staged = prepare_release_assets(
+                out_dir,
+                tag="v0.1.0",
+                out_dir=asset_dir,
+                verification_doc=verification_doc,
+                ci_run="12345",
+            )
+
+            with patch(
+                "tokensquash.release_assets.subprocess.run",
+                side_effect=self._fake_github_release_run(staged),
+            ):
+                report = verify_github_release(
+                    "v0.1.0",
+                    repo="Martin123132/TokenSquash",
+                    verification_doc=verification_doc,
+                    out_dir=verify_dir,
+                    python_executable="python",
+                )
+
+            self.assertEqual(report["schema_version"], "tokensquash.github_release.verify.v1")
+            self.assertEqual(report["status"], "pass")
+            self.assertEqual(report["summary"]["expected_asset_count"], 7)
+            self.assertEqual(report["summary"]["github_asset_count"], 7)
+            self.assertEqual(report["summary"]["asset_verification_status"], "pass")
+            self.assertEqual(report["summary"]["verified_asset_count"], 7)
+            self.assertEqual(report["summary"]["wheel_smoke_status"], "pass")
+            self.assertTrue((verify_dir / "github-release-verify.json").exists())
+            self.assertTrue((verify_dir / "github-release-verify.md").exists())
+            self.assertTrue((verify_dir / "release-assets.json").exists())
+            self.assertTrue((verify_dir / "release-assets.verify.json").exists())
+            expected = json.loads((verify_dir / "release-assets.json").read_text(encoding="utf-8"))
+            self.assertEqual(expected["tag"], "v0.1.0")
+            self.assertEqual(expected["summary"]["verification_status"], "pass")
+            self.assertTrue((verify_dir / "download" / "scorecard.json").exists())
+            check_names = {check["name"] for check in report["checks"]}
+            self.assertIn("github_release_view", check_names)
+            self.assertIn("github_release_download", check_names)
+            self.assertIn("downloaded_asset_verification", check_names)
+            self.assertIn("wheel_smoke_about", check_names)
+            self.assertIn("wheel_smoke_demo", check_names)
+
+    def test_verify_github_release_cli_json_can_use_release_assets_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            asset_dir = Path(tmp) / "release-assets"
+            verify_dir = Path(tmp) / "github-release-verify"
+            stdout = StringIO()
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
+            ):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            staged = prepare_release_assets(out_dir, tag="v0.1.0", out_dir=asset_dir)
+
+            with patch(
+                "tokensquash.release_assets.subprocess.run",
+                side_effect=self._fake_github_release_run(staged),
+            ), redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "verify-github-release",
+                        "v0.1.0",
+                        "--repo",
+                        "Martin123132/TokenSquash",
+                        "--report",
+                        str(asset_dir / "release-assets.json"),
+                        "--out-dir",
+                        str(verify_dir),
+                        "--skip-install-smoke",
+                        "--json",
+                    ]
+                )
+
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(payload["schema_version"], "tokensquash.github_release.verify.v1")
+            self.assertEqual(payload["status"], "pass")
+            self.assertEqual(payload["summary"]["asset_verification_status"], "pass")
+            self.assertEqual(payload["summary"]["wheel_smoke_status"], "skip")
+            self.assertTrue((verify_dir / "release-assets.verify.json").exists())
+
+    def test_verify_github_release_markdown_summarizes_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "release-candidate"
+            asset_dir = Path(tmp) / "release-assets"
+            verify_dir = Path(tmp) / "github-release-verify"
+            stdout = StringIO()
+            with patch("tokensquash.candidate._run_release_info", side_effect=self._fake_release_info), patch(
+                "tokensquash.candidate._run_wheel_build",
+                side_effect=self._fake_wheel_build,
+            ), patch(
+                "tokensquash.candidate._run_wheel_smoke",
+                side_effect=self._fake_wheel_smoke,
+            ), patch(
+                "tokensquash.candidate._run_sdist_build",
+                side_effect=self._fake_sdist_build,
+            ):
+                run_release_candidate(out_dir=out_dir, skip_tests=True, require_exact_tokenizer=False)
+            staged = prepare_release_assets(out_dir, tag="v0.1.0", out_dir=asset_dir)
+
+            with patch(
+                "tokensquash.release_assets.subprocess.run",
+                side_effect=self._fake_github_release_run(staged),
+            ), redirect_stdout(stdout):
+                code = cli_main(
+                    [
+                        "verify-github-release",
+                        "v0.1.0",
+                        "--repo",
+                        "Martin123132/TokenSquash",
+                        "--report",
+                        str(asset_dir / "release-assets.json"),
+                        "--out-dir",
+                        str(verify_dir),
+                        "--skip-install-smoke",
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertEqual(code, 0)
+            self.assertIn("# TokenSquash GitHub Release Verify", output)
+            self.assertIn("Asset verification: `pass`", output)
+            self.assertIn("Wheel smoke: `skip`", output)
+            self.assertIn("github_release_download", output)
+
+    def _fake_github_release_run(self, staged_report: dict):
+        assets = list(staged_report["assets"])
+
+        def run(command, cwd=None, capture_output=True, text=True, check=False):
+            parts = [str(part) for part in command]
+            if parts[:3] == ["gh", "release", "view"]:
+                tag = parts[3]
+                payload = {
+                    "tagName": tag,
+                    "isDraft": False,
+                    "isPrerelease": False,
+                    "publishedAt": "2026-06-29T15:50:14Z",
+                    "url": f"https://github.com/Martin123132/TokenSquash/releases/tag/{tag}",
+                    "assets": [
+                        {
+                            "name": asset["name"],
+                            "size": asset["bytes"],
+                            "digest": f"sha256:{asset['sha256']}",
+                            "url": f"https://github.com/Martin123132/TokenSquash/releases/download/{tag}/{asset['name']}",
+                        }
+                        for asset in assets
+                    ],
+                }
+                return subprocess.CompletedProcess(parts, 0, stdout=json.dumps(payload), stderr="")
+            if parts[:3] == ["gh", "release", "download"]:
+                download_dir = Path(parts[parts.index("--dir") + 1])
+                download_dir.mkdir(parents=True, exist_ok=True)
+                for asset in assets:
+                    shutil.copy2(asset["path"], download_dir / asset["name"])
+                return subprocess.CompletedProcess(parts, 0, stdout="", stderr="")
+            if len(parts) >= 3 and parts[1:3] == ["-m", "venv"]:
+                Path(parts[3]).mkdir(parents=True, exist_ok=True)
+                return subprocess.CompletedProcess(parts, 0, stdout="", stderr="")
+            if len(parts) >= 4 and parts[1:4] == ["-m", "pip", "install"]:
+                return subprocess.CompletedProcess(parts, 0, stdout="installed\n", stderr="")
+            if len(parts) >= 4 and parts[1:4] == ["-m", "tokensquash", "about"]:
+                payload = {"schema_version": "tokensquash.product.manifest.v1", "status": "pass"}
+                return subprocess.CompletedProcess(parts, 0, stdout=json.dumps(payload), stderr="")
+            if len(parts) >= 4 and parts[1:4] == ["-m", "tokensquash", "demo"]:
+                payload = {"schema_version": "tokensquash.demo.v1", "status": "pass"}
+                return subprocess.CompletedProcess(parts, 0, stdout=json.dumps(payload), stderr="")
+            return subprocess.CompletedProcess(parts, 1, stdout="", stderr=f"unexpected command: {parts}")
+
+        return run
 
     def _fake_wheel_build(self, root: Path, output_dir: Path, wheel_dir: Path) -> tuple[str, str, dict[str, object]]:
         wheel_dir.mkdir(parents=True, exist_ok=True)

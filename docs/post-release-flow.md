@@ -79,22 +79,18 @@ instead of implying codec behavior changed.
 
 ## 5. Verify Published Assets
 
-Download the release assets into ignored storage and compare hashes:
+Download the release assets into ignored storage, compare hashes, and
+smoke-test the published wheel:
 
 ```powershell
 $tag = "vX.Y.Z"
-$version = "X.Y.Z"
-gh release download $tag --repo Martin123132/TokenSquash --dir private-turns\download-$tag
-Get-FileHash private-turns\download-$tag\tokensquash-$version-py3-none-any.whl -Algorithm SHA256
-Get-FileHash private-turns\download-$tag\tokensquash-$version.tar.gz -Algorithm SHA256
-Get-FileHash private-turns\download-$tag\release-attestation.json -Algorithm SHA256
-Get-FileHash private-turns\download-$tag\artifact-manifest.json -Algorithm SHA256
-Get-FileHash private-turns\download-$tag\scorecard-pack.json -Algorithm SHA256
-Get-FileHash private-turns\download-$tag\scorecard.json -Algorithm SHA256
-Get-FileHash private-turns\download-$tag\verify-release-candidate.json -Algorithm SHA256
+python -m tokensquash verify-github-release $tag --repo Martin123132/TokenSquash --json
 ```
 
-Each hash should match `docs/release-verification.md`.
+The command uses `docs/release-verification.md` by default, writes its report
+under ignored `private-turns\github-release-verify`, verifies downloaded asset
+hashes and JSON schemas, then installs the downloaded wheel into a temporary
+venv for `about --json` and `demo --counter chars --json`.
 
 ## 6. Publish Or Update GitHub Release Notes
 
